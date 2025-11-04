@@ -1,0 +1,381 @@
+<div id="mindmapToastContainer" class="mindmap-toast-container"></div>
+
+    <!-- QR Modal -->
+    <div id="qrModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50" onclick="closeQrModal(event)">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Join This Session</h3>
+                <button onclick="closeQrModal()" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-600 mb-3">Scan the QR code or visit the link below:</p>
+            <div id="qrCodeContainer" class="flex items-center justify-center p-4 border border-gray-200 rounded-lg mb-4"></div>
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 font-mono text-sm break-all" id="qrLink">-</div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="page-shell stack mindmap-shell">
+        <!-- Initial Setup Section -->
+        <div id="setupSection" class="surface surface--padded surface--static stack" style="gap:1.5rem;">
+            <div class="text-center stack" style="gap:0.4rem;">
+                <h2 class="page-title" style="justify-content:center; gap:0.65rem; font-size:2rem;">
+                    <span>🧠</span>
+                    <span>AI Mindmap Generator</span>
+                </h2>
+                <p class="page-subtitle" style="margin:0 auto; text-align:center;">Kick off a mindmap from a main topic and optional seed notes. Everything in the workspace now matches the bright, glassy login aesthetic.</p>
+            </div>
+            
+            <div class="stack">
+                <div class="input-group">
+                    <label for="mainTopicInput">Main Topic</label>
+                    <input 
+                        id="mainTopicInput" 
+                        type="text" 
+                        class="input-field"
+                        placeholder="Enter the main topic for your mindmap..."
+                        value=""
+                    >
+                 </div>
+                
+                <div class="stack" style="gap:0.75rem;">
+                    <div class="cluster" style="justify-content:space-between; gap:0.75rem;">
+                        <label for="initialTextInput" style="text-transform:uppercase; letter-spacing:0.06em; font-size:0.75rem; color:var(--color-text-muted); font-weight:700;">Initial Text</label>
+                        <button 
+                            type="button" 
+                            id="initialTextToggleBtn"
+                            aria-controls="initialTextWrapper"
+                            aria-expanded="false"
+                            class="btn btn-muted glow"
+                            style="min-height:36px; padding:0.35rem 0.9rem; font-size:0.78rem;"
+                            title="Paste notes here to auto-generate your first mindmap."
+                        >
+                            <span id="initialTextToggleText">Add initial text</span>
+                        </button>
+                    </div>
+                    <p class="muted" style="font-size:0.85rem;">Optional: seed the mindmap with transcript snippets or key ideas before class.</p>
+                    <div id="initialTextWrapper" class="hidden">
+                        <textarea 
+                            id="initialTextInput" 
+                            rows="6" 
+                            class="input-field"
+                            placeholder="Paste a classroom discussion snippet or key notes here to seed the first mindmap..."
+                        ></textarea>
+                    </div>
+                </div>
+                
+                <div class="cluster" style="gap:0.75rem; flex-wrap:wrap;">
+                    <button id="generateBtn" class="btn btn-primary glow" style="flex:1 1 220px;">
+                        <i data-lucide="brain-circuit" class="w-5 h-5"></i>
+                        Generate Initial Mindmap
+                    </button>
+                    <button id="clearBtn" class="btn btn-muted" style="flex:1 1 160px;">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        Clear
+                    </button>
+                </div>
+                
+                <!-- Voice Recording Section -->
+                <div class="cluster" style="gap:0.75rem; flex-wrap:wrap;">
+                    <button id="startRecordingBtn" class="btn btn-accent glow" style="flex:1 1 220px;">
+                        <i data-lucide="mic" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">🎤 Start Auto-Recording</span>
+                        <span class="sm:hidden">🎤 Start Recording</span>
+                    </button>
+                    <div class="input-inline" style="gap:0.5rem;">
+                        <label for="intervalInput">Interval</label>
+                        <div class="cluster" style="gap:0.4rem;">
+                            <input 
+                                id="intervalInput" 
+                                type="number" 
+                                min="5" 
+                                max="60" 
+                                value="10" 
+                                class="input-field"
+                                style="width:88px; padding:0.55rem 0.75rem;"
+                            >
+                            <span class="muted">sec</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recording Status -->
+                <div id="recordingStatus" class="hidden floating-card floating-card--tight" style="background:rgba(248,113,113,0.12); border-color:rgba(248,113,113,0.45);">
+                    <div class="cluster" style="justify-content:space-between;">
+                        <div class="cluster" style="gap:0.6rem;">
+                            <div class="smallicon animate-pulse" style="width:0.85rem; height:0.85rem; background:#ef4444; border-radius:50%; box-shadow:0 0 0 6px rgba(248,113,113,0.25);"></div>
+                            <span style="font-weight:600; color:#991b1b;">🎤 Auto-Recording Active</span>
+                        </div>
+                        <span class="muted">Interval: <span id="currentInterval">10</span>s</span>
+                    </div>
+                    <div class="muted" style="margin-top:0.65rem; font-size:0.9rem;">
+                        🎓 <strong>Academic Mode:</strong> Only educational content will be added to the mindmap. Status: <span id="uploadStatus" style="color:#0f172a; font-weight:600;">Ready</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="loadingIndicator" class="hidden text-center stack surface surface--static" style="padding:1.5rem;">
+                <i data-lucide="loader-2" class="w-8 h-8 mx-auto animate-spin text-sky-500"></i>
+                <p class="muted">Processing your audio and updating the mindmap…</p>
+            </div>
+            
+            <div id="errorMessage" class="hidden floating-card floating-card--tight" style="background:rgba(254,226,226,0.88); border-color:rgba(248,113,113,0.45); color:#b91c1c;"></div>
+        </div>
+
+        <!-- Mindmap Prompt Management Section -->
+        <div id="mindmapPromptSection" class="hidden bg-white rounded-xl shadow-lg border border-gray-200 mb-4 sm:mb-6">
+            <button 
+                id="mindmapPromptToggle" 
+                onclick="toggleMindmapPromptSection()"
+                class="w-full px-4 sm:px-6 py-4 text-left hover:bg-gray-50 transition-colors duration-200"
+            >
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <i data-lucide="file-text" class="w-5 h-5 text-purple-600"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base sm:text-lg font-semibold text-gray-900">Mindmap Prompt Library</h3>
+                            <p class="text-xs sm:text-sm text-gray-600">Load and manage AI prompts for mindmap generation</p>
+                        </div>
+                    </div>
+                    <svg id="mindmapPromptChevron" class="w-5 h-5 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </div>
+            </button>
+            
+            <div id="mindmapPromptEditor" class="hidden border-t border-gray-200">
+                <div class="p-4 sm:p-6">
+                    <!-- Prompt Library Section -->
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-sm font-semibold text-gray-700">Mindmap Prompt Library</h4>
+                            <div class="flex gap-2">
+                                <button onclick="refreshMindmapPrompts()" class="text-xs text-gray-500 hover:text-gray-700 flex items-center">
+                                    <i data-lucide="refresh-cw" class="w-3 h-3 mr-1"></i>
+                                    Refresh
+                                </button>
+                                <button onclick="openCreateMindmapPromptModal()" class="btn btn-primary text-xs py-1 px-3">
+                                    <i data-lucide="plus" class="w-3 h-3 mr-1"></i>
+                                    New
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Search and Filter -->
+                        <div class="flex gap-2 mb-3">
+                            <div class="flex-1 relative">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400"></i>
+                                <input 
+                                    id="mindmapPromptSearch" 
+                                    type="text" 
+                                    placeholder="Search mindmap prompts..." 
+                                    class="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    onkeyup="filterMindmapPrompts()"
+                                >
+                            </div>
+                            <select id="mindmapPromptCategoryFilter" class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" onchange="filterMindmapPrompts()">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Prompt Cards Grid -->
+                        <div id="mindmapPromptLibraryGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                            <div class="flex items-center justify-center py-8 text-gray-500 text-sm col-span-full">
+                                <i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>
+                                Loading mindmap prompts...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Prompt Actions -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-gray-200 pt-4 mt-6">
+                        <button onclick="loadMindmapPromptLibrary()" class="btn btn-secondary text-xs py-2">
+                            <i data-lucide="book-open" class="w-4 h-4 mr-2"></i>
+                            Refresh Library
+                        </button>
+                        <button onclick="highlightMindmapPrompt(null)" class="btn btn-muted text-xs py-2">
+                            <i data-lucide="eye-off" class="w-4 h-4 mr-2"></i>
+                            Hide Selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Mindmap Interface -->
+        <div id="mindmapInterface" class="hidden">
+            <div class="mindmap-workspace flex flex-col xl:flex-row gap-5 2xl:gap-7">
+                <!-- Mindmap Canvas -->
+                <section class="flex-1 mindmap-stage bg-white/85 rounded-2xl border border-slate-200 shadow-lg backdrop-blur flex flex-col overflow-hidden">
+                    <div class="flex-1 mindmap-container" id="mindmapContainer">
+                        <div class="flex items-center justify-center h-full text-gray-500">
+                            <div class="text-center p-4">
+                                <i data-lucide="brain-circuit" class="w-12 sm:w-16 h-12 sm:h-16 mx-auto mb-4 opacity-50"></i>
+                                <p class="text-sm sm:text-lg font-medium">Your mindmap will appear here</p>
+                                <p class="text-xs sm:text-sm opacity-75 mt-1">Enter a topic and start speaking</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="sessionInfoBar" class="hidden px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs sm:text-sm text-slate-600">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                            <span><strong>Session:</strong> <span id="sessionCode" class="break-words">-</span></span>
+                            <span><strong>Topic:</strong> <span id="currentTopic" class="break-words">-</span></span>
+                            <span><strong>Started:</strong> <span id="sessionStartTime">-</span></span>
+                            <span><strong>Duration:</strong> <span id="sessionDuration">0:00</span></span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Control Console -->
+                <aside class="mindmap-console w-full xl:w-[360px] 2xl:w-[400px] bg-white/95 rounded-2xl border border-slate-200 shadow-lg backdrop-blur flex flex-col gap-6 p-5">
+                    <div class="space-y-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <span class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-100 text-blue-500">
+                                    <i data-lucide="network" class="w-4 h-4"></i>
+                                </span>
+                                Interactive Mindmap
+                            </h3>
+                            <p class="text-sm text-slate-600 mt-1">Use pinch/scroll to zoom, drag nodes to reposition, tap labels to read more.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-2">
+                            <button id="resumeRecordingBtn" class="btn btn-accent glow justify-center hidden">
+                                <i data-lucide="mic" class="w-4 h-4"></i>
+                                Start / Resume Recording
+                            </button>
+                            <button id="stopRecordingMainBtn" class="btn btn-danger justify-center hidden">
+                                <i data-lucide="square" class="w-4 h-4"></i>
+                                Pause Recording
+                            </button>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button id="recenterBtn" class="btn btn-muted justify-center">
+                                    <i data-lucide="focus" class="w-4 h-4"></i>
+                                    <span>Recenter</span>
+                                </button>
+                                <button id="toggleChatBtn" class="btn btn-muted justify-center">
+                                    <i data-lucide="message-circle" class="w-4 h-4"></i>
+                                    Show AI Chat
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <button id="resetSessionBtn" class="btn btn-muted justify-center">
+                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                    Restart
+                                </button>
+                                <button id="saveSessionBtn" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 shadow hover:bg-blue-700 transition-colors">
+                                    <i data-lucide="download" class="w-4 h-4"></i>
+                                    Export JSON
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-200 pt-4 space-y-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-xs uppercase tracking-wider text-slate-500 font-semibold" id="mindmapSidebarMode">Mode: right only</p>
+                                <h4 class="text-base font-semibold text-slate-900 mt-1">Node tools</h4>
+                                <p class="text-xs text-slate-500 mt-1">Select a node to curate examples or adjust the mindmap.</p>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <button id="mindmapLayoutRightBtn" class="mindmap-button neutral text-xs px-3 py-1.5 whitespace-nowrap">Right layout</button>
+                                <button id="mindmapLayoutBothBtn" class="mindmap-button neutral text-xs px-3 py-1.5 whitespace-nowrap">Split layout</button>
+                            </div>
+                        </div>
+
+                        <div id="mindmapSidebarHint" class="bg-slate-50 border border-slate-200/70 rounded-xl p-3 text-xs text-slate-600 leading-relaxed">
+                            Tap a node to unlock tools. Examples generated here use the full branch context so the model understands how ideas connect.
+                        </div>
+
+                        <div id="mindmapSidebarSelected" class="hidden bg-blue-50 border border-blue-200/70 rounded-xl p-3">
+                            <div class="text-[10px] uppercase tracking-[0.18em] text-blue-500 font-semibold mb-1">Selected node</div>
+                            <div id="mindmapSidebarNodeLabel" class="text-sm font-semibold text-slate-900 break-words">-</div>
+                            <p id="mindmapSidebarContext" class="text-[11px] mt-2 text-blue-700/80 leading-snug"></p>
+                        </div>
+
+                        <div id="mindmapSidebarActions" class="flex flex-col gap-3 opacity-50 pointer-events-none">
+                            <div class="flex items-center justify-between gap-2">
+                                <label for="mindmapExampleCount" class="text-xs font-medium text-slate-600 uppercase tracking-wide">Examples</label>
+                                <input 
+                                    id="mindmapExampleCount" 
+                                    type="number" 
+                                    min="1" 
+                                    max="5" 
+                                    value="2"
+                                    class="w-16 px-2 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                                >
+                            </div>
+                            <button id="mindmapGenerateExamplesBtn" class="btn btn-accent glow justify-center">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                <span>⚡ Generate examples</span>
+                            </button>
+                            <button id="mindmapDeleteNodeBtn" class="btn btn-danger justify-center">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                Remove node
+                            </button>
+                        </div>
+
+                        <div class="border-t border-slate-200 pt-3">
+                            <p class="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-semibold mb-2">Recent output</p>
+                            <div id="mindmapSidebarExamples" class="text-xs text-slate-600 space-y-2">
+                                <p class="text-xs text-slate-500">Generated examples will appear here.</p>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Chat Panel (Responsive: slides in from bottom on mobile, from right on desktop) -->
+                <div id="chatPanel" class="hidden w-full xl:w-96 bg-white rounded-2xl shadow-lg border border-gray-200 flex flex-col min-h-0">
+                    <div class="p-3 sm:p-4 border-b border-gray-100 bg-gradient-to-r from-green-50 to-blue-50 flex-shrink-0 rounded-t-2xl">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0">
+                                <h3 class="text-sm sm:text-lg font-bold text-gray-900 flex items-center">
+                                    <i data-lucide="message-circle" class="w-4 sm:w-5 h-4 sm:h-5 mr-2 text-green-600 flex-shrink-0"></i>
+                                    <span class="truncate">💬 AI Processing Log</span>
+                                </h3>
+                                <p class="text-xs sm:text-sm text-gray-600 mt-1">AI analysis updates automatically</p>
+                            </div>
+                            <button 
+                                id="hideChatBtn"
+                                class="bg-gray-200 text-black px-2 sm:px-3 py-1 rounded text-xs sm:text-sm hover:bg-gray-300 transition-colors flex-shrink-0 border border-slate-300"
+                            >
+                                <i data-lucide="x" class="w-3 sm:w-4 h-3 sm:h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="chatMessages" class="flex-1 p-3 sm:p-4 overflow-y-auto custom-scroll space-y-3 min-h-0">
+                        <div class="text-center text-gray-500 py-4 sm:py-8">
+                            <i data-lucide="message-square-plus" class="w-6 sm:w-8 h-6 sm:h-8 mx-auto mb-2 opacity-50"></i>
+                            <p class="text-xs sm:text-sm">AI processing logs appear here automatically!</p>
+                        </div>
+                    </div>
+
+                    <div class="p-3 sm:p-4 border-t border-gray-100 bg-gray-50 flex-shrink-0 rounded-b-2xl">
+                        <div class="flex gap-2">
+                            <textarea 
+                                id="chatInput" 
+                                rows="2" 
+                                disabled
+                                class="flex-1 px-2 sm:px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm resize-none disabled:bg-gray-100 disabled:cursor-not-allowed min-w-0"
+                                placeholder="Type additional information..."
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addToMindmap();}"
+                            ></textarea>
+                            <button 
+                                id="sendBtn" 
+                                disabled
+                                class="btn btn-primary glow px-3 sm:px-4 py-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center flex-shrink-0"
+                                onclick="addToMindmap()"
+                            >
+                                <i data-lucide="send" class="w-3 sm:w-4 h-3 sm:h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>

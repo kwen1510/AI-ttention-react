@@ -7,34 +7,39 @@ This document summarizes the authentication model, realtime (Socket.IO) + keep�
 - WebSocket + Keep‑Alive
 - Features and Per‑File Walkthrough
 - Key REST APIs and Flows
+- Frontend Build & Dev Scripts
+
+---
+
+## Frontend Build & Dev Scripts
+
+- `npm run client:dev` – starts the Vite dev server (React SPA) for the dashboards while the Express API runs separately.
+- `npm run client:build` – builds the React client into `/dist`; the Express server serves this bundle in production.
+- `npm run client:preview` – preview the built client locally via Vite.
+
+The legacy HTML/JS controllers now live under `client/src/templates` (markup snapshots) and `client/src/scripts/*_inline_original.js` (imperative controllers). React mounts these assets per route and supplies shared auth context/state.
 
 ---
 
 ## Auth Logic
 
 - Client-side (Supabase, OTP)
-  - `public/login.html` + `public/js/admin-auth.js` implement email OTP sign-in via Supabase. Sign-in is restricted by configured domains (`window.ADMIN_ALLOWED_DOMAINS` / `window.ADMIN_DOMAIN`, e.g. `ri.edu.sg`, `schools.gov.sg`).
-  - Admin pages (`admin.html`, `checkbox.html`, `mindmap.html`, `prompts.html`, `data.html`) load `public/js/guard-admin.js`, which:
+  - `client/src/pages/LoginPage.jsx` renders the OTP flow and reuses the legacy logic via `client/src/scripts/initAdminAuth.js`. Sign-in is restricted by configured domains (`window.ADMIN_ALLOWED_DOMAINS` / `window.ADMIN_DOMAIN`, e.g. `ri.edu.sg`, `schools.gov.sg`).
+  - Admin dashboards (rendered through the React routes `/admin`, `/checkbox`, `/mindmap`, `/prompts`, `/data`) dynamically mount the legacy controllers from `client/src/scripts/*_inline_original.js`. Each page still relies on the same Supabase guard behaviour exposed by `AuthProvider` which wraps `window.fetch` with the bearer token injection described below.
     - Ensures a Supabase session exists and the email domain is allowed.
     - Wraps `window.fetch` to automatically attach `Authorization: Bearer <supabase_jwt>` to any "/api/..." requests.
 
-  Example (client fetch wrapper):
+  The React `AuthProvider` in `client/src/components/AuthContext.jsx` now provides the fetch wrapper:
   ```js
-  // public/js/guard-admin.js
-  const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
-  async function requireSession() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) throw new Error('Missing session');
-    return session;
-  }
   const originalFetch = window.fetch.bind(window);
   window.fetch = async (input, init = {}) => {
-    const url = typeof input === 'string' ? input : input.url;
-    if (url.startsWith('/api/')) {
-      const session = await requireSession();
-      const headers = new Headers(init.headers || {});
-      headers.set('Authorization', `Bearer ${session.access_token}`);
-      init = { ...init, headers };
+    if (needsAuth(input)) {
+      const currentSession = session ?? (await supabase.auth.getSession()).data.session;
+      if (currentSession?.access_token) {
+        const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined) || {});
+        headers.set('Authorization', `Bearer ${currentSession.access_token}`);
+        init = { ...init, headers };
+      }
     }
     return originalFetch(input, init);
   };
@@ -73,7 +78,7 @@ Socket.IO powers realtime rooms for a session and per‑group subrooms:
 
 Client heartbeat (student):
 ```js
-// public/student.html
+// client/src/scripts/student_inline_original.js
 heartbeatInterval = setInterval(() => {
   if (socket.connected && currentSession && currentGroup) {
     socket.emit('heartbeat', { session: currentSession, group: currentGroup });
@@ -163,33 +168,33 @@ socket.on('recording_started', ({ session, group }) => {
     - Per‑session prompt: `POST/GET /api/session/:code/prompt` (owner‑only).
     - Library: `GET/POST/PUT/DELETE /api/prompt-library`, plus advanced endpoints for teacher prompt collections.
 
-- Admin dashboard: `public/admin.html`
+- Admin dashboard: `client/src/pages/AdminDashboard.jsx`
   - Protected by `guard-admin.js`.
   - Creates/starts/stops sessions, shows group tiles with live transcript/summary, and includes heartbeat UI.
   - Emits `admin_join` and consumes `admin_update`, `transcription_and_summary`.
 
-- Student UI: `public/student.html`
+- Student UI: `client/src/pages/StudentView.jsx`
   - Join via session code + group.
   - Records microphone in timed chunks; uploads to `/api/transcribe-chunk`.
   - Heartbeats every 10s; shows connection and recording status.
   - Renders `transcription_and_summary` and (in checkbox mode) `checklist_state` once teacher releases.
 
-- Mindmap (teacher): `public/mindmap.html`
+- Mindmap (teacher): `client/src/pages/MindmapPage.jsx`
   - Protected by `guard-admin.js`.
   - Starts a mindmap session and auto‑records; uploads to `/api/transcribe-mindmap-chunk`.
   - Visualizes the evolving mindmap (D3), maintains an AI chat log for transparency.
 
-- Checkbox (teacher): `public/checkbox.html`
+- Checkbox (teacher): `client/src/pages/CheckboxDashboard.jsx`
   - Protected by `guard-admin.js`.
   - Defines scenario + rubric criteria, controls start/stop, and releases the checklist to students.
 
-- Prompt Library (teacher): `public/prompts.html`
+- Prompt Library (teacher): `client/src/pages/PromptsPage.jsx`
   - View/search/create/edit/delete prompts across modes; leverages the REST prompt endpoints.
 
-- Data dashboard (teacher): `public/data.html`
+- Data dashboard (teacher): `client/src/pages/DataExplorer.jsx`
   - Paginates and filters sessions, shows per‑mode summaries; can drill down into detailed group transcripts and summaries.
 
-- Login: `public/login.html`
+- Login: `client/src/pages/LoginPage.jsx`
   - OTP email flow via Supabase; wraps `fetch` to include the Bearer token for `/api/*` calls on that page too.
 
 - Legacy/utility: `MONGO_ARCHIVE/public_export/export.html`
