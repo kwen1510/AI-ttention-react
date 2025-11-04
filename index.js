@@ -655,7 +655,8 @@ connectToDatabase();
 
 /* ---------- 2. Express + Socket.IO ---------- */
 const app = express();
-app.use(express.static(path.join(__dirname, "public")));
+const staticDir = path.join(__dirname, 'dist');
+app.use(express.static(staticDir));
 
 // Setup multer for file uploads
 const upload = multer({ 
@@ -666,14 +667,30 @@ const upload = multer({
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: "*" } });
 
-/* Serve student and admin pages */
-app.get("/student", (req, res) => {
-  console.log("📚 Serving student page");
-  res.sendFile(path.join(__dirname, "public", "student.html"));
-});
-app.get("/admin", (req, res) => {
-  console.log("👨‍🏫 Serving admin page");
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+const reactRoutes = [
+  '/',
+  '/admin',
+  '/admin.html',
+  '/checkbox',
+  '/checkbox.html',
+  '/data',
+  '/data.html',
+  '/login',
+  '/login.html',
+  '/mindmap',
+  '/mindmap.html',
+  '/mindmap-playground',
+  '/mindmap-playground.html',
+  '/prompts',
+  '/prompts.html',
+  '/student',
+  '/student.html',
+];
+
+reactRoutes.forEach((route) => {
+  app.get(route, (_req, res) => {
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
 });
 // Removed unused static pages and test pages: /admin_static, /test-transcription, /test-recording, /history
 

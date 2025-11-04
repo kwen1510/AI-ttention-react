@@ -1,0 +1,80 @@
+
+    <!-- Main Content -->
+    <main class="page-shell stack">
+        
+        <!-- Filters -->
+        <div class="surface surface--padded surface--static stack" style="gap:1.25rem;">
+            <div class="flex flex-wrap items-center gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Mode:</label>
+                    <select id="modeFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Modes</option>
+                        <option value="summary">Summary Mode</option>
+                        <option value="mindmap">Mindmap Mode</option>
+                        <option value="checkbox">Checkbox Mode</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Results per page:</label>
+                    <select id="limitFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="loadSessions()" class="btn btn-primary glow">
+                        <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                        Refresh Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-16">
+            <div class="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p class="text-gray-600">Loading session data...</p>
+        </div>
+
+        <!-- Sessions Grid -->
+        <div id="sessionsGrid" class="hidden space-y-6">
+            <!-- Sessions will be inserted here -->
+        </div>
+
+        <!-- Pagination -->
+        <div id="pagination" class="hidden mt-8 flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+                <span id="paginationInfo">Showing 1-20 of 50 sessions</span>
+            </div>
+            <div class="flex space-x-2">
+                <button id="prevBtn" onclick="previousPage()" disabled class="btn btn-muted disabled:opacity-60 disabled:cursor-not-allowed">
+                    Previous
+                </button>
+                <button id="nextBtn" onclick="nextPage()" class="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed">
+                    Next
+                </button>
+            </div>
+        </div>
+
+        <!-- Session Detail Modal -->
+        <div id="sessionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+            <div class="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Session Details</h3>
+                        <p class="text-sm text-gray-600">Session <span id="modalSessionCode">-</span></p>
+                    </div>
+                    <button onclick="closeSessionModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[75vh]">
+                    <div id="modalSessionContent">
+                        <!-- Session details will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
