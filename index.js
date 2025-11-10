@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { v4 as uuid } from "uuid";
 import fetch from "node-fetch";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import multer from "multer";
@@ -655,8 +656,27 @@ connectToDatabase();
 
 /* ---------- 2. Express + Socket.IO ---------- */
 const app = express();
-const staticDir = path.join(__dirname, 'dist');
-app.use(express.static(staticDir));
+
+const frontendCandidates = [
+  path.join(__dirname, "dist"),
+  path.join(__dirname, "client", "dist"),
+];
+
+const staticDir = frontendCandidates.find((dir) => {
+  try {
+    return fs.existsSync(path.join(dir, "index.html"));
+  } catch (error) {
+    console.error(`⚠️ Unable to stat potential frontend directory ${dir}:`, error);
+    return false;
+  }
+}) ?? null;
+
+if (!staticDir) {
+  console.warn("⚠️ No compiled frontend bundle found. The dashboard routes will return 404 until the client is built.");
+} else {
+  console.log(`🪄 Serving compiled frontend from ${staticDir}`);
+  app.use(express.static(staticDir));
+}
 
 // Setup multer for file uploads
 const upload = multer({ 
@@ -667,32 +687,58 @@ const upload = multer({
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: "*" } });
 
-const reactRoutes = [
+const sendIndexHtml = (_req, res, next) => {
+  if (!staticDir) {
+    return res.status(503).send("Frontend bundle has not been built. Please run 'npm run build' before starting the server.");
+  }
+
+  const indexPath = path.join(staticDir, "index.html");
+  res.sendFile(indexPath, (error) => {
+    if (error) {
+      console.error(`❌ Failed to serve ${indexPath}:`, error);
+      next(error);
+    }
+  });
+};
+
+const spaRoutes = [
   '/',
   '/admin',
-  '/admin.html',
   '/checkbox',
-  '/checkbox.html',
   '/data',
-  '/data.html',
   '/login',
-  '/login.html',
   '/mindmap',
-  '/mindmap.html',
   '/mindmap-playground',
-  '/mindmap-playground.html',
   '/prompts',
-  '/prompts.html',
   '/student',
-  '/student.html',
 ];
 
-reactRoutes.forEach((route) => {
-  app.get(route, (_req, res) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
-  });
+spaRoutes.forEach((route) => {
+  app.get(route, sendIndexHtml);
+  if (route !== '/') {
+    app.get(`${route}.html`, sendIndexHtml);
+    app.get(`${route}/*`, sendIndexHtml);
+  }
 });
+
 // Removed unused static pages and test pages: /admin_static, /test-transcription, /test-recording, /history
+
+/* Fallback handler to support client-side routing on Render and other hosts. */
+app.get('*', (req, res, next) => {
+  const requestPath = req.path;
+
+  const isApiRequest = requestPath.startsWith('/api/');
+  const isSocketRequest = requestPath.startsWith('/socket.io');
+  const isHealthCheck = requestPath === '/health';
+  const hasFileExtension = path.extname(requestPath) !== '';
+  const isGetMethod = req.method === 'GET';
+
+  if (!isGetMethod || isApiRequest || isSocketRequest || isHealthCheck || hasFileExtension) {
+    return next();
+  }
+
+  return sendIndexHtml(req, res, next);
+});
 
 /* Health check endpoint for Render deployment */
 app.get("/health", (req, res) => {
