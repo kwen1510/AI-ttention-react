@@ -17,7 +17,17 @@ function AdminDashboard() {
     if (typeof window !== 'undefined') {
       window.io = window.io || io;
       window.lucide = window.lucide || { createIcons, icons };
-      window.QRCode = window.QRCode || QRCode;
+
+      // Safely wrap QRCode to ensure _android is initialized
+      if (!window.QRCode) {
+        window.QRCode = function(el, opts) {
+          const instance = new QRCode(el, opts);
+          if (instance && typeof instance._android === 'undefined') {
+            instance._android = false;
+          }
+          return instance;
+        };
+      }
     }
 
     const enhancedScript = `${adminScriptSource}\nif (typeof window !== 'undefined') {\n  window.__adminCleanup = () => {\n    try { socket?.disconnect?.(); } catch (err) { console.warn('Socket cleanup failed', err); }\n    try { clearInterval(heartbeatInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(connectionCheckInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(elapsedInterval); } catch (err) { console.warn(err); }\n  };\n}\nif (typeof window !== 'undefined' && typeof window.loadPromptLibrary === 'function') { window.loadPromptLibrary(); }`;
