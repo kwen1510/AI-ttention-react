@@ -25,9 +25,12 @@ function CheckboxDashboard() {
 
     const enhancedScript = `${checkboxScriptSource}\nif (typeof window !== 'undefined') {\n  window.__checkboxCleanup = () => {\n    try { socket?.disconnect?.(); } catch (err) { console.warn('Socket cleanup failed', err); }\n    try { clearInterval(heartbeatInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(connectionCheckInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(elapsedInterval); } catch (err) { console.warn(err); }\n  };\n}\nif (typeof window !== 'undefined' && typeof window.loadPromptLibrary === 'function') { window.loadPromptLibrary(); }`;
 
+    let script = null;
+    let timeoutId = null;
+
     // Delay script execution to ensure AuthContext has set up fetch wrapper with session
-    setTimeout(() => {
-      const script = document.createElement('script');
+    timeoutId = setTimeout(() => {
+      script = document.createElement('script');
       script.type = 'text/javascript';
       script.text = enhancedScript;
       document.body.appendChild(script);
@@ -37,6 +40,9 @@ function CheckboxDashboard() {
     }, 100); // 100ms delay to let AuthContext fetch wrapper initialize
 
     const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       if (typeof window !== 'undefined') {
         try {
           window.__checkboxCleanup?.();
@@ -45,7 +51,7 @@ function CheckboxDashboard() {
         }
         window.__checkboxCleanup = undefined;
       }
-      if (script.parentNode) {
+      if (script?.parentNode) {
         script.parentNode.removeChild(script);
       }
       if (containerRef.current) {
