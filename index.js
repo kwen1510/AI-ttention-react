@@ -687,18 +687,8 @@ const upload = multer({
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: "*" } });
 
-const sendIndexHtml = (_req, res, next) => {
-  if (!staticDir) {
-    return res.status(503).send("Frontend bundle has not been built. Please run 'npm run build' before starting the server.");
-  }
-
-  const indexPath = path.join(staticDir, "index.html");
-  res.sendFile(indexPath, (error) => {
-    if (error) {
-      console.error(`❌ Failed to serve ${indexPath}:`, error);
-      next(error);
-    }
-  });
+const sendIndexHtml = (_req, res) => {
+  res.sendFile(path.join(staticDir, 'index.html'));
 };
 
 const spaRoutes = [
@@ -737,7 +727,7 @@ app.get('*', (req, res, next) => {
     return next();
   }
 
-  return sendIndexHtml(req, res, next);
+  return sendIndexHtml(req, res);
 });
 
 /* Health check endpoint for Render deployment */
