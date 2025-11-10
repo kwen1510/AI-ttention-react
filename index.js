@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { v4 as uuid } from "uuid";
 import fetch from "node-fetch";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import multer from "multer";
@@ -655,8 +656,27 @@ connectToDatabase();
 
 /* ---------- 2. Express + Socket.IO ---------- */
 const app = express();
-const staticDir = path.join(__dirname, 'dist');
-app.use(express.static(staticDir));
+
+const frontendCandidates = [
+  path.join(__dirname, "dist"),
+  path.join(__dirname, "client", "dist"),
+];
+
+const staticDir = frontendCandidates.find((dir) => {
+  try {
+    return fs.existsSync(path.join(dir, "index.html"));
+  } catch (error) {
+    console.error(`⚠️ Unable to stat potential frontend directory ${dir}:`, error);
+    return false;
+  }
+}) ?? null;
+
+if (!staticDir) {
+  console.warn("⚠️ No compiled frontend bundle found. The dashboard routes will return 404 until the client is built.");
+} else {
+  console.log(`🪄 Serving compiled frontend from ${staticDir}`);
+  app.use(express.static(staticDir));
+}
 
 // Setup multer for file uploads
 const upload = multer({ 
