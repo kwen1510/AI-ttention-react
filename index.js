@@ -667,32 +667,48 @@ const upload = multer({
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: "*" } });
 
-const reactRoutes = [
+const sendIndexHtml = (_req, res) => {
+  res.sendFile(path.join(staticDir, 'index.html'));
+};
+
+const spaRoutes = [
   '/',
   '/admin',
-  '/admin.html',
   '/checkbox',
-  '/checkbox.html',
   '/data',
-  '/data.html',
   '/login',
-  '/login.html',
   '/mindmap',
-  '/mindmap.html',
   '/mindmap-playground',
-  '/mindmap-playground.html',
   '/prompts',
-  '/prompts.html',
   '/student',
-  '/student.html',
 ];
 
-reactRoutes.forEach((route) => {
-  app.get(route, (_req, res) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
-  });
+spaRoutes.forEach((route) => {
+  app.get(route, sendIndexHtml);
+  if (route !== '/') {
+    app.get(`${route}.html`, sendIndexHtml);
+    app.get(`${route}/*`, sendIndexHtml);
+  }
 });
+
 // Removed unused static pages and test pages: /admin_static, /test-transcription, /test-recording, /history
+
+/* Fallback handler to support client-side routing on Render and other hosts. */
+app.get('*', (req, res, next) => {
+  const requestPath = req.path;
+
+  const isApiRequest = requestPath.startsWith('/api/');
+  const isSocketRequest = requestPath.startsWith('/socket.io');
+  const isHealthCheck = requestPath === '/health';
+  const hasFileExtension = path.extname(requestPath) !== '';
+  const isGetMethod = req.method === 'GET';
+
+  if (!isGetMethod || isApiRequest || isSocketRequest || isHealthCheck || hasFileExtension) {
+    return next();
+  }
+
+  return sendIndexHtml(req, res);
+});
 
 /* Health check endpoint for Render deployment */
 app.get("/health", (req, res) => {
