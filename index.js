@@ -651,9 +651,6 @@ async function connectToDatabase() {
   }
 }
 
-// Connect to database on startup
-connectToDatabase();
-
 /* ---------- 2. Express + Socket.IO ---------- */
 const app = express();
 
