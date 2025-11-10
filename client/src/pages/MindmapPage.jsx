@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { createIcons, icons } from 'lucide';
-import QRCode from 'qrcodejs2';
 import { mindmapBodyMarkup } from '../templates/mindmapBody.js';
 import mindmapScriptSource from '../scripts/mindmap_inline_original.js?raw';
 
@@ -15,7 +14,7 @@ function MindmapPage() {
 
     if (typeof window !== 'undefined') {
       window.lucide = window.lucide || { createIcons, icons };
-      window.QRCode = window.QRCode || QRCode;
+      // QRCode is loaded from CDN (see index.html)
     }
 
     const enhancedScript = `${mindmapScriptSource}\nif (typeof document !== 'undefined') { setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 0); }`;
