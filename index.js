@@ -5,6 +5,8 @@ import { Server } from "socket.io";
 import { v4 as uuid } from "uuid";
 import fetch from "node-fetch";
 import path from "path";
+import fs from "fs";
+import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import multer from "multer";
@@ -650,13 +652,67 @@ async function connectToDatabase() {
   }
 }
 
-// Connect to database on startup
-connectToDatabase();
-
 /* ---------- 2. Express + Socket.IO ---------- */
 const app = express();
-const staticDir = path.join(__dirname, 'dist');
-app.use(express.static(staticDir));
+
+const frontendCandidates = [
+  path.join(__dirname, "dist"),
+  path.join(__dirname, "client", "dist"),
+];
+
+function findCompiledFrontend() {
+  return frontendCandidates.find((dir) => {
+    try {
+      return fs.existsSync(path.join(dir, "index.html"));
+    } catch (error) {
+      console.error(`⚠️ Unable to stat potential frontend directory ${dir}:`, error);
+      return false;
+    }
+  }) ?? null;
+}
+
+function attemptRuntimeBuild() {
+  console.log("🛠️ Attempting to build frontend bundle at runtime because none was found...");
+  try {
+    const result = spawnSync("npm", ["run", "build"], {
+      cwd: __dirname,
+      stdio: "inherit",
+      env: { ...process.env, NODE_ENV: process.env.NODE_ENV || "production" },
+    });
+
+    if (result.status !== 0) {
+      console.error(`❌ Runtime frontend build failed with exit code ${result.status}.`);
+      return null;
+    }
+
+    return findCompiledFrontend();
+  } catch (error) {
+    console.error("❌ Unexpected error while trying to build the frontend bundle:", error);
+    return null;
+  }
+}
+
+const AUTO_BUILD_ENV = String(process.env.AUTO_BUILD_FRONTEND ?? "").toLowerCase();
+const runtimeBuildEnabled = AUTO_BUILD_ENV !== "false";
+const runtimeBuildRequested = AUTO_BUILD_ENV === "true";
+const shouldRuntimeBuild =
+  runtimeBuildEnabled &&
+  (runtimeBuildRequested || process.env.NODE_ENV === "production" || process.env.RENDER === "true");
+
+let staticDir = findCompiledFrontend();
+
+if (!staticDir && shouldRuntimeBuild) {
+  staticDir = attemptRuntimeBuild();
+}
+
+if (!staticDir) {
+  console.warn(
+    "⚠️ No compiled frontend bundle found. The dashboard routes will return 404 until the client is built."
+  );
+} else {
+  console.log(`🪄 Serving compiled frontend from ${staticDir}`);
+  app.use(express.static(staticDir));
+}
 
 // Setup multer for file uploads
 const upload = multer({ 
@@ -667,32 +723,65 @@ const upload = multer({
 const http = createServer(app);
 const io   = new Server(http, { cors: { origin: "*" } });
 
-const reactRoutes = [
+// Connect to database on startup (after the HTTP server has been created)
+connectToDatabase();
+
+const sendIndexHtml = (_req, res, next) => {
+  if (!staticDir) {
+    return res
+      .status(503)
+      .send(
+        "Frontend bundle has not been built. Please run 'npm run build' (or set AUTO_BUILD_FRONTEND=true) before starting the server."
+      );
+  }
+
+  const indexPath = path.join(staticDir, "index.html");
+  res.sendFile(indexPath, (error) => {
+    if (error) {
+      console.error(`❌ Failed to serve ${indexPath}:`, error);
+      next(error);
+    }
+  });
+};
+
+const spaRoutes = [
   '/',
   '/admin',
-  '/admin.html',
   '/checkbox',
-  '/checkbox.html',
   '/data',
-  '/data.html',
   '/login',
-  '/login.html',
   '/mindmap',
-  '/mindmap.html',
   '/mindmap-playground',
-  '/mindmap-playground.html',
   '/prompts',
-  '/prompts.html',
   '/student',
-  '/student.html',
 ];
 
-reactRoutes.forEach((route) => {
-  app.get(route, (_req, res) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
-  });
+spaRoutes.forEach((route) => {
+  app.get(route, sendIndexHtml);
+  if (route !== '/') {
+    app.get(`${route}.html`, sendIndexHtml);
+    app.get(`${route}/*`, sendIndexHtml);
+  }
 });
+
 // Removed unused static pages and test pages: /admin_static, /test-transcription, /test-recording, /history
+
+/* Fallback handler to support client-side routing on Render and other hosts. */
+app.get('*', (req, res, next) => {
+  const requestPath = req.path;
+
+  const isApiRequest = requestPath.startsWith('/api/');
+  const isSocketRequest = requestPath.startsWith('/socket.io');
+  const isHealthCheck = requestPath === '/health';
+  const hasFileExtension = path.extname(requestPath) !== '';
+  const isGetMethod = req.method === 'GET';
+
+  if (!isGetMethod || isApiRequest || isSocketRequest || isHealthCheck || hasFileExtension) {
+    return next();
+  }
+
+  return sendIndexHtml(req, res, next);
+});
 
 /* Health check endpoint for Render deployment */
 app.get("/health", (req, res) => {
