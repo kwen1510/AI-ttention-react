@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { createIcons, icons } from 'lucide';
-import QRCode from 'qrcodejs2';
 import { checkboxBodyMarkup } from '../templates/checkboxBody.js';
 import checkboxScriptSource from '../scripts/checkbox_inline_original.js?raw';
 
@@ -17,17 +16,7 @@ function CheckboxDashboard() {
     if (typeof window !== 'undefined') {
       window.io = window.io || io;
       window.lucide = window.lucide || { createIcons, icons };
-
-      // Safely wrap QRCode to ensure _android is initialized
-      if (!window.QRCode) {
-        window.QRCode = function(el, opts) {
-          const instance = new QRCode(el, opts);
-          if (instance && typeof instance._android === 'undefined') {
-            instance._android = false;
-          }
-          return instance;
-        };
-      }
+      // QRCode is loaded from CDN (see index.html)
     }
 
     const enhancedScript = `${checkboxScriptSource}\nif (typeof window !== 'undefined') {\n  window.__checkboxCleanup = () => {\n    try { socket?.disconnect?.(); } catch (err) { console.warn('Socket cleanup failed', err); }\n    try { clearInterval(heartbeatInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(connectionCheckInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(elapsedInterval); } catch (err) { console.warn(err); }\n  };\n}\nif (typeof window !== 'undefined' && typeof window.loadPromptLibrary === 'function') { window.loadPromptLibrary(); }`;
