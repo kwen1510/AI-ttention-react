@@ -13,7 +13,11 @@ function DataExplorer() {
     container.innerHTML = dataBodyMarkup;
 
     if (typeof window !== 'undefined') {
-      window.lucide = window.lucide || { createIcons, icons };
+      // Wrap createIcons to automatically pass icons parameter
+      window.lucide = window.lucide || {
+        createIcons: (options) => createIcons({ icons, ...options }),
+        icons
+      };
     }
 
     const enhancedScript = `${dataScriptSource}\nif (typeof document !== 'undefined') { setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 0); }`;

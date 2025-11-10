@@ -15,7 +15,11 @@ function AdminDashboard() {
 
     if (typeof window !== 'undefined') {
       window.io = window.io || io;
-      window.lucide = window.lucide || { createIcons, icons };
+      // Wrap createIcons to automatically pass icons parameter
+      window.lucide = window.lucide || {
+        createIcons: (options) => createIcons({ icons, ...options }),
+        icons
+      };
       // QRCode is loaded from CDN (see index.html)
     }
 

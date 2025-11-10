@@ -15,7 +15,11 @@ function StudentView() {
 
     if (typeof window !== 'undefined') {
       window.io = window.io || io;
-      window.lucide = window.lucide || { createIcons, icons };
+      // Wrap createIcons to automatically pass icons parameter
+      window.lucide = window.lucide || {
+        createIcons: (options) => createIcons({ icons, ...options }),
+        icons
+      };
     }
 
     const enhancedScript = `${studentScriptSource}\nif (typeof window !== 'undefined') { window.__studentCleanup = () => { try { socket?.disconnect?.(); } catch (err) { console.warn('Student socket cleanup failed', err); } }; }\nif (typeof document !== 'undefined') { setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 0); }`;
