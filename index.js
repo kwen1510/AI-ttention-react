@@ -642,8 +642,8 @@ async function connectToDatabase() {
     
     // Start server after database connection
     const port = process.env.PORT || 10000;
-    http.listen(port, () => {
-      console.log(`🎯 Server running at http://localhost:${port}`);
+    http.listen(port, '0.0.0.0', () => {
+      console.log(`🎯 Server running at http://0.0.0.0:${port}`);
     });
   } catch (error) {
     console.error('❌ Supabase connection failed:', error);
@@ -6692,3 +6692,6 @@ async function cleanupOldSessionData(sessionCode) {
     console.error(`❌ Error cleaning up session ${sessionCode}:`, err);
   }
 }
+
+// Start the server
+connectToDatabase();
