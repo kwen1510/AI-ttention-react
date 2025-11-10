@@ -86,15 +86,17 @@ const socket = io();
             }
         }
 
-        // Auto join if URL parameters provided
-        const params = new URLSearchParams(window.location.search);
-        const presetCode = params.get('code');
-        const presetGroup = params.get('group');
-        if (presetCode) document.getElementById('sessionCode').value = presetCode;
-        if (presetGroup) document.getElementById('groupNumber').value = presetGroup;
-        if (presetCode && presetGroup) {
-            document.getElementById('joinSessionForm').dispatchEvent(new Event('submit'));
-        }
+        // Auto join if URL parameters provided - wrapped in DOMContentLoaded to ensure DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const presetCode = params.get('code');
+            const presetGroup = params.get('group');
+            if (presetCode) document.getElementById('sessionCode').value = presetCode;
+            if (presetGroup) document.getElementById('groupNumber').value = presetGroup;
+            if (presetCode && presetGroup) {
+                document.getElementById('joinSessionForm').dispatchEvent(new Event('submit'));
+            }
+        });
 
         function resetView(options = {}) {
             const { preserveElapsed = false, preserveMode = false } = options;
