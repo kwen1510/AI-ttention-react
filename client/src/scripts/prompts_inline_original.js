@@ -1,24 +1,112 @@
-let currentPrompts = [];
+        let currentPrompts = [];
         let currentOffset = 0;
         let currentLimit = 20;
         let totalPrompts = 0;
         let availableCategories = [];
         let currentPromptId = null;
+        let promptsFetchController = null;
+        let isPageUnloading = false;
+        const DASHBOARD_ROOT_ID = 'promptsDashboardRoot';
+        let missingDomWarned = false;
+
+        function hasPromptsDom() {
+            const exists = Boolean(document.getElementById(DASHBOARD_ROOT_ID));
+            if (!exists) {
+                if (!missingDomWarned) {
+                    console.debug('Prompts dashboard DOM not found; skipping pending updates.');
+                    missingDomWarned = true;
+                }
+            } else if (missingDomWarned) {
+                missingDomWarned = false;
+            }
+            return exists;
+        }
+
+        function abortPromptsFetch() {
+            if (promptsFetchController) {
+                try {
+                    promptsFetchController.abort();
+                } catch (_) {
+                    // ignore
+                } finally {
+                    promptsFetchController = null;
+                }
+            }
+        }
+
+        window.addEventListener('beforeunload', () => {
+            isPageUnloading = true;
+            abortPromptsFetch();
+        });
+
+        window.__destroyPromptsDashboard = () => {
+            if (isPageUnloading) return;
+            isPageUnloading = true;
+            abortPromptsFetch();
+            delete window.__destroyPromptsDashboard;
+        };
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
+            if (!hasPromptsDom()) return;
             lucide.createIcons();
             loadPrompts();
-            
-            // Add event listeners
-            document.getElementById('searchInput').addEventListener('input', debounce(handleSearch, 300));
-            document.getElementById('categoryFilter').addEventListener('change', handleFilterChange);
-            document.getElementById('modeFilter').addEventListener('change', handleFilterChange);
-            document.getElementById('promptForm').addEventListener('submit', handleFormSubmit);
+
+            // Add event listeners (guard if elements missing)
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('input', debounce(handleSearch, 300));
+            }
+            const categoryFilter = document.getElementById('categoryFilter');
+            if (categoryFilter) {
+                categoryFilter.addEventListener('change', handleFilterChange);
+            }
+            const modeFilter = document.getElementById('modeFilter');
+            if (modeFilter) {
+                modeFilter.addEventListener('change', handleFilterChange);
+            }
+            const promptForm = document.getElementById('promptForm');
+            if (promptForm) {
+                promptForm.addEventListener('submit', handleFormSubmit);
+            }
 
             // Adapt form for Checkbox schema when mode changes
-            document.getElementById('promptMode').addEventListener('change', adaptFormForMode);
+            const promptMode = document.getElementById('promptMode');
+            if (promptMode) {
+                promptMode.addEventListener('change', adaptFormForMode);
+            }
             adaptFormForMode();
+
+            // Close modals on outside click
+            const promptModalEl = document.getElementById('promptModal');
+            if (promptModalEl) {
+                promptModalEl.addEventListener('click', (e) => {
+                    if (e.target.id === 'promptModal') {
+                        closePromptModal();
+                    }
+                });
+            }
+
+            const viewModalEl = document.getElementById('viewModal');
+            if (viewModalEl) {
+                viewModalEl.addEventListener('click', (e) => {
+                    if (e.target.id === 'viewModal') {
+                        closeViewModal();
+                    }
+                });
+            }
+
+            // ESC key to close modals
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const promptModal = document.getElementById('promptModal');
+                const viewModal = document.getElementById('viewModal');
+                if (promptModal && !promptModal.classList.contains('hidden')) {
+                    closePromptModal();
+                } else if (viewModal && !viewModal.classList.contains('hidden')) {
+                    closeViewModal();
+                }
+            });
         });
 
         // Debounce function for search
@@ -36,12 +124,23 @@ let currentPrompts = [];
 
         // Load prompts from API
         async function loadPrompts() {
+            if (promptsFetchController) {
+                abortPromptsFetch();
+            }
+            const controller = new AbortController();
+            promptsFetchController = controller;
             try {
+                if (!hasPromptsDom() || isPageUnloading) {
+                    return;
+                }
                 showLoading(true);
                 
-                const search = document.getElementById('searchInput').value;
-                const category = document.getElementById('categoryFilter').value;
-                const mode = document.getElementById('modeFilter').value;
+                const searchInputEl = document.getElementById('searchInput');
+                const categoryEl = document.getElementById('categoryFilter');
+                const modeEl = document.getElementById('modeFilter');
+                const search = searchInputEl ? searchInputEl.value : '';
+                const category = categoryEl ? categoryEl.value : '';
+                const mode = modeEl ? modeEl.value : '';
                 
                 const url = new URL('/api/prompts', window.location.origin);
                 url.searchParams.append('offset', currentOffset);
@@ -50,7 +149,7 @@ let currentPrompts = [];
                 if (category) url.searchParams.append('category', category);
                 if (mode) url.searchParams.append('mode', mode);
 
-                const response = await fetch(url);
+                const response = await fetch(url, { signal: controller.signal });
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -66,26 +165,46 @@ let currentPrompts = [];
                 displayPrompts(data.prompts);
                 updatePagination(data.pagination);
                 
-                showLoading(false);
-
             } catch (err) {
-                console.error('❌ Failed to load prompts:', err);
-                showError(`Failed to load prompts: ${err.message}`);
-                showLoading(false);
+                const aborted = err?.name === 'AbortError';
+                if (isPageUnloading || aborted) {
+                    console.debug('ℹ️ Prompts fetch cancelled (navigation or superseded request).');
+                } else {
+                    console.error('❌ Failed to load prompts:', err);
+                    // showError(`Failed to load prompts: ${err.message}`);
+                }
+            } finally {
+                if (promptsFetchController === controller) {
+                    promptsFetchController = null;
+                    if (!isPageUnloading && hasPromptsDom()) {
+                        showLoading(false);
+                    }
+                }
             }
         }
 
         // Show/hide loading state
         function showLoading(show) {
-            document.getElementById('loadingState').classList.toggle('hidden', !show);
-            document.getElementById('promptsGrid').classList.toggle('hidden', show);
-            document.getElementById('emptyState').classList.toggle('hidden', show);
-            document.getElementById('pagination').classList.toggle('hidden', show);
+            if (!hasPromptsDom() || isPageUnloading) return;
+            try {
+                const loading = document.getElementById('loadingState');
+                const grid = document.getElementById('promptsGrid');
+                const empty = document.getElementById('emptyState');
+                const pagination = document.getElementById('pagination');
+                if (loading) loading.classList.toggle('hidden', !show);
+                if (grid) grid.classList.toggle('hidden', show);
+                if (empty) empty.classList.toggle('hidden', show);
+                if (pagination) pagination.classList.toggle('hidden', show);
+            } catch (err) {
+                console.debug('Suppressed loading toggle error:', err.message);
+            }
         }
 
         // Update category filter options
         function updateCategoryFilter() {
+            if (!hasPromptsDom() || isPageUnloading) return;
             const categoryFilter = document.getElementById('categoryFilter');
+            if (!categoryFilter) return;
             const currentValue = categoryFilter.value;
             
             // Clear existing options (except "All Categories")
@@ -107,8 +226,10 @@ let currentPrompts = [];
 
         // Display prompts in grid
         function displayPrompts(prompts) {
+            if (!hasPromptsDom() || isPageUnloading) return;
             const grid = document.getElementById('promptsGrid');
             const emptyState = document.getElementById('emptyState');
+            if (!grid || !emptyState) return;
             
             if (prompts.length === 0) {
                 grid.classList.add('hidden');
@@ -122,13 +243,11 @@ let currentPrompts = [];
             const promptsHtml = prompts.map(prompt => {
                 const modeColors = {
                     summary: 'bg-blue-100 text-blue-800',
-                    mindmap: 'bg-sky-100 text-sky-800',
                     checkbox: 'bg-green-100 text-green-800'
                 };
 
                 const modeIcons = {
                     summary: 'message-square',
-                    mindmap: 'brain-circuit',
                     checkbox: 'check-square'
                 };
 
@@ -209,10 +328,12 @@ let currentPrompts = [];
 
         // Pagination
         function updatePagination(pagination) {
+            if (!hasPromptsDom() || isPageUnloading) return;
             const info = document.getElementById('paginationInfo');
             const prevBtn = document.getElementById('prevBtn');
             const nextBtn = document.getElementById('nextBtn');
             const paginationDiv = document.getElementById('pagination');
+            if (!info || !prevBtn || !nextBtn || !paginationDiv) return;
 
             if (pagination.total === 0) {
                 paginationDiv.classList.add('hidden');
@@ -318,7 +439,10 @@ let currentPrompts = [];
 
         // UI adaptation for mode
         function adaptFormForMode() {
-            const mode = document.getElementById('promptMode').value;
+            if (!hasPromptsDom() || isPageUnloading) return;
+            const modeSelect = document.getElementById('promptMode');
+            if (!modeSelect) return;
+            const mode = modeSelect.value;
             const descriptionRow = document.getElementById('descriptionRow');
             const tagsRow = document.getElementById('tagsRow');
             const checkboxExample = document.getElementById('checkboxExample');
@@ -349,7 +473,6 @@ let currentPrompts = [];
 
                 const modeColors = {
                     summary: 'bg-blue-100 text-blue-800',
-                    mindmap: 'bg-sky-100 text-sky-800',
                     checkbox: 'bg-green-100 text-green-800'
                 };
 
@@ -502,12 +625,10 @@ let currentPrompts = [];
         }
 
         function buildPromptRedirectUrl(prompt) {
-            if (!prompt) return '/admin.html';
+            if (!prompt) return '/admin';
             const mode = (prompt.mode || 'summary').toLowerCase();
             const destination = new URL(
-                mode === 'checkbox' ? '/checkbox.html'
-                : mode === 'mindmap' ? '/mindmap.html'
-                : '/admin.html',
+                mode === 'checkbox' ? '/checkbox' : '/admin',
                 window.location.origin
             );
 
@@ -536,10 +657,6 @@ let currentPrompts = [];
                     destination.searchParams.set('strictness', String(strictnessValue));
                 }
                 destination.searchParams.set('mode', 'checkbox');
-            } else if (mode === 'mindmap') {
-                if (prompt.title) destination.searchParams.set('topic', prompt.title);
-                if (prompt.content) destination.searchParams.set('prompt', prompt.content);
-                destination.searchParams.set('mode', 'mindmap');
             } else {
                 if (prompt.content) destination.searchParams.set('prompt', prompt.content);
                 destination.searchParams.set('mode', 'summary');
@@ -585,30 +702,27 @@ let currentPrompts = [];
         }
 
         function showError(message) {
-            // Simple error notification - you could enhance this with a toast library
+            if (isPageUnloading || !hasPromptsDom()) {
+                console.warn('Suppressed prompts error:', message);
+                return;
+            }
             alert(`❌ ${message}`);
         }
 
-        // Close modals on outside click
-        document.getElementById('promptModal').addEventListener('click', (e) => {
-            if (e.target.id === 'promptModal') {
-                closePromptModal();
-            }
-        });
+        // Expose functions to window for onclick handlers
+        window.viewPrompt = viewPrompt;
+        window.openCreateModal = openCreateModal;
+        window.closePromptModal = closePromptModal;
+        window.closeViewModal = closeViewModal;
+        window.editPrompt = editPrompt;
+        window.clonePrompt = clonePrompt;
+        window.deletePrompt = deletePrompt;
+        window.usePrompt = usePrompt;
+        window.refreshPrompts = refreshPrompts;
+        window.previousPage = previousPage;
+        window.nextPage = nextPage;
 
-        document.getElementById('viewModal').addEventListener('click', (e) => {
-            if (e.target.id === 'viewModal') {
-                closeViewModal();
-            }
-        });
-
-        // ESC key to close modals
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (!document.getElementById('promptModal').classList.contains('hidden')) {
-                    closePromptModal();
-                } else if (!document.getElementById('viewModal').classList.contains('hidden')) {
-                    closeViewModal();
-                }
-            }
+        console.log('✅ Prompts functions exposed to window:', {
+            viewPrompt: typeof window.viewPrompt,
+            openCreateModal: typeof window.openCreateModal
         });

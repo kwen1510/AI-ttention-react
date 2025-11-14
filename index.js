@@ -25,7 +25,7 @@ const elevenlabs = new ElevenLabsClient({
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || null;
 if (!OPENAI_API_KEY) {
-  console.warn("⚠️ OPENAI_API_KEY not set; mindmap generation features will be unavailable.");
+  console.warn("⚠️ OPENAI_API_KEY not set; AI features will be limited.");
 }
 
 // Session state management
@@ -79,26 +79,6 @@ function clearTranscriptHistory(sessionCode) {
   console.log(`🗑️ Cleared transcript history for session: ${sessionCode}`);
 }
 
-// Helper function to get current mindmap data from database
-async function getMindmapData(sessionCode) {
-  try {
-    const session = await db.collection("sessions").findOne({ code: sessionCode });
-    if (!session) {
-      console.log(`⚠️ Session ${sessionCode} not found for mindmap data retrieval`);
-      return null;
-    }
-    
-    const data = session.mindmap_data ? structuredClone(session.mindmap_data) : null;
-    if (data) {
-      ensureMindmapNodeIds(data);
-    }
-    return data;
-  } catch (error) {
-    console.error(`❌ Error retrieving mindmap data for session ${sessionCode}:`, error);
-    return null;
-  }
-}
-
 function computeTranscriptStats(segments = []) {
   const base = {
     total_segments: segments.length,
@@ -116,102 +96,6 @@ function computeTranscriptStats(segments = []) {
   }
 
   return base;
-}
-
-function generateMindmapNodeId() {
-  return uuid();
-}
-
-function ensureMindmapNodeIds(node) {
-  if (!node || typeof node !== "object") return;
-  if (!node.id) {
-    node.id = generateMindmapNodeId();
-  }
-  if (!Array.isArray(node.children)) {
-    node.children = [];
-  }
-  node.children.forEach(child => ensureMindmapNodeIds(child));
-}
-
-function normalizeMindmapName(name) {
-  return (name || "").trim().toLowerCase();
-}
-
-function getMindmapNodeKey(node, fallbackIndex) {
-  if (!node) return fallbackIndex != null ? `fallback:${fallbackIndex}` : null;
-  if (node.id) return `id:${node.id}`;
-  const normalized = normalizeMindmapName(node.name);
-  if (normalized) return `name:${normalized}`;
-  return fallbackIndex != null ? `fallback:${fallbackIndex}` : null;
-}
-
-function mergeLegacyMindmapTrees(primaryNode, secondaryNode) {
-  if (!primaryNode && !secondaryNode) return null;
-  if (!primaryNode) {
-    const clone = structuredClone(secondaryNode);
-    ensureMindmapNodeIds(clone);
-    return clone;
-  }
-  if (!secondaryNode) {
-    const clone = structuredClone(primaryNode);
-    ensureMindmapNodeIds(clone);
-    return clone;
-  }
-
-  const base = structuredClone(primaryNode);
-  const secondary = structuredClone(secondaryNode);
-
-  ensureMindmapNodeIds(base);
-  ensureMindmapNodeIds(secondary);
-
-  const merged = { ...base };
-
-  if (base.id && secondary.id && base.id === secondary.id) {
-    merged.name = secondary.name || base.name;
-    merged.type = secondary.type || base.type;
-    if (secondary._offset) {
-      merged._offset = { ...base._offset, ...secondary._offset };
-    }
-  } else if (!base.id && secondary.id) {
-    merged.id = secondary.id;
-  }
-
-  const baseChildren = Array.isArray(base.children) ? base.children : [];
-  const secondaryChildren = Array.isArray(secondary.children) ? secondary.children : [];
-
-  const secondaryMap = new Map();
-  secondaryChildren.forEach((child, index) => {
-    const key = getMindmapNodeKey(child, index);
-    if (!secondaryMap.has(key)) {
-      secondaryMap.set(key, []);
-    }
-    secondaryMap.get(key).push(child);
-  });
-
-  const mergedChildren = [];
-
-  baseChildren.forEach((child, index) => {
-    const key = getMindmapNodeKey(child, index);
-    let match = null;
-    if (secondaryMap.has(key)) {
-      const bucket = secondaryMap.get(key);
-      match = bucket.shift();
-      if (bucket.length === 0) {
-        secondaryMap.delete(key);
-      }
-    }
-    mergedChildren.push(mergeLegacyMindmapTrees(child, match));
-  });
-
-  secondaryMap.forEach(bucket => {
-    bucket.forEach(child => {
-      mergedChildren.push(mergeLegacyMindmapTrees(null, child));
-    });
-  });
-
-  merged.children = mergedChildren;
-
-  return merged;
 }
 
 function extractTranscriptSegments(record) {
@@ -734,7 +618,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: "2.0.0",
-    features: ["transcription", "checkbox-mode", "mindmap-mode", "summary-mode"],
+    features: ["transcription", "checkbox-mode", "summary-mode"],
     environment: process.env.NODE_ENV || "development",
     port: process.env.PORT || 10000
   });
@@ -1545,11 +1429,7 @@ app.delete("/api/history/sessions", express.json(), async (req, res) => {
       
       // Delete session prompts
       await db.collection("session_prompts").deleteMany({ session_id: session._id });
-      
-      // Delete mindmap related data
-      await db.collection("mindmap_sessions").deleteMany({ session_id: session._id });
-      await db.collection("mindmap_nodes").deleteMany({ session_id: session._id });
-      
+
       // Delete checkbox related data
       await db.collection("checkbox_sessions").deleteMany({ session_id: session._id });
       await db.collection("checkbox_criteria").deleteMany({ session_id: session._id });
@@ -1578,10 +1458,10 @@ app.delete("/api/history/sessions", express.json(), async (req, res) => {
   }
 });
 
-/* ---------- Mindmap Mode API Endpoints ---------- */
+/* ---------- Checkbox Mode API Endpoints ---------- */
 
-/* Create mindmap session */
-app.post("/api/mindmap/session", express.json(), async (req, res) => {
+/* Cleanup session data */
+app.post("/api/cleanup/:sessionCode", async (req, res) => {
   try {
     const teacher = await requireTeacher(req, res);
     if (!teacher) return;
@@ -3798,36 +3678,41 @@ io.on("connection", socket => {
     console.log(`📊 Upload error details: ${chunkSize} bytes, ${error}`);
   });
 
+  // Handle student disconnection
   socket.on("disconnect", () => {
     if (sessionCode && groupNumber) {
-    console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
-      
+      console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
+
       // Notify admin about student leaving
       socket.to(sessionCode).emit("student_left", { group: groupNumber, socketId: socket.id });
+
+      // Clean up activeSessions group tracking to prevent memory leak
+      const sessionState = activeSessions.get(sessionCode);
+      if (sessionState && sessionState.groups) {
+        sessionState.groups.delete(parseInt(groupNumber));
+        console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
+
+        // If no groups remain and session is not active, consider cleaning up the session
+        if (sessionState.groups.size === 0 && !sessionState.active && !sessionState.persisted) {
+          activeSessions.delete(sessionCode);
+          console.log(`🧹 Cleaned up empty unpersisted session ${sessionCode} from memory`);
+        }
+      }
+
+      // Remove from processing groups if it was being processed
+      const groupKey = `${sessionCode}-${groupNumber}`;
+      processingGroups.delete(groupKey);
     } else {
       console.log(`🔌 Socket ${socket.id} disconnected (no session/group)`);
     }
-    
+
     // Clean up socket buffer to prevent memory leaks
     if (socket.localBuf) {
       socket.localBuf.length = 0;
       socket.localBuf = null;
     }
-    
-    // Remove from processing groups if it was being processed
-    if (sessionCode && groupNumber) {
-      const groupKey = `${sessionCode}-${groupNumber}`;
-      processingGroups.delete(groupKey);
-    }
-  });
 
-  // Handle student disconnection
-  socket.on('disconnect', () => {
-    console.log(`🔌 Socket disconnected: ${socket.id}`);
-    
     // Socket.IO automatically handles room cleanup when sockets disconnect
-    // No manual cleanup needed for socket rooms
-    // activeSessions only stores session metadata, not socket collections
   });
 
   // Debug helper - tell client what rooms they're in
@@ -5725,16 +5610,17 @@ app.delete("/api/sessions/:sessionCode", async (req, res) => {
 /* Get all sessions with comprehensive data across all modes */
 app.get("/api/data/sessions", async (req, res) => {
   try {
+    const startTime = Date.now();
     const { limit = 20, offset = 0, mode = null } = req.query;
-    
+
     console.log(`📊 Fetching comprehensive session data (limit: ${limit}, offset: ${offset}, mode: ${mode})`);
-    
+
     // Build query filter
     const query = {};
-    if (mode && ['summary', 'mindmap', 'checkbox'].includes(mode)) {
+    if (mode && ['summary', 'checkbox'].includes(mode)) {
       query.mode = mode;
     }
-    
+
     // Get sessions
     const sessions = await db.collection("sessions")
       .find(query)
@@ -5742,9 +5628,98 @@ app.get("/api/data/sessions", async (req, res) => {
       .skip(parseInt(offset))
       .limit(parseInt(limit))
       .toArray();
-    
+
+    if (sessions.length === 0) {
+      return res.json({ sessions: [], total: 0 });
+    }
+
+    const sessionIds = sessions.map(s => s._id);
+
+    // Bulk fetch all groups for these sessions
+    const allGroups = await db.collection("groups")
+      .find({ session_id: { $in: sessionIds } })
+      .sort({ number: 1 })
+      .toArray();
+
+    const groupsBySession = new Map();
+    const groupIds = [];
+
+    for (const group of allGroups) {
+      if (!groupsBySession.has(String(group.session_id))) {
+        groupsBySession.set(String(group.session_id), []);
+      }
+      groupsBySession.get(String(group.session_id)).push(group);
+      groupIds.push(group._id);
+    }
+
+    // Bulk fetch all transcripts and summaries
+    const allTranscripts = await db.collection("transcripts")
+      .find({ group_id: { $in: groupIds } })
+      .sort({ created_at: 1 })
+      .toArray();
+
+    const allSummaries = await db.collection("summaries")
+      .find({ group_id: { $in: groupIds } })
+      .toArray();
+
+    const transcriptsByGroup = new Map();
+    const summariesByGroup = new Map();
+
+    for (const transcript of allTranscripts) {
+      const key = String(transcript.group_id);
+      if (!transcriptsByGroup.has(key)) {
+        transcriptsByGroup.set(key, []);
+      }
+      transcriptsByGroup.get(key).push(transcript);
+    }
+
+    for (const summary of allSummaries) {
+      summariesByGroup.set(String(summary.group_id), summary);
+    }
+
+    // Bulk fetch checkbox data if needed
+    const checkboxSessionIds = sessions.filter(s => s.mode === 'checkbox').map(s => s._id);
+    let checkboxSessionsMap = new Map();
+    let checkboxCriteriaMap = new Map();
+    let checkboxProgressMap = new Map();
+
+    if (checkboxSessionIds.length > 0) {
+      const allCheckboxSessions = await db.collection("checkbox_sessions")
+        .find({ session_id: { $in: checkboxSessionIds } })
+        .toArray();
+
+      const allCheckboxCriteria = await db.collection("checkbox_criteria")
+        .find({ session_id: { $in: checkboxSessionIds } })
+        .sort({ session_id: 1, order_index: 1, created_at: 1 })
+        .toArray();
+
+      const allCheckboxProgress = await db.collection("checkbox_progress")
+        .find({ session_id: { $in: checkboxSessionIds } })
+        .toArray();
+
+      for (const cs of allCheckboxSessions) {
+        checkboxSessionsMap.set(String(cs.session_id), cs);
+      }
+
+      for (const crit of allCheckboxCriteria) {
+        const key = String(crit.session_id);
+        if (!checkboxCriteriaMap.has(key)) {
+          checkboxCriteriaMap.set(key, []);
+        }
+        checkboxCriteriaMap.get(key).push(crit);
+      }
+
+      for (const prog of allCheckboxProgress) {
+        const key = String(prog.session_id);
+        if (!checkboxProgressMap.has(key)) {
+          checkboxProgressMap.set(key, []);
+        }
+        checkboxProgressMap.get(key).push(prog);
+      }
+    }
+
     const enrichedSessions = [];
-    
+
     for (const session of sessions) {
       let sessionData = {
         ...session,
@@ -5754,61 +5729,51 @@ app.get("/api/data/sessions", async (req, res) => {
         duration: session.end_time ? session.end_time - session.start_time : null,
         modeSpecificData: null
       };
-      
-      // Get groups for this session
-      const groups = await db.collection("groups")
-        .find({ session_id: session._id })
-        .sort({ number: 1 })
-        .toArray();
-      
+
+      const groups = groupsBySession.get(String(session._id)) || [];
+
       for (const group of groups) {
-        const { segments, stats } = await getTranscriptBundle(session._id, group._id);
-        const summary = await db.collection("summaries").findOne({ group_id: group._id });
-        const latestSegment = segments.length > 0 ? segments[segments.length - 1] : null;
+        const groupKey = String(group._id);
+        const transcriptRecords = transcriptsByGroup.get(groupKey) || [];
+        const summary = summariesByGroup.get(groupKey);
+
+        // Extract segments from transcript payload
+        const segments = transcriptRecords.flatMap(record => {
+          const segs = record.payload?.segments || [];
+          return segs
+            .filter(seg => seg && !seg.is_noise)
+            .map(seg => ({
+              ...seg,
+              transcript_created_at: record.created_at // fallback timestamp
+            }));
+        });
 
         sessionData.groups.push({
           ...group,
-          transcriptCount: stats.total_segments,
-          latestTranscript: latestSegment ? {
-            ...segmentToTranscript(latestSegment),
-            created_at: latestSegment.created_at
-          } : null,
+          transcriptCount: segments.length,
+          transcripts: segments.map(segment => ({
+            text: segment.text || '',
+            created_at: segment.created_at || segment.transcript_created_at,
+            word_count: segment.word_count || 0,
+            duration_seconds: segment.duration_seconds || 0
+          })),
           summary: summary ? summary.text : null,
           summaryTimestamp: summary ? summary.updated_at : null
         });
-        
-        sessionData.totalTranscripts += stats.total_segments;
-        sessionData.totalStudents += 1; // Each group represents student participation
+
+        sessionData.totalTranscripts += segments.length;
+        sessionData.totalStudents += 1;
       }
-      
-      // Add mode-specific data
-      if (session.mode === 'mindmap') {
-        const mindmapSession = await db.collection("mindmap_sessions")
-          .findOne({ session_id: session._id });
-        const mindmapArchive = await db.collection("mindmap_archives")
-          .findOne({ session_id: session._id });
-        const mindmapTree = mindmapArchive?.mindmap_data || mindmapSession?.current_mindmap || null;
-        const computedNodeCount = mindmapArchive?.node_count ?? countMindmapNodes(mindmapTree);
-        
-        sessionData.modeSpecificData = {
-          mainTopic: mindmapSession?.main_topic || session.main_topic,
-          nodeCount: computedNodeCount,
-          chatHistory: mindmapSession?.chat_history || [],
-          mindmapData: mindmapTree
-        };
-      } else if (session.mode === 'checkbox') {
-        const checkboxSession = await db.collection("checkbox_sessions")
-          .findOne({ session_id: session._id });
-        const criteriaRows = await db.collection("checkbox_criteria")
-          .find({ session_id: session._id })
-          .sort({ order_index: 1, created_at: 1 })
-          .toArray();
+
+      // Add mode-specific data for checkbox
+      if (session.mode === 'checkbox') {
+        const sessionKey = String(session._id);
+        const checkboxSession = checkboxSessionsMap.get(sessionKey);
+        const criteriaRows = checkboxCriteriaMap.get(sessionKey) || [];
         const normalizedCriteria = normalizeCriteriaRecords(criteriaRows);
         const originalCriteriaById = new Map(criteriaRows.map((item) => [item._id, item]));
 
-        const progressDocs = await db.collection("checkbox_progress")
-          .find({ session_id: session._id })
-          .toArray();
+        const progressDocs = checkboxProgressMap.get(sessionKey) || [];
         
         const statusPriority = { grey: 0, red: 1, green: 2 };
         const progressByCriterion = new Map();
@@ -5898,7 +5863,10 @@ app.get("/api/data/sessions", async (req, res) => {
     
     // Get total count for pagination
     const totalCount = await db.collection("sessions").countDocuments(query);
-    
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ Data fetch completed in ${duration}ms (${enrichedSessions.length} sessions)`);
+
     res.json({
       success: true,
       sessions: enrichedSessions,

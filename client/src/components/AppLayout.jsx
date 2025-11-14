@@ -5,8 +5,6 @@ import { useAuth } from './AuthContext.jsx';
 function getActiveMode(pathname) {
   if (pathname.startsWith('/admin')) return 'summary';
   if (pathname.startsWith('/checkbox')) return 'checkbox';
-  if (pathname.startsWith('/mindmap-playground')) return 'mindmap';
-  if (pathname.startsWith('/mindmap')) return 'mindmap';
   if (pathname.startsWith('/prompts')) return 'prompts';
   if (pathname.startsWith('/data')) return 'data';
   return '';
@@ -22,9 +20,9 @@ function AppLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-transparent">
       <Navbar active={active} showModes={showModes} showSignOut={showSignOut} />
-      <div className="flex-1">
+      <main className="flex-1 w-full overflow-x-hidden">
         <Outlet />
-      </div>
+      </main>
     </div>
   );
 }

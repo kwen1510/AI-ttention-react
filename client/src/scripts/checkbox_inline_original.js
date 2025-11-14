@@ -1,5 +1,10 @@
 // Global variables
-        let socket = io(); // Initialize socket.io
+        // Use window.socket to avoid "already declared" errors when switching tabs
+        if (window.socket) {
+            try { window.socket.disconnect(); } catch (e) {}
+        }
+        window.socket = io();
+        const socket = window.socket;
         let sessionCode = null;
         let isRecording = false;
         let groups = new Map();
@@ -9,10 +14,10 @@
 let criteriaSavedOnce = false; // Track if criteria were saved at least once
 let elapsedInterval = null;
 let recordingStart = null;
-const checkboxQueryParams = new URLSearchParams(window.location.search);
-let scenarioFromQuery = checkboxQueryParams.get('scenario');
-let criteriaFromQuery = checkboxQueryParams.get('criteria');
-let strictnessFromQuery = checkboxQueryParams.get('strictness');
+// Query params will be read fresh each time applyCriteriaFromQuery is called
+let scenarioFromQuery = null;
+let criteriaFromQuery = null;
+let strictnessFromQuery = null;
 
 const START_HTML_IDLE = `
     <i data-lucide="play" class="w-4 h-4 sm:w-5 sm:h-5 mr-2"></i>
@@ -87,7 +92,74 @@ function updateRecordingButtons(state) {
         lucide.createIcons();
     }
 }
-        
+
+// Load a checkbox prompt into the current editor - MUST be global for onclick handlers
+window.loadCheckboxPrompt = async function(promptId) {
+    console.log('🔍 loadCheckboxPrompt called with promptId:', promptId);
+    try {
+        const response = await fetch(`/api/prompts/${promptId}/use`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionCode: sessionCode || 'web-interface' })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        const prompt = data.prompt;
+
+        // Parse the content to separate scenario and criteria
+        const lines = prompt.content.split('\n').filter(line => line.trim());
+
+        // Extract scenario from first line if formatted as "Scenario: ..."
+        let scenario = '';
+        let criteria = [];
+        if (lines.length > 0 && /^\s*scenario\s*:/i.test(lines[0])) {
+            scenario = lines[0].replace(/^\s*scenario\s*:\s*/i, '').trim();
+            criteria = lines.slice(1);
+        } else {
+            // Fallbacks
+            if (prompt.scenario && typeof prompt.scenario === 'string') {
+                scenario = prompt.scenario.trim();
+                criteria = lines;
+            } else {
+                criteria = lines; // legacy prompts: all lines are criteria
+            }
+        }
+
+        // Load into the form
+        const scenarioInput = document.getElementById('scenarioInput');
+        const criteriaInput = document.getElementById('criteriaInput');
+
+        console.log('📝 Setting input values:', {
+            scenarioInput: !!scenarioInput,
+            criteriaInput: !!criteriaInput,
+            scenario,
+            criteriaCount: criteria.length
+        });
+
+        if (scenarioInput) scenarioInput.value = scenario;
+        if (criteriaInput) criteriaInput.value = criteria.join('\n');
+
+        console.log('✅ Values set. Criteria input value:', criteriaInput?.value?.substring(0, 100));
+
+        // Manually trigger the update by clicking the "Update Criteria" button if it exists
+        const updateButton = document.querySelector('button[onclick*="updateCriteria"]');
+        if (updateButton) {
+            console.log('🔘 Found and clicking Update Criteria button');
+            updateButton.click();
+        } else {
+            console.log('⚠️ Update Criteria button not found');
+        }
+
+    } catch (err) {
+        console.error('❌ Failed to load checkbox prompt:', err);
+        alert(`Failed to load prompt: ${err.message}`);
+    }
+}
+
+console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof window.loadCheckboxPrompt);
+
         // Update strictness label and description
         function updateStrictnessLabel(value) {
             const label = document.getElementById('strictnessLabel');
@@ -115,6 +187,13 @@ function updateRecordingButtons(state) {
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
+            // Only run if we're on the checkbox dashboard (check for checkbox-specific elements)
+            const sessionCodeEl = document.getElementById('sessionCode');
+            if (!sessionCodeEl) {
+                console.log('Checkbox script: Not on checkbox dashboard, skipping initialization');
+                return;
+            }
+
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
             }
@@ -261,20 +340,46 @@ function updateRecordingButtons(state) {
         }
 
         function applyCriteriaFromQuery() {
-            if (!scenarioFromQuery && !criteriaFromQuery && !strictnessFromQuery) return;
+            // Read query params fresh each time (important for React Router client-side nav)
+            const checkboxQueryParams = new URLSearchParams(window.location.search);
+            scenarioFromQuery = checkboxQueryParams.get('scenario');
+            criteriaFromQuery = checkboxQueryParams.get('criteria');
+            strictnessFromQuery = checkboxQueryParams.get('strictness');
+
+            console.log('🔍 applyCriteriaFromQuery called with:', {
+                url: window.location.href,
+                scenarioFromQuery,
+                criteriaFromQuery: criteriaFromQuery?.substring(0, 100),
+                strictnessFromQuery
+            });
+
+            if (!scenarioFromQuery && !criteriaFromQuery && !strictnessFromQuery) {
+                console.log('⚠️ No query params to apply');
+                return;
+            }
+
             const scenarioEl = document.getElementById('scenarioInput');
             const criteriaEl = document.getElementById('criteriaInput');
             const strictnessEl = document.getElementById('strictnessSlider');
 
+            console.log('📝 Found elements:', {
+                scenarioEl: !!scenarioEl,
+                criteriaEl: !!criteriaEl,
+                strictnessEl: !!strictnessEl
+            });
+
             if (scenarioFromQuery && scenarioEl) {
                 scenarioEl.value = scenarioFromQuery;
                 currentScenario = scenarioFromQuery;
+                console.log('✅ Set scenario:', scenarioFromQuery);
             }
 
             if (criteriaFromQuery && criteriaEl) {
                 criteriaEl.value = criteriaFromQuery;
+                console.log('✅ Set criteria, calling updateCriteria()');
                 updateCriteria();
             } else if (scenarioFromQuery) {
+                console.log('✅ Only scenario, calling updateDisplay()');
                 updateDisplay();
             }
 
@@ -282,6 +387,7 @@ function updateRecordingButtons(state) {
             if (strictnessEl && Number.isFinite(strictnessVal) && strictnessVal >= 1 && strictnessVal <= 3) {
                 strictnessEl.value = strictnessVal;
                 updateStrictnessLabel(strictnessVal);
+                console.log('✅ Set strictness:', strictnessVal);
             }
 
             collapseCriteriaEditor();
@@ -290,6 +396,7 @@ function updateRecordingButtons(state) {
             scenarioFromQuery = null;
             criteriaFromQuery = null;
             strictnessFromQuery = null;
+            console.log('✅ applyCriteriaFromQuery completed');
         }
 
         // Clear criteria
@@ -702,6 +809,7 @@ function updateRecordingButtons(state) {
         let heartbeatInterval = null;
         let connectionCheckInterval = null;
         let lastHeartbeatTime = Date.now();
+        let isConnectionHealthy = null;
         function startHeartbeat() {
             // Send heartbeat every 10 seconds
             heartbeatInterval = setInterval(() => {
@@ -720,18 +828,32 @@ function updateRecordingButtons(state) {
             }, 3000);
         }
         // Minimal connection status updater for checkbox header
-        function updateConnectionStatus(connected) {
+        function updateConnectionStatus(connected, force = false) {
+            if (!force && connected === isConnectionHealthy) return;
+            isConnectionHealthy = connected;
+
             const dot = document.getElementById('connectionDot');
             const text = document.getElementById('connectionText');
-            if (!dot || !text) return;
+            const pill = document.getElementById('connectionStatus');
+
             if (connected) {
-                dot.classList.remove('bg-red-500');
-                dot.classList.add('bg-green-500');
-                text.textContent = 'Connected';
+                if (dot) dot.className = 'w-2 h-2 bg-green-500 rounded-full animate-ping-slow';
+                if (text) {
+                    text.textContent = 'Connected';
+                    text.className = 'text-xs md:text-sm font-medium text-green-700';
+                }
+                if (pill) {
+                    pill.className = 'flex items-center justify-center space-x-2 bg-green-50 px-3 py-2 rounded-full min-h-touch border border-green-200';
+                }
             } else {
-                dot.classList.remove('bg-green-500');
-                dot.classList.add('bg-red-500');
-                text.textContent = 'Disconnected';
+                if (dot) dot.className = 'w-2 h-2 bg-rose-500 rounded-full animate-pulse';
+                if (text) {
+                    text.textContent = 'Disconnected';
+                    text.className = 'text-xs md:text-sm font-medium text-rose-700';
+                }
+                if (pill) {
+                    pill.className = 'flex items-center justify-center space-x-2 bg-rose-50 px-3 py-2 rounded-full min-h-touch border border-rose-200';
+                }
             }
         }
         // Track heartbeat acks
@@ -740,6 +862,10 @@ function updateRecordingButtons(state) {
         });
         // Start heartbeats on load
         document.addEventListener('DOMContentLoaded', () => {
+            // Only run if we're on the checkbox dashboard
+            if (!document.getElementById('sessionCode')) {
+                return;
+            }
             startHeartbeat();
         });
 
@@ -827,9 +953,22 @@ function updateRecordingButtons(state) {
 
         socket.on('connect', () => {
             console.log('🔌 Checkbox admin connected');
+            lastHeartbeatTime = Date.now();
+            updateConnectionStatus(true, true);
             if (sessionCode) {
                 socket.emit('admin_join', { code: sessionCode });
             }
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.warn('🔌 Checkbox admin disconnected:', reason);
+            updateConnectionStatus(false, true);
+        });
+
+        socket.io.on('reconnect', (attempt) => {
+            console.log('🔄 Checkbox admin reconnected after', attempt, 'attempts');
+            lastHeartbeatTime = Date.now();
+            updateConnectionStatus(true, true);
         });
 
         // Recording controls (improved responsiveness)
@@ -1054,19 +1193,34 @@ function updateRecordingButtons(state) {
 
         // Initialize checkbox prompt library on page load with timeout fallback
         document.addEventListener('DOMContentLoaded', () => {
+            // Only run if we're on the checkbox dashboard
+            const libraryGrid = document.getElementById('checkboxPromptLibraryGrid');
+            if (!libraryGrid) {
+                return;
+            }
+
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 6000);
             (async () => {
                 try {
                     await loadCheckboxPromptLibrary(controller.signal);
                 } catch (e) {
-                    document.getElementById('checkboxPromptLibraryGrid').innerHTML = `
-                        <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
-                            <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
-                            Failed to load prompts: ${e.name === 'AbortError' ? 'Request timed out' : e.message}
-                            <button class="ml-3 underline" onclick="refreshCheckboxPrompts()">Retry</button>
-                        </div>`;
-                    lucide.createIcons();
+                    if (e?.name === 'AbortError') {
+                        console.debug('Checkbox prompt library request aborted.');
+                        return;
+                    }
+                    const grid = document.getElementById('checkboxPromptLibraryGrid');
+                    if (grid) {
+                        grid.innerHTML = `
+                            <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
+                                <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
+                                Failed to load prompts: ${e.message}
+                                <button class="ml-3 underline" onclick="refreshCheckboxPrompts()">Retry</button>
+                            </div>`;
+                        if (typeof lucide !== 'undefined') {
+                            lucide.createIcons();
+                        }
+                    }
                 } finally {
                     clearTimeout(timeout);
                 }
@@ -1094,33 +1248,48 @@ function updateRecordingButtons(state) {
                 displayCheckboxPromptLibrary(data.prompts);
                 
             } catch (err) {
+                if (err?.name === 'AbortError') {
+                    console.debug('Checkbox prompt library fetch aborted.');
+                    return;
+                }
                 console.error('❌ Failed to load checkbox prompt library:', err);
-                document.getElementById('checkboxPromptLibraryGrid').innerHTML = `
-                    <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
-                        <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
-                        Failed to load prompts: ${err.message}
-                        <button class="ml-3 underline" onclick="refreshCheckboxPrompts()">Retry</button>
-                    </div>
-                `;
-                lucide.createIcons();
+                const grid = document.getElementById('checkboxPromptLibraryGrid');
+                if (grid) {
+                    grid.innerHTML = `
+                        <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
+                            <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
+                            Failed to load prompts: ${err.message}
+                            <button class="ml-3 underline" onclick="refreshCheckboxPrompts()">Retry</button>
+                        </div>
+                    `;
+                    if (typeof lucide !== 'undefined') {
+                        lucide.createIcons();
+                    }
+                }
             }
         }
         
         // Refresh checkbox prompt library
         function refreshCheckboxPrompts() {
-            document.getElementById('checkboxPromptLibraryGrid').innerHTML = `
-                <div class="flex items-center justify-center py-8 text-gray-500 text-sm col-span-full">
-                    <i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>
-                    Refreshing prompts...
-                </div>
-            `;
-            lucide.createIcons();
+            const grid = document.getElementById('checkboxPromptLibraryGrid');
+            if (grid) {
+                grid.innerHTML = `
+                    <div class="flex items-center justify-center py-8 text-gray-500 text-sm col-span-full">
+                        <i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>
+                        Refreshing prompts...
+                    </div>
+                `;
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }
             loadCheckboxPromptLibrary();
         }
         
         // Update checkbox category filter options
         function updateCheckboxCategoryFilter() {
             const categoryFilter = document.getElementById('checkboxPromptCategoryFilter');
+            if (!categoryFilter) return;
             const currentValue = categoryFilter.value;
             
             // Clear existing options (except "All Categories")
@@ -1143,6 +1312,7 @@ function updateRecordingButtons(state) {
         // Display checkbox prompt library
         function displayCheckboxPromptLibrary(prompts) {
             const grid = document.getElementById('checkboxPromptLibraryGrid');
+            if (!grid) return;
             
             if (prompts.length === 0) {
                 grid.innerHTML = `
@@ -1162,7 +1332,7 @@ function updateRecordingButtons(state) {
                 const criteriaCount = isScenarioHeader ? Math.max(0, lines.length - 1) : lines.length;
                 
                     return `
-                    <div class="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors cursor-pointer border border-gray-200" onclick="loadCheckboxPrompt('${prompt._id}')">
+                    <div class="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors cursor-pointer border border-gray-200" onclick="console.log('📍 Div clicked'); window.loadCheckboxPrompt('${prompt._id}')">
                         <div class="flex items-start justify-between mb-2">
                             <h5 class="text-sm font-medium text-gray-900 truncate flex-1 mr-2">${prompt.title}</h5>
                             <div class="flex items-center space-x-1 flex-shrink-0">
@@ -1215,58 +1385,7 @@ function updateRecordingButtons(state) {
             displayCheckboxPromptLibrary(filteredPrompts);
         }
         
-        // Load a checkbox prompt into the current editor
-        async function loadCheckboxPrompt(promptId) {
-            try {
-                const response = await fetch(`/api/prompts/${promptId}/use`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionCode: sessionCode || 'web-interface' })
-                });
-                
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                
-                const data = await response.json();
-                const prompt = data.prompt;
-                
-                // Parse the content to separate scenario and criteria
-                const lines = prompt.content.split('\n').filter(line => line.trim());
-                
-                // Extract scenario from first line if formatted as "Scenario: ..."
-                let scenario = '';
-                let criteria = [];
-                if (lines.length > 0 && /^\s*scenario\s*:/i.test(lines[0])) {
-                    scenario = lines[0].replace(/^\s*scenario\s*:\s*/i, '').trim();
-                    criteria = lines.slice(1);
-                } else {
-                    // Fallbacks
-                    if (prompt.scenario && typeof prompt.scenario === 'string') {
-                        scenario = prompt.scenario.trim();
-                        criteria = lines;
-                    } else {
-                        criteria = lines; // legacy prompts: all lines are criteria
-                    }
-                }
-                
-                // Load into the form
-                document.getElementById('scenarioInput').value = scenario;
-                document.getElementById('criteriaInput').value = criteria.join('\n');
-                
-                if (criteria.length > 0) {
-                    updateCriteria();
-                } else {
-                    currentCriteria = [];
-                    currentScenario = scenario;
-                    updateDisplay();
-                }
-                showCriteriaFeedback(`✅ Loaded checkbox prompt: "${prompt.title}"`, 'success');
-                collapseCriteriaEditor();
-                
-            } catch (err) {
-                console.error('❌ Failed to load checkbox prompt:', err);
-                showCriteriaFeedback(`❌ Failed to load prompt: ${err.message}`, 'error');
-            }
-        }
+        // Load checkbox prompt function has been moved to the top of the file for global availability
         
         // Open create checkbox prompt modal
         function openCreateCheckboxPromptModal() {
@@ -1294,7 +1413,29 @@ function updateRecordingButtons(state) {
         function closeCreateCheckboxPromptModal() {
             document.getElementById('createCheckboxPromptModal').classList.add('hidden');
         }
-        
+
+        // QR modal helpers
+        window.openQrModal = function openQrModal() {
+            const codeEl = document.getElementById('sessionCode');
+            const code = (codeEl?.textContent || '').trim();
+            if (!code) return;
+            const url = `${window.location.origin}/student?code=${encodeURIComponent(code)}`;
+            const container = document.getElementById('qrCodeContainer');
+            const linkEl = document.getElementById('qrLink');
+            if (container) {
+                container.innerHTML = '';
+                try { new QRCode(container, { text: url, width: 220, height: 220 }); } catch (_) {}
+            }
+            if (linkEl) linkEl.textContent = url;
+            const modal = document.getElementById('qrModal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        window.closeQrModal = function closeQrModal() {
+            const modal = document.getElementById('qrModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
         // Edit checkbox prompt
         async function editCheckboxPrompt(promptId) {
             try {
@@ -1408,19 +1549,23 @@ function updateRecordingButtons(state) {
             }
         }
         
-        // Close modal on outside click
-        document.getElementById('createCheckboxPromptModal').addEventListener('click', (e) => {
-            if (e.target.id === 'createCheckboxPromptModal') {
-                closeCreateCheckboxPromptModal();
-            }
-        });
-        
-        // ESC key to close checkbox prompt modal
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !document.getElementById('createCheckboxPromptModal').classList.contains('hidden')) {
-                closeCreateCheckboxPromptModal();
-            }
-        });
+        // Close modal on outside click (if modal exists)
+        const checkboxPromptModal = document.getElementById('createCheckboxPromptModal');
+        if (checkboxPromptModal) {
+            checkboxPromptModal.addEventListener('click', (e) => {
+                if (e.target.id === 'createCheckboxPromptModal') {
+                    closeCreateCheckboxPromptModal();
+                }
+            });
+
+            // ESC key to close checkbox prompt modal
+            document.addEventListener('keydown', (e) => {
+                const modal = document.getElementById('createCheckboxPromptModal');
+                if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+                    closeCreateCheckboxPromptModal();
+                }
+            });
+        }
 
         // Default checkbox criteria - empty, will be populated by teacher input
         const defaultCriteria = [];
@@ -1633,4 +1778,17 @@ function updateRecordingButtons(state) {
             updateRecordingButtons(false);
             intervalInput.disabled = false;
             isRecording = false;
+        });
+
+        // Expose all necessary functions to window for onclick handlers
+        window.toggleCriteriaEditor = toggleCriteriaEditor;
+        window.addCriterion = addCriterion;
+        window.removeCriterion = removeCriterion;
+        window.saveCriteria = saveCriteria;
+        window.toggleFormatHelp = toggleFormatHelp;
+
+        console.log('✅ Checkbox functions exposed to window:', {
+            toggleCriteriaEditor: typeof window.toggleCriteriaEditor,
+            addCriterion: typeof window.addCriterion,
+            saveCriteria: typeof window.saveCriteria
         });

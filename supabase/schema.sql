@@ -12,7 +12,6 @@ create table if not exists public.sessions (
   interval_ms integer not null default 30000,
   active boolean not null default false,
   main_topic text,
-  mindmap_data jsonb,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz,
@@ -88,37 +87,6 @@ create table if not exists public.summaries (
 );
 create unique index if not exists summaries_group_unique on public.summaries(group_id);
 
-create table if not exists public.mindmap_sessions (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null unique references public.sessions(id) on delete cascade,
-  main_topic text not null,
-  current_mindmap jsonb,
-  chat_history jsonb not null default '[]'::jsonb,
-  final_metadata jsonb,
-  created_at timestamptz not null default now(),
-  archived_at timestamptz
-);
-
-create table if not exists public.mindmap_archives (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.sessions(id) on delete cascade,
-  session_code text not null,
-  main_topic text not null,
-  start_time timestamptz,
-  end_time timestamptz,
-  duration_seconds integer,
-  duration_formatted text,
-  node_count integer,
-  speech_inputs integer,
-  mindmap_data jsonb not null,
-  chat_history jsonb not null default '[]'::jsonb,
-  version text,
-  saved_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
-);
-create index if not exists mindmap_archives_session_idx on public.mindmap_archives(session_id, saved_at desc);
-create index if not exists mindmap_archives_code_idx on public.mindmap_archives(session_code);
-
 create table if not exists public.checkbox_sessions (
   session_id uuid primary key references public.sessions(id) on delete cascade,
   scenario text,
@@ -182,14 +150,6 @@ create index if not exists teacher_prompts_created_idx on public.teacher_prompts
 create index if not exists teacher_prompts_usage_idx on public.teacher_prompts(usage_count desc);
 create index if not exists teacher_prompts_tags_idx on public.teacher_prompts using gin(tags);
 
-create table if not exists public.mindmap_nodes (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references public.sessions(id) on delete cascade,
-  node_data jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-create index if not exists mindmap_nodes_session_idx on public.mindmap_nodes(session_id, created_at);
-
 create table if not exists public.checkbox_results (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references public.sessions(id) on delete cascade,
@@ -207,9 +167,6 @@ alter table public.session_prompts enable row level security;
 alter table public.session_logs enable row level security;
 alter table public.transcripts enable row level security;
 alter table public.summaries enable row level security;
-alter table public.mindmap_sessions enable row level security;
-alter table public.mindmap_archives enable row level security;
-alter table public.mindmap_nodes enable row level security;
 alter table public.checkbox_sessions enable row level security;
 alter table public.checkbox_criteria enable row level security;
 alter table public.checkbox_progress enable row level security;
@@ -393,81 +350,6 @@ begin
         exists (
           select 1 from public.sessions s
           where s.id = summaries.session_id
-            and s.owner_id = auth.uid()
-        )
-      );
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'mindmap_sessions' and policyname = 'mindmap_sessions_owner'
-  ) then
-    create policy "mindmap_sessions_owner"
-      on public.mindmap_sessions
-      for all
-      using (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_sessions.session_id
-            and s.owner_id = auth.uid()
-        )
-      )
-      with check (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_sessions.session_id
-            and s.owner_id = auth.uid()
-        )
-      );
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'mindmap_archives' and policyname = 'mindmap_archives_owner'
-  ) then
-    create policy "mindmap_archives_owner"
-      on public.mindmap_archives
-      for all
-      using (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_archives.session_id
-            and s.owner_id = auth.uid()
-        )
-      )
-      with check (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_archives.session_id
-            and s.owner_id = auth.uid()
-        )
-      );
-  end if;
-end $$;
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_policies where schemaname = 'public' and tablename = 'mindmap_nodes' and policyname = 'mindmap_nodes_owner'
-  ) then
-    create policy "mindmap_nodes_owner"
-      on public.mindmap_nodes
-      for all
-      using (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_nodes.session_id
-            and s.owner_id = auth.uid()
-        )
-      )
-      with check (
-        exists (
-          select 1 from public.sessions s
-          where s.id = mindmap_nodes.session_id
             and s.owner_id = auth.uid()
         )
       );

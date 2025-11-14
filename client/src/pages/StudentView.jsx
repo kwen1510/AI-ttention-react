@@ -1,55 +1,49 @@
-import { useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
-import { createIcons, icons } from 'lucide';
-import { studentBodyMarkup } from '../templates/studentBody.js';
-import studentScriptSource from '../scripts/student_inline_original.js?raw';
+import { useEffect } from "react";
+import { io } from "socket.io-client";
+import { createIcons, icons } from "lucide";
+import StudentViewLayout from "../features/student/StudentViewLayout.jsx";
+import studentScriptSource from "../scripts/student_inline_original.js?raw";
 
 function StudentView() {
-  const containerRef = useRef(null);
-
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return undefined;
-
-    container.innerHTML = studentBodyMarkup;
-
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       window.io = window.io || io;
       // Wrap createIcons to automatically pass icons parameter
       window.lucide = window.lucide || {
         createIcons: (options) => createIcons({ icons, ...options }),
-        icons
+        icons,
       };
     }
 
-    const enhancedScript = `${studentScriptSource}\nif (typeof window !== 'undefined') { window.__studentCleanup = () => { try { socket?.disconnect?.(); } catch (err) { console.warn('Student socket cleanup failed', err); } }; }\nif (typeof document !== 'undefined') { setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 0); }`;
+    const enhancedScript = `(function(){\n${studentScriptSource}\nif (typeof window !== 'undefined') { window.__studentCleanup = () => { try { socket?.disconnect?.(); } catch (err) { console.warn('Student socket cleanup failed', err); } }; }\nif (typeof document !== 'undefined') { setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 0); }\n})();`;
 
-    const script = document.createElement('script');
-    script.type = 'text/javascript';
+    const script = document.createElement("script");
+    script.type = "text/javascript";
     script.text = enhancedScript;
     document.body.appendChild(script);
 
     const cleanup = () => {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== "undefined") {
         try {
           window.__studentCleanup?.();
         } catch (err) {
-          console.warn('Student cleanup failed', err);
+          console.warn("Student cleanup failed", err);
         }
         window.__studentCleanup = undefined;
       }
       if (script.parentNode) {
         script.parentNode.removeChild(script);
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
     };
 
     return cleanup;
   }, []);
 
-  return <div ref={containerRef} className="student-page-wrapper" />;
+  return (
+    <div className="student-page-wrapper">
+      <StudentViewLayout />
+    </div>
+  );
 }
 
 export default StudentView;

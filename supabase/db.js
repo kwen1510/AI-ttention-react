@@ -32,7 +32,7 @@ const COLLECTION_META = {
   mindmap_sessions: {
     primaryKey: 'id',
     upsertOn: 'session_id',
-    timestampFields: ['created_at', 'archived_at']
+    timestampFields: ['created_at', 'updated_at', 'archived_at']
   },
   mindmap_archives: {
     primaryKey: 'id',

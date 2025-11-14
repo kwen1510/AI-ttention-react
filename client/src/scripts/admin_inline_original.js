@@ -1,4 +1,9 @@
-const socket = io();
+// Use window.socket to avoid "already declared" errors when switching tabs
+if (window.socket) {
+    try { window.socket.disconnect(); } catch (e) {}
+}
+window.socket = io();
+const socket = window.socket;
     let sessionCode = null;
     const groups = new Map();
     let elapsedInterval = null;
@@ -66,11 +71,45 @@ function resetUI(preserveGroups = false) {
     }
     updateRecordingButtons(false);
 }
+
+// Load a prompt into the current editor - MUST be global for onclick handlers
+window.loadPrompt = async function(promptId) {
+    try {
+        const response = await fetch(`/api/prompts/${promptId}/use`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionCode: sessionCode || 'web-interface' })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        const promptText = document.getElementById('promptText');
+        if (promptText) {
+            promptText.value = data.prompt.content;
+        }
+
+        if (window.showPromptFeedback) {
+            window.showPromptFeedback(`✅ Loaded prompt: "${data.prompt.title}"`, 'success');
+        }
+
+    } catch (err) {
+        console.error('❌ Failed to load prompt:', err);
+        if (window.showPromptFeedback) {
+            window.showPromptFeedback(`❌ Failed to load prompt: ${err.message}`, 'error');
+        }
+    }
+}
     
     // Error handling
     function showErrorToast(message) {
         const errorToast = document.getElementById('errorToast');
         const errorMessage = document.getElementById('errorMessage');
+        
+        if (!errorToast || !errorMessage) {
+            console.warn('Error toast elements missing, skipping toast:', message);
+            return;
+        }
         
         errorMessage.textContent = message;
         errorToast.classList.remove('hidden');
@@ -84,6 +123,7 @@ function resetUI(preserveGroups = false) {
     
     function hideErrorToast() {
         const errorToast = document.getElementById('errorToast');
+        if (!errorToast) return;
         errorToast.classList.add('hidden');
         errorToast.classList.remove('animate-slide-up');
     }
@@ -140,7 +180,10 @@ function resetUI(preserveGroups = false) {
     function updateConnectionStatus(connected) {
         const dot = document.getElementById('connectionDot');
         const text = document.getElementById('connectionText');
-        
+
+        // Guard against null elements (component may be unmounting)
+        if (!dot || !text) return;
+
         if (connected && !isConnected) {
             // Reconnected
             dot.className = 'w-2 h-2 bg-green-400 rounded-full animate-ping-slow';
@@ -456,7 +499,12 @@ function resetUI(preserveGroups = false) {
         }
     }
 
-    document.addEventListener('DOMContentLoaded', loadPromptLibrary);
+    document.addEventListener('DOMContentLoaded', () => {
+        // Only load prompt library if we're on admin dashboard
+        if (document.getElementById('promptLibraryGrid')) {
+            loadPromptLibrary();
+        }
+    });
     
     function showTemporaryMessage(message, type) {
         // Create a temporary notification
@@ -901,10 +949,20 @@ function resetUI(preserveGroups = false) {
     
     // Initialize prompt library on page load
     document.addEventListener('DOMContentLoaded', () => {
+        // Only run if we're actually on the admin dashboard (check for admin-specific elements)
+        const promptLibraryGrid = document.getElementById('promptLibraryGrid');
+        if (!promptLibraryGrid) {
+            console.log('Admin script: Not on admin dashboard, skipping initialization');
+            return;
+        }
+
         loadPromptLibrary();
-        
-        // Add form submission handler for create prompt modal
-        document.getElementById('createPromptForm').addEventListener('submit', handleCreatePromptSubmit);
+
+        // Add form submission handler for create prompt modal (if it exists)
+        const createPromptForm = document.getElementById('createPromptForm');
+        if (createPromptForm) {
+            createPromptForm.addEventListener('submit', handleCreatePromptSubmit);
+        }
 
         // Wire up start/stop recording controls (summary mode)
         const startBtn = document.getElementById('startBtn');
@@ -991,29 +1049,35 @@ function resetUI(preserveGroups = false) {
         try {
             const response = await fetch('/api/prompts?mode=summary&limit=50');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
+
             const data = await response.json();
             currentPrompts = data.prompts;
             availableCategories = data.filters.categories;
-            
+
             updateCategoryFilter();
             displayPromptLibrary(data.prompts);
-            
+
         } catch (err) {
             console.error('❌ Failed to load prompt library:', err);
-            document.getElementById('promptLibraryGrid').innerHTML = `
-                <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
-                    <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
-                    Failed to load prompts: ${err.message}
-                </div>
-            `;
-            lucide.createIcons();
+            const grid = document.getElementById('promptLibraryGrid');
+            if (grid) {
+                grid.innerHTML = `
+                    <div class="flex items-center justify-center py-8 text-red-500 text-sm col-span-full">
+                        <i data-lucide="alert-circle" class="w-4 h-4 mr-2"></i>
+                        Failed to load prompts: ${err.message}
+                    </div>
+                `;
+                lucide.createIcons();
+            }
         }
     }
     
     // Refresh prompt library
     function refreshPromptLibrary() {
-        document.getElementById('promptLibraryGrid').innerHTML = `
+        const grid = document.getElementById('promptLibraryGrid');
+        if (!grid) return; // Guard against null element
+
+        grid.innerHTML = `
             <div class="flex items-center justify-center py-8 text-gray-500 text-sm col-span-full">
                 <i data-lucide="loader" class="w-4 h-4 mr-2 animate-spin"></i>
                 Refreshing prompts...
@@ -1026,8 +1090,10 @@ function resetUI(preserveGroups = false) {
     // Update category filter options
     function updateCategoryFilter() {
         const categoryFilter = document.getElementById('promptCategoryFilter');
+        if (!categoryFilter) return; // Guard against null element
+
         const currentValue = categoryFilter.value;
-        
+
         // Clear existing options (except "All Categories")
         while (categoryFilter.children.length > 1) {
             categoryFilter.removeChild(categoryFilter.lastChild);
@@ -1113,27 +1179,7 @@ function resetUI(preserveGroups = false) {
         displayPromptLibrary(filteredPrompts);
     }
     
-    // Load a prompt into the current editor
-    async function loadPrompt(promptId) {
-        try {
-            const response = await fetch(`/api/prompts/${promptId}/use`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionCode: sessionCode || 'web-interface' })
-            });
-            
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
-            const data = await response.json();
-            document.getElementById('promptText').value = data.prompt.content;
-            
-            showPromptFeedback(`✅ Loaded prompt: "${data.prompt.title}"`, 'success');
-            
-        } catch (err) {
-            console.error('❌ Failed to load prompt:', err);
-            showPromptFeedback(`❌ Failed to load prompt: ${err.message}`, 'error');
-        }
-    }
+    // Load prompt function has been moved to the top of the file for global availability
     
     // Open create prompt modal
     function openCreatePromptModal() {
@@ -1273,26 +1319,30 @@ function resetUI(preserveGroups = false) {
         }, 5000);
     }
     
-    // Close modal on outside click
-    document.getElementById('createPromptModal').addEventListener('click', (e) => {
-        if (e.target.id === 'createPromptModal') {
-            closeCreatePromptModal();
-        }
-    });
-    
-    // ESC key to close modal
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !document.getElementById('createPromptModal').classList.contains('hidden')) {
-            closeCreatePromptModal();
-        }
-    });
+    // Close modal on outside click (if modal exists)
+    const createPromptModal = document.getElementById('createPromptModal');
+    if (createPromptModal) {
+        createPromptModal.addEventListener('click', (e) => {
+            if (e.target.id === 'createPromptModal') {
+                closeCreatePromptModal();
+            }
+        });
+
+        // ESC key to close modal
+        document.addEventListener('keydown', (e) => {
+            const modal = document.getElementById('createPromptModal');
+            if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
+                closeCreatePromptModal();
+            }
+        });
+    }
 
     // QR modal helpers
-    function openQrModal() {
+    window.openQrModal = function openQrModal() {
         const codeEl = document.getElementById('sessionCode');
         const code = (codeEl?.textContent || '').trim();
         if (!code) return;
-        const url = `${window.location.origin}/student.html?code=${encodeURIComponent(code)}`;
+        const url = `${window.location.origin}/student?code=${encodeURIComponent(code)}`;
         const container = document.getElementById('qrCodeContainer');
         const linkEl = document.getElementById('qrLink');
         if (container) {
@@ -1308,9 +1358,21 @@ function resetUI(preserveGroups = false) {
         try { if (window.lucide) window.lucide.createIcons(); } catch (_) {}
     }
 
-    function closeQrModal() {
+    window.closeQrModal = function closeQrModal() {
         const modal = document.getElementById('qrModal');
         if (!modal) return;
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
+
+    // Expose all necessary functions to window for onclick handlers
+    window.togglePromptEditor = togglePromptEditor;
+    window.openCreatePromptModal = openCreatePromptModal;
+    window.closeCreatePromptModal = closeCreatePromptModal;
+    window.saveCurrentPrompt = saveCurrentPrompt;
+
+    console.log('✅ Admin functions exposed to window:', {
+        togglePromptEditor: typeof window.togglePromptEditor,
+        openCreatePromptModal: typeof window.openCreatePromptModal,
+        openQrModal: typeof window.openQrModal
+    });
