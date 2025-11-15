@@ -3482,7 +3482,7 @@ async function cleanTranscriptWithOpenAI(text) {
 
 /* ---------- 3. WebSocket flow ---------- */
 io.on("connection", socket => {
-  // console.log(`🔌 New socket connection: ${socket.id}`);
+  console.log(`🔌 New socket connection: ${socket.id}`);
   let groupId, localBuf = [], sessionCode, groupNumber;
 
   // Live prompt updates from admin: keep latest prompt in memory to avoid DB reads
@@ -3584,7 +3584,7 @@ io.on("connection", socket => {
       
       // Notify admin about student joining
       socket.to(code).emit("student_joined", { group, socketId: socket.id });
-      // console.log(`[${ts()}] 📢 Notified admin about student joining group ${group}`);
+      console.log(`[${ts()}] 📢 Notified admin about student joining group ${group}`);
       
     } catch (err) {
       console.error("❌ Error joining session:", err);
@@ -3605,7 +3605,7 @@ io.on("connection", socket => {
 
   // Handle heartbeat to keep connection alive (especially for background recording)
   socket.on("heartbeat", ({ session, group }) => {
-    // console.log(`[${ts()}] 💓 Heartbeat from session ${session}, group ${group} (socket: ${socket.id})`);
+    console.log(`[${ts()}] 💓 Heartbeat from session ${session}, group ${group} (socket: ${socket.id})`);
     socket.emit("heartbeat_ack");
     // Mark group alive; if session active, also flag as recording
     const mem = activeSessions.get(session);
@@ -3632,7 +3632,7 @@ io.on("connection", socket => {
       st.lastAck = Date.now();
       mem.groups.set(parseInt(group), st);
       activeSessions.set(session, mem);
-      // console.log(`✅ recording_started ack from group ${group} (session ${session})`);
+      console.log(`✅ recording_started ack from group ${group} (session ${session})`);
     } catch (e) {
       console.warn('⚠️ recording_started handler error:', e.message);
     }
@@ -3640,7 +3640,7 @@ io.on("connection", socket => {
 
   // Handle admin heartbeat
   socket.on("admin_heartbeat", ({ sessionCode }) => {
-    // console.log(`[${ts()}] 💓 Admin heartbeat from session ${sessionCode} (socket: ${socket.id})`);
+    console.log(`[${ts()}] 💓 Admin heartbeat from session ${sessionCode} (socket: ${socket.id})`);
     socket.emit("admin_heartbeat_ack");
   });
 
@@ -3687,7 +3687,7 @@ io.on("connection", socket => {
   // Handle student disconnection
   socket.on("disconnect", () => {
     if (sessionCode && groupNumber) {
-      // console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
+      console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
 
       // Notify admin about student leaving
       socket.to(sessionCode).emit("student_left", { group: groupNumber, socketId: socket.id });
@@ -3696,7 +3696,7 @@ io.on("connection", socket => {
       const sessionState = activeSessions.get(sessionCode);
       if (sessionState && sessionState.groups) {
         sessionState.groups.delete(parseInt(groupNumber));
-        // console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
+        console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
 
         // If no groups remain and session is not active, consider cleaning up the session
         if (sessionState.groups.size === 0 && !sessionState.active && !sessionState.persisted) {
