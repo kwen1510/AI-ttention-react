@@ -4,7 +4,7 @@ services:
     env: node
     plan: starter
     region: oregon
-    buildCommand: npm install && npm run client:build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     rootDir: .
     envVars:
