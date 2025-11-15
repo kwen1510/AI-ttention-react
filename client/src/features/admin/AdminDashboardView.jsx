@@ -326,15 +326,17 @@ export default function AdminDashboardView() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => callWindowHandler("testPrompt")}
-                          className="text-xs bg-gray-200 text-black px-3 py-1 rounded hover:bg-gray-300 border border-slate-300"
+                          className="btn btn-muted text-xs px-4 py-2 flex items-center gap-2"
                         >
-                          🧪 Test
+                          <i data-lucide="flask-conical" className="w-3.5 h-3.5" />
+                          Test
                         </button>
                         <button
                           onClick={() => callWindowHandler("savePrompt")}
-                          className="text-xs bg-violet-200 text-black px-3 py-1 rounded hover:bg-violet-300 border border-violet-300"
+                          className="btn btn-accent text-xs px-4 py-2 flex items-center gap-2"
                         >
-                          💾 Apply
+                          <i data-lucide="check" className="w-3.5 h-3.5" />
+                          Apply
                         </button>
                       </div>
                     </div>
