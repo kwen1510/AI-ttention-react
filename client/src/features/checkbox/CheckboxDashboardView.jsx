@@ -3,49 +3,49 @@ import { callWindowHandler } from "@/lib/legacyHandlers.js";
 export default function CheckboxDashboardView() {
   return (
     <div>
-      {/* Recording Controls */}
-      <div className="bg-white shadow-sm border-b border-gray-200 px-4 sm:px-6 md:px-8 py-3">
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-4">
+      {/* Premium Control Bar */}
+      <div className="control-bar mx-4 sm:mx-6 md:mx-8 my-4">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-4 w-full">
             {/* Left group: Session, Connected, Interval */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3 flex-wrap">
-              {/* Session chip (click to open QR) */}
+              {/* Premium Session Code Display */}
               <button
                 onClick={() => callWindowHandler("openQrModal")}
-                className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full cursor-pointer shadow-sm border border-gray-200 min-h-touch"
+                className="session-code-display flex items-center justify-center gap-3 min-h-touch"
               >
-                <span className="text-xs sm:text-sm text-gray-700">
-                  Session:
+                <span className="text-xs sm:text-sm text-slate-600 font-medium">
+                  Session
                 </span>
                 <span
                   id="sessionCode"
-                  className="font-mono text-base sm:text-lg md:text-xl font-extrabold tracking-wider"
+                  className="session-code-text"
                 >
                   Loading...
                 </span>
               </button>
-              {/* Connected pill */}
+              {/* Premium Connection Status Pill */}
               <div
                 id="connectionStatus"
-                className="flex items-center justify-center space-x-2 bg-gray-100 px-3 py-2 rounded-full min-h-touch"
+                className="status-pill status-pill--connected min-h-touch"
               >
                 <div
                   id="connectionDot"
-                  className="w-2 h-2 bg-green-400 rounded-full animate-ping-slow"
+                  className="status-dot"
                 />
                 <span
                   id="connectionText"
-                  className="text-xs md:text-sm font-medium text-gray-700"
+                  className="text-xs md:text-sm"
                 >
                   Connected
                 </span>
               </div>
-              {/* Interval control */}
-              <div className="flex items-center justify-center gap-2 bg-gray-100 px-3 sm:px-4 py-2 rounded-lg min-h-touch">
+              {/* Premium Interval Control */}
+              <div className="interval-control min-h-touch">
                 <label
                   htmlFor="intervalInput"
-                  className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap"
+                  className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap"
                 >
-                  Interval:
+                  Interval
                 </label>
                 <input
                   type="number"
@@ -53,26 +53,25 @@ export default function CheckboxDashboardView() {
                   min={10}
                   max={120}
                   defaultValue={30}
-                  className="w-16 sm:w-20 md:w-24 px-2 py-1 text-sm border border-slate-300 rounded bg-white text-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
                 />
-                <span className="text-xs sm:text-sm text-black/80">sec</span>
+                <span className="text-xs sm:text-sm text-slate-600 font-medium">sec</span>
               </div>
             </div>
             {/* Right group: Elapsed, Start, Stop */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
-              <p className="text-gray-600 text-xs sm:text-sm text-center sm:text-left py-2 sm:py-0">
-                Elapsed:{" "}
-                <span id="timeElapsed" className="font-mono font-semibold">
+              <div className="premium-chip text-center sm:text-left py-2 sm:py-0">
+                <span className="text-xs sm:text-sm text-slate-600">Elapsed</span>
+                <span id="timeElapsed" className="text-sm sm:text-base font-mono font-bold text-slate-900 ml-2">
                   0:00
                 </span>
-              </p>
+              </div>
               <button
                 id="startBtn"
-                className="bg-green-500 hover:bg-green-600 text-white px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 shadow flex items-center justify-center text-xs sm:text-sm md:text-base min-h-touch border border-green-600"
+                className="btn btn-start flex items-center justify-center text-sm sm:text-base min-h-touch"
               >
                 <i
                   data-lucide="play"
-                  className="w-4 h-4 md:w-5 md:h-5 mr-1 sm:mr-2"
+                  className="w-4 h-4 md:w-5 md:h-5 mr-2"
                 />
                 <span className="hidden md:inline">Start Recording</span>
                 <span className="md:hidden">Start</span>
@@ -80,11 +79,11 @@ export default function CheckboxDashboardView() {
               <button
                 id="stopBtn"
                 disabled
-                className="bg-gray-300 hover:bg-gray-400 text-black px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 rounded-lg font-semibold transition-all duration-200 shadow flex items-center justify-center text-xs sm:text-sm md:text-base min-h-touch border border-slate-300 cursor-not-allowed"
+                className="btn btn-stop flex items-center justify-center text-sm sm:text-base min-h-touch opacity-50 cursor-not-allowed"
               >
                 <i
                   data-lucide="square"
-                  className="w-4 h-4 md:w-5 md:h-5 mr-1 sm:mr-2"
+                  className="w-4 h-4 md:w-5 md:h-5 mr-2"
                 />
                 <span className="hidden md:inline">Stop Recording</span>
                 <span className="md:hidden">Stop</span>
@@ -92,56 +91,67 @@ export default function CheckboxDashboardView() {
             </div>
           </div>
       </div>
-      {/* QR Modal */}
+      {/* Premium QR Modal */}
       <div
         id="qrModal"
-        className="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4"
+        className="qr-modal-backdrop hidden"
         onClick={(event) => callWindowHandler("closeQrModal", event)}
       >
         <div
-          className="bg-white rounded-xl shadow-2xl max-w-md w-full p-4 sm:p-6 md:p-8 max-h-[90vh] overflow-y-auto"
+          className="qr-modal-content max-w-md w-full max-h-[90vh] overflow-y-auto"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl md:text-2xl font-bold gradient-text">
               Join This Session
             </h3>
             <button
               onClick={() => callWindowHandler("closeQrModal")}
-              className="text-gray-400 hover:text-gray-600 min-w-touch min-h-touch flex items-center justify-center"
+              className="text-slate-400 hover:text-slate-600 transition-colors min-w-touch min-h-touch flex items-center justify-center"
             >
-              <i data-lucide="x" className="w-5 h-5" />
+              <i data-lucide="x" className="w-6 h-6" />
             </button>
           </div>
-          <p className="text-xs sm:text-sm text-gray-600 mb-3">
-            Scan the QR code or visit the link below:
+          <p className="text-sm text-slate-600 mb-6">
+            Scan the QR code below or visit the link to join:
           </p>
-          <div
-            id="qrCodeContainer"
-            className="flex items-center justify-center p-4 border border-gray-200 rounded-lg mb-4"
-          />
-          <div
-            className="bg-gray-50 border border-gray-200 rounded-lg p-3 font-mono text-xs sm:text-sm break-all"
+          <div className="qr-code-container mb-6">
+            <div
+              id="qrCodeContainer"
+              className="flex items-center justify-center"
+            />
+          </div>
+          <button
+            onClick={() => callWindowHandler("copyQrLink")}
+            className="glass-panel p-4 font-mono text-sm break-all text-slate-700 w-full text-left hover:bg-white/60 transition-all cursor-pointer group relative"
             id="qrLink"
           >
-            -
-          </div>
+            <span id="qrLinkText">-</span>
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br from-cyan-500/10 to-blue-500/10 backdrop-blur-sm rounded-lg pointer-events-none">
+              <span className="text-xs font-semibold text-slate-700 bg-white/80 px-3 py-1 rounded-full shadow-sm">
+                Click to copy
+              </span>
+            </div>
+          </button>
+          <p id="copyFeedback" className="text-xs text-center text-emerald-600 font-semibold mt-2 hidden">
+            ✓ Copied to clipboard!
+          </p>
         </div>
       </div>
       {/* Main Content */}
       <main className="page-shell page-shell--fluid stack">
-        {/* Criteria Setup Section (Collapsible) */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 mb-8">
+        {/* Premium Criteria Setup Section (Collapsible) */}
+        <div className="glass-panel mb-8 overflow-hidden">
           <button
             id="criteriaToggle"
             onClick={() => callWindowHandler("toggleCriteriaEditor")}
-            className="w-full px-6 py-4 text-left hover:bg-gray-50 transition-colors duration-200"
+            className="w-full px-6 py-4 text-left hover:bg-white/40 transition-all duration-300"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-emerald-400/20 to-teal-500/20 backdrop-blur-sm border border-emerald-300/30">
                   <svg
-                    className="w-5 h-5 text-green-600"
+                    className="w-5 h-5 text-emerald-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -155,17 +165,17 @@ export default function CheckboxDashboardView() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold gradient-text">
                     Discussion Criteria Setup
                   </h3>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-slate-600">
                     Set up your discussion question and criteria checklist
                   </p>
                 </div>
               </div>
               <svg
                 id="criteriaChevron"
-                className="w-5 h-5 text-gray-400 transition-transform duration-200"
+                className="w-5 h-5 text-slate-400 transition-transform duration-300"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -179,21 +189,21 @@ export default function CheckboxDashboardView() {
               </svg>
             </div>
           </button>
-          <div id="criteriaEditor" className="hidden border-t border-gray-200">
+          <div id="criteriaEditor" className="hidden border-t border-white/20">
             <div className="p-6">
               <div className="space-y-6">
                 {/* Scenario/Question Section */}
                 <div>
                   <label
                     htmlFor="scenarioInput"
-                    className="block text-sm font-medium text-gray-700 mb-2"
+                    className="block text-sm font-semibold text-slate-700 mb-2"
                   >
                     Discussion Question/Scenario
                   </label>
                   <textarea
                     id="scenarioInput"
                     rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
+                    className="premium-input w-full px-4 py-3 rounded-lg resize-vertical"
                     placeholder="Enter the discussion question or scenario context..."
                     defaultValue={""}
                   />
@@ -202,12 +212,12 @@ export default function CheckboxDashboardView() {
                 <div>
                   <label
                     htmlFor="criteriaInput"
-                    className="block text-sm font-medium text-gray-700 mb-2"
+                    className="block text-sm font-semibold text-slate-700 mb-2"
                   >
                     Criteria Checklist (one per line)
                   </label>
                   {/* Format Instructions */}
-                  <div className="mb-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="mb-3 p-4 bg-gradient-to-br from-blue-50/60 to-indigo-50/60 backdrop-blur-sm border border-blue-200/50 rounded-lg">
                     <h5 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
                       <i data-lucide="info" className="w-4 h-4 mr-2" />
                       📝 Criteria Format Guide
@@ -295,7 +305,7 @@ export default function CheckboxDashboardView() {
                   <textarea
                     id="criteriaInput"
                     rows={8}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    className="premium-input w-full p-3 rounded-lg resize-none"
                     placeholder="Students explain that back titration is used (CaCO3 is not soluble in water and cannot be titrated directly)
 Students identify that CaCO3 reacts with known volume of excess HCl (the volume of HCl used must be calculated to ensure that the titre volume is between 20 to 25 cm3)
 Students identify the need to weigh by difference (there will be some CaCO3 left, so the weighing bottle must be reweighed)
@@ -324,19 +334,19 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                 </div>
                 {/* Evaluation Strictness Slider */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
                     Evaluation Strictness
                   </label>
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="glass-panel p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs text-gray-500">Lenient</span>
+                      <span className="text-xs text-slate-500 font-medium">Lenient</span>
                       <span
                         id="strictnessLabel"
-                        className="text-sm font-medium text-blue-600"
+                        className="text-sm font-semibold gradient-text"
                       >
                         Moderate
                       </span>
-                      <span className="text-xs text-gray-500">Strict</span>
+                      <span className="text-xs text-slate-500 font-medium">Strict</span>
                     </div>
                     <input
                       type="range"
@@ -344,7 +354,7 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                       min={1}
                       max={3}
                       defaultValue={2}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                      className="w-full h-2 bg-slate-200/50 rounded-lg appearance-none cursor-pointer slider"
                       onInput={(event) =>
                         callWindowHandler(
                           "updateStrictnessLabel",
@@ -353,24 +363,24 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                       }
                     />
                     <div
-                      className="mt-3 text-xs text-gray-600"
+                      className="mt-3 text-xs text-slate-600"
                       id="strictnessDescription"
                     >
-                      <strong>Moderate:</strong> Balanced evaluation requiring
+                      <strong className="text-slate-700">Moderate:</strong> Balanced evaluation requiring
                       both concept and key details
                     </div>
                   </div>
                   <style
                     dangerouslySetInnerHTML={{
                       __html:
-                        "\n                                .slider::-webkit-slider-thumb {\n                                    appearance: none;\n                                    width: 20px;\n                                    height: 20px;\n                                    background: #3B82F6;\n                                    cursor: pointer;\n                                    border-radius: 50%;\n                                }\n                                .slider::-moz-range-thumb {\n                                    width: 20px;\n                                    height: 20px;\n                                    background: #3B82F6;\n                                    cursor: pointer;\n                                    border-radius: 50%;\n                                    border: none;\n                                }\n                            ",
+                        "\n                                .slider::-webkit-slider-thumb {\n                                    appearance: none;\n                                    width: 20px;\n                                    height: 20px;\n                                    background: linear-gradient(135deg, #06b6d4, #3b82f6);\n                                    cursor: pointer;\n                                    border-radius: 50%;\n                                    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);\n                                }\n                                .slider::-moz-range-thumb {\n                                    width: 20px;\n                                    height: 20px;\n                                    background: linear-gradient(135deg, #06b6d4, #3b82f6);\n                                    cursor: pointer;\n                                    border-radius: 50%;\n                                    border: none;\n                                    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);\n                                }\n                            ",
                     }}
                   />
                 </div>
                 {/* Prompt Library Section */}
-                <div className="border-t border-gray-200 pt-6">
+                <div className="border-t border-white/20 pt-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-sm font-semibold text-gray-700">
+                    <h4 className="text-sm font-semibold gradient-text">
                       Checkbox Prompt Library
                     </h4>
                     <div className="flex gap-2">
@@ -378,7 +388,7 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                         onClick={() =>
                           callWindowHandler("refreshCheckboxPrompts")
                         }
-                        className="text-xs text-gray-500 hover:text-gray-700 flex items-center"
+                        className="text-xs text-slate-500 hover:text-slate-700 flex items-center transition-colors font-medium"
                       >
                         <i data-lucide="refresh-cw" className="w-3 h-3 mr-1" />
                         Refresh
@@ -399,13 +409,13 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                     <div className="flex-1 relative">
                       <i
                         data-lucide="search"
-                        className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400"
+                        className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-slate-400"
                       />
                       <input
                         id="checkboxPromptSearch"
                         type="text"
                         placeholder="Search checkbox prompts..."
-                        className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        className="premium-input w-full pl-8 pr-3 py-2 text-sm"
                         onKeyUp={() =>
                           callWindowHandler("filterCheckboxPrompts")
                         }
@@ -413,7 +423,7 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                     </div>
                     <select
                       id="checkboxPromptCategoryFilter"
-                      className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="premium-input px-3 py-2 text-sm"
                       onChange={() =>
                         callWindowHandler("filterCheckboxPrompts")
                       }
@@ -426,7 +436,7 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                     id="checkboxPromptLibraryGrid"
                     className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto"
                   >
-                    <div className="flex items-center justify-center py-8 text-gray-500 text-sm col-span-full">
+                    <div className="flex items-center justify-center py-8 text-slate-500 text-sm col-span-full">
                       <i
                         data-lucide="loader"
                         className="w-4 h-4 mr-2 animate-spin"
@@ -435,21 +445,23 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between pt-2">
                   <div className="flex items-center space-x-4">
                     <button
                       onClick={() => callWindowHandler("clearCriteria")}
-                      className="text-gray-600 hover:text-gray-800 text-sm font-medium transition-colors"
+                      className="text-slate-600 hover:text-slate-800 text-sm font-medium transition-colors flex items-center gap-2"
                     >
-                      🗑️ Clear All
+                      <i data-lucide="trash-2" className="w-4 h-4" />
+                      Clear All
                     </button>
                   </div>
                   <div className="flex space-x-3">
                     <button
                       onClick={() => callWindowHandler("saveCriteria")}
-                      className="btn btn-accent glow px-4 py-2"
+                      className="btn btn-accent glow px-6 py-2.5 text-sm font-semibold"
                     >
-                      💾 Save &amp; Apply
+                      <i data-lucide="save" className="w-4 h-4 mr-2" />
+                      Save &amp; Apply
                     </button>
                   </div>
                 </div>
@@ -460,18 +472,18 @@ Students recognise to stop titration after 2 consistent results (consistent to 0
             </div>
           </div>
         </div>
-        {/* Empty State */}
+        {/* Premium Empty State */}
         <div id="emptyState" className="text-center py-16">
-          <div className="w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-200 bg-white/90">
+          <div className="w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6 bg-gradient-to-br from-cyan-400/20 to-blue-500/20 backdrop-blur-sm border-2 border-white/40 shadow-lg">
             <i
               data-lucide="graduation-cap"
-              className="w-10 h-10 text-slate-600"
+              className="w-10 h-10 text-cyan-600"
             />
           </div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+          <h3 className="text-xl font-semibold gradient-text mb-2">
             Waiting for Students
           </h3>
-          <p className="text-gray-600 max-w-md mx-auto">
+          <p className="text-slate-600 max-w-md mx-auto">
             Student groups will appear here when they join your session. Set up
             your criteria above and start recording to begin.
           </p>

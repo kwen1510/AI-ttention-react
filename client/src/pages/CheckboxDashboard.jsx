@@ -23,17 +23,17 @@ function CheckboxDashboard() {
 
     // Delay script execution to ensure AuthContext has set up fetch wrapper with session
     timeoutId = setTimeout(() => {
-      console.log("💉 CheckboxDashboard injecting script");
+      // console.log("💉 CheckboxDashboard injecting script");
       // Clean up any existing dashboard scripts first
       const existingScripts = document.querySelectorAll(
         "script[data-dashboard]",
       );
-      console.log("🗑️ Removing", existingScripts.length, "existing scripts");
+      // console.log("🗑️ Removing", existingScripts.length, "existing scripts");
       existingScripts.forEach((s) => s.parentNode?.removeChild(s));
 
       // Run cleanup functions from other dashboards
       if (window.__adminCleanup) {
-        console.log("🧹 Running admin cleanup from checkbox");
+        // console.log("🧹 Running admin cleanup from checkbox");
         try {
           window.__adminCleanup();
         } catch (err) {
@@ -56,7 +56,7 @@ function CheckboxDashboard() {
     }, 100); // 100ms delay to let AuthContext fetch wrapper initialize
 
     const cleanup = () => {
-      console.log("🧹 CheckboxDashboard cleanup called");
+      // console.log("🧹 CheckboxDashboard cleanup called");
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;

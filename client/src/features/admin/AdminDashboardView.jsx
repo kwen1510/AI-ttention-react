@@ -45,49 +45,49 @@ export default function AdminDashboardView() {
           </div>
         </div>
       </div>
-      {/* Row 2: Tool-specific controls for Summary mode */}
-      <div className="bg-white shadow-sm border-b border-gray-200 px-4 sm:px-6 md:px-8 py-3">
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-4">
+      {/* Row 2: Premium Control Bar */}
+      <div className="control-bar mx-4 sm:mx-6 md:mx-8 my-4">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-4 w-full">
             {/* Left group: Session, Connected, Interval */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3 flex-wrap">
-              {/* Session chip (click to open QR) */}
+              {/* Premium Session Code Display */}
               <button
                 onClick={() => callWindowHandler("openQrModal")}
-                className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-full cursor-pointer shadow-sm border border-gray-200 min-h-touch"
+                className="session-code-display flex items-center justify-center gap-3 min-h-touch"
               >
-                <span className="text-xs sm:text-sm text-gray-700">
-                  Session:
+                <span className="text-xs sm:text-sm text-slate-600 font-medium">
+                  Session
                 </span>
                 <span
                   id="sessionCode"
-                  className="font-mono text-base sm:text-lg md:text-xl font-extrabold tracking-wider"
+                  className="session-code-text"
                 >
                   -
                 </span>
               </button>
-              {/* Connected pill */}
+              {/* Premium Connection Status Pill */}
               <div
                 id="connectionStatus"
-                className="flex items-center justify-center space-x-2 bg-gray-100 px-3 py-2 rounded-full min-h-touch"
+                className="status-pill status-pill--connected min-h-touch"
               >
                 <div
                   id="connectionDot"
-                  className="w-2 h-2 bg-green-400 rounded-full animate-ping-slow"
+                  className="status-dot"
                 />
                 <span
                   id="connectionText"
-                  className="text-xs md:text-sm font-medium text-gray-700"
+                  className="text-xs md:text-sm"
                 >
                   Connected
                 </span>
               </div>
-              {/* Interval control */}
-              <div className="flex items-center justify-center gap-2 bg-gray-100 px-3 sm:px-4 py-2 rounded-lg min-h-touch">
+              {/* Premium Interval Control */}
+              <div className="interval-control min-h-touch">
                 <label
                   htmlFor="intervalInput"
-                  className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap"
+                  className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap"
                 >
-                  Interval:
+                  Interval
                 </label>
                 <input
                   type="number"
@@ -95,26 +95,25 @@ export default function AdminDashboardView() {
                   min={10}
                   max={120}
                   defaultValue={30}
-                  className="w-16 sm:w-20 md:w-24 px-2 py-1 text-sm border border-slate-300 rounded bg-white text-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300"
                 />
-                <span className="text-xs sm:text-sm text-black/80">sec</span>
+                <span className="text-xs sm:text-sm text-slate-600 font-medium">sec</span>
               </div>
             </div>
             {/* Right group: Elapsed, Start, Stop */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
-              <p className="text-gray-600 text-xs sm:text-sm text-center sm:text-left py-2 sm:py-0">
-                Elapsed:{" "}
-                <span id="timeElapsed" className="font-mono font-semibold">
+              <div className="premium-chip text-center sm:text-left py-2 sm:py-0">
+                <span className="text-xs sm:text-sm text-slate-600">Elapsed</span>
+                <span id="timeElapsed" className="text-sm sm:text-base font-mono font-bold text-slate-900 ml-2">
                   0:00
                 </span>
-              </p>
+              </div>
               <button
                 id="startBtn"
-                className="bg-green-500 hover:bg-green-600 text-white px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 shadow flex items-center justify-center text-xs sm:text-sm md:text-base min-h-touch border border-green-600"
+                className="btn btn-start flex items-center justify-center text-sm sm:text-base min-h-touch"
               >
                 <i
                   data-lucide="play"
-                  className="w-4 h-4 md:w-5 md:h-5 mr-1 sm:mr-2"
+                  className="w-4 h-4 md:w-5 md:h-5 mr-2"
                 />
                 <span className="hidden md:inline">Start Recording</span>
                 <span className="md:hidden">Start</span>
@@ -122,11 +121,11 @@ export default function AdminDashboardView() {
               <button
                 id="stopBtn"
                 disabled
-                className="bg-gray-300 hover:bg-gray-400 text-black px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 rounded-lg font-semibold transition-all duration-200 shadow flex items-center justify-center text-xs sm:text-sm md:text-base min-h-touch border border-slate-300 cursor-not-allowed"
+                className="btn btn-stop flex items-center justify-center text-sm sm:text-base min-h-touch opacity-50 cursor-not-allowed"
               >
                 <i
                   data-lucide="square"
-                  className="w-4 h-4 md:w-5 md:h-5 mr-1 sm:mr-2"
+                  className="w-4 h-4 md:w-5 md:h-5 mr-2"
                 />
                 <span className="hidden md:inline">Stop Recording</span>
                 <span className="md:hidden">Stop</span>
@@ -134,40 +133,51 @@ export default function AdminDashboardView() {
             </div>
           </div>
       </div>
-      {/* QR Modal */}
+      {/* Premium QR Modal */}
       <div
         id="qrModal"
-        className="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4"
+        className="qr-modal-backdrop hidden"
         onClick={(event) => callWindowHandler("closeQrModal", event)}
       >
         <div
-          className="bg-white rounded-xl shadow-2xl max-w-md w-full p-4 sm:p-6 md:p-8 max-h-[90vh] overflow-y-auto"
+          className="qr-modal-content max-w-md w-full max-h-[90vh] overflow-y-auto"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl md:text-2xl font-bold gradient-text">
               Join This Session
             </h3>
             <button
               onClick={() => callWindowHandler("closeQrModal")}
-              className="text-gray-400 hover:text-gray-600 min-w-touch min-h-touch flex items-center justify-center"
+              className="text-slate-400 hover:text-slate-600 transition-colors min-w-touch min-h-touch flex items-center justify-center"
             >
-              <i data-lucide="x" className="w-5 h-5" />
+              <i data-lucide="x" className="w-6 h-6" />
             </button>
           </div>
-          <p className="text-xs sm:text-sm text-gray-600 mb-3">
-            Scan the QR code or visit the link below:
+          <p className="text-sm text-slate-600 mb-6">
+            Scan the QR code below or visit the link to join:
           </p>
-          <div
-            id="qrCodeContainer"
-            className="flex items-center justify-center p-4 border border-gray-200 rounded-lg mb-4"
-          />
-          <div
-            className="bg-gray-50 border border-gray-200 rounded-lg p-3 font-mono text-xs sm:text-sm break-all"
+          <div className="qr-code-container mb-6">
+            <div
+              id="qrCodeContainer"
+              className="flex items-center justify-center"
+            />
+          </div>
+          <button
+            onClick={() => callWindowHandler("copyQrLink")}
+            className="glass-panel p-4 font-mono text-sm break-all text-slate-700 w-full text-left hover:bg-white/60 transition-all cursor-pointer group relative"
             id="qrLink"
           >
-            -
-          </div>
+            <span id="qrLinkText">-</span>
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br from-cyan-500/10 to-blue-500/10 backdrop-blur-sm rounded-lg pointer-events-none">
+              <span className="text-xs font-semibold text-slate-700 bg-white/80 px-3 py-1 rounded-full shadow-sm">
+                Click to copy
+              </span>
+            </div>
+          </button>
+          <p id="copyFeedback" className="text-xs text-center text-emerald-600 font-semibold mt-2 hidden">
+            ✓ Copied to clipboard!
+          </p>
         </div>
       </div>
       {/* Main Content */}

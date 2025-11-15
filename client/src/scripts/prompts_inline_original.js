@@ -155,7 +155,7 @@
                 }
 
                 const data = await response.json();
-                console.log('📝 Prompts loaded:', data);
+                // console.log('📝 Prompts loaded:', data);
 
                 currentPrompts = data.prompts;
                 totalPrompts = data.pagination.total;
@@ -425,7 +425,7 @@
                 }
                 
                 const result = await response.json();
-                console.log('📝 Prompt saved:', result);
+                // console.log('📝 Prompt saved:', result);
                 
                 showSuccess(result.message);
                 closePromptModal();
@@ -582,7 +582,7 @@
                 }
                 
                 const result = await response.json();
-                console.log('📝 Prompt cloned:', result);
+                // console.log('📝 Prompt cloned:', result);
                 
                 showSuccess('Prompt cloned successfully!');
                 closeViewModal();
@@ -612,7 +612,7 @@
                 }
                 
                 const result = await response.json();
-                console.log('📝 Prompt deleted:', result);
+                // console.log('📝 Prompt deleted:', result);
                 
                 showSuccess('Prompt deleted successfully!');
                 closeViewModal();
@@ -684,7 +684,7 @@
                 
                 try {
                     const result = await response.json();
-                    console.log('📝 Prompt used:', result);
+                    // console.log('📝 Prompt used:', result);
                 } catch (_) {
                     // Ignore JSON parse errors from empty bodies
                 }
@@ -722,7 +722,7 @@
         window.previousPage = previousPage;
         window.nextPage = nextPage;
 
-        console.log('✅ Prompts functions exposed to window:', {
-            viewPrompt: typeof window.viewPrompt,
-            openCreateModal: typeof window.openCreateModal
-        });
+        // console.log('✅ Prompts functions exposed to window:', {
+        //     viewPrompt: typeof window.viewPrompt,
+        //     openCreateModal: typeof window.openCreateModal
+        // });

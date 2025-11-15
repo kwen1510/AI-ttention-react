@@ -16,7 +16,7 @@ import { createTranscriptRecord, createSummaryUpdateFields } from "./lib/transcr
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-console.log("🚀 Starting Smart Classroom Live Transcription Server...");
+// console.log("🚀 Starting Smart Classroom Live Transcription Server...");
 
 // Initialize ElevenLabs client
 const elevenlabs = new ElevenLabsClient({
@@ -56,7 +56,7 @@ function addToTranscriptHistory(sessionCode, transcript) {
     history.shift();
   }
   
-  console.log(`📝 Context History: Session ${sessionCode} now has ${history.length} chunks`);
+  // console.log(`📝 Context History: Session ${sessionCode} now has ${history.length} chunks`);
 }
 
 function getContextualTranscript(sessionCode) {
@@ -70,13 +70,13 @@ function getContextualTranscript(sessionCode) {
     return `[${chunkLabel}]: ${chunk.transcript}`;
   }).join('\n\n');
   
-  console.log(`🧠 Context Window: Sending ${history.length} chunks for analysis`);
+  // console.log(`🧠 Context Window: Sending ${history.length} chunks for analysis`);
   return contextText;
 }
 
 function clearTranscriptHistory(sessionCode) {
   sessionTranscriptHistory.delete(sessionCode);
-  console.log(`🗑️ Cleared transcript history for session: ${sessionCode}`);
+  // console.log(`🗑️ Cleared transcript history for session: ${sessionCode}`);
 }
 
 function computeTranscriptStats(segments = []) {
@@ -200,7 +200,7 @@ async function trimTranscriptSegments({ sessionId, groupId, record, segments, ma
     record
   });
 
-  console.log(`🧹 Trimmed transcript history to last ${maxSegments} segments for group ${groupId}`);
+  // console.log(`🧹 Trimmed transcript history to last ${maxSegments} segments for group ${groupId}`);
   return result;
 }
 
@@ -514,12 +514,12 @@ function buildChecklistCriteria(criteriaRecords, progressMap = {}) {
 
 async function connectToDatabase() {
   try {
-    console.log('📦 Connecting to Supabase...');
+    // console.log('📦 Connecting to Supabase...');
     const { error } = await supabase.from('sessions').select('id').limit(1);
     if (error && error.code !== 'PGRST116') {
       throw error;
     }
-    console.log('📦 Supabase connected');
+    // console.log('📦 Supabase connected');
 
     // Seed default prompts for teachers (idempotent)
     await seedDefaultPrompts();
@@ -527,7 +527,7 @@ async function connectToDatabase() {
     // Start server after database connection
     const port = process.env.PORT || 10000;
     http.listen(port, '0.0.0.0', () => {
-      console.log(`🎯 Server running at http://0.0.0.0:${port}`);
+      // console.log(`🎯 Server running at http://0.0.0.0:${port}`);
     });
   } catch (error) {
     console.error('❌ Supabase connection failed:', error);
@@ -555,7 +555,7 @@ const staticDir = frontendCandidates.find((dir) => {
 if (!staticDir) {
   console.warn("⚠️ No compiled frontend bundle found. The dashboard routes will return 404 until the client is built.");
 } else {
-  console.log(`🪄 Serving compiled frontend from ${staticDir}`);
+  // console.log(`🪄 Serving compiled frontend from ${staticDir}`);
   app.use(express.static(staticDir));
 }
 
@@ -627,14 +627,14 @@ app.get("/health", (req, res) => {
 /* Test transcription API endpoint */
 app.post("/api/test-transcription", upload.single('audio'), async (req, res) => {
   try {
-    console.log("🧪 Test transcription request received");
+    // console.log("🧪 Test transcription request received");
     
     if (!req.file) {
       return res.status(400).json({ error: "No audio file provided" });
     }
     
     const audioBuffer = req.file.buffer;
-    console.log(`📁 Received audio file: ${audioBuffer.length} bytes, mimetype: ${req.file.mimetype}`);
+    // console.log(`📁 Received audio file: ${audioBuffer.length} bytes, mimetype: ${req.file.mimetype}`);
     
     // Test the transcription function
     const startTime = Date.now();
@@ -648,7 +648,7 @@ app.post("/api/test-transcription", upload.single('audio'), async (req, res) => 
       timestamp: new Date().toISOString()
     };
     
-    console.log(`✅ Test transcription completed in ${endTime - startTime}ms`);
+    // console.log(`✅ Test transcription completed in ${endTime - startTime}ms`);
     
     res.json({
       success: true,
@@ -669,14 +669,14 @@ app.post("/api/test-transcription", upload.single('audio'), async (req, res) => 
 /* Test summary API endpoint */
 app.post("/api/test-summary", express.json(), async (req, res) => {
   try {
-    console.log("🧪 Test summary request received");
+    // console.log("🧪 Test summary request received");
     
     const { text, customPrompt } = req.body;
     if (!text) {
       return res.status(400).json({ error: "No text provided for summarization" });
     }
     
-    console.log(`📝 Received text for summarization (${text.length} characters)`);
+    // console.log(`📝 Received text for summarization (${text.length} characters)`);
     
     // Test the summary function with custom prompt
     const startTime = Date.now();
@@ -690,7 +690,7 @@ app.post("/api/test-summary", express.json(), async (req, res) => {
       promptUsed: customPrompt || "default"
     };
     
-    console.log(`✅ Test summary completed in ${endTime - startTime}ms`);
+    // console.log(`✅ Test summary completed in ${endTime - startTime}ms`);
     
     res.json({
       success: true,
@@ -764,7 +764,7 @@ app.post("/api/session/:code/prompt", express.json(), async (req, res) => {
       activeSessions.set(code, { ...mem, customPrompt: prompt.trim() });
     }
     
-    console.log(`💾 Saved custom prompt for session ${code}`);
+    // console.log(`💾 Saved custom prompt for session ${code}`);
     res.json({ success: true, message: "Prompt saved successfully" });
     
   } catch (err) {
@@ -898,7 +898,7 @@ app.get("/api/new-session", async (req, res) => {
       ownerId: teacher.id
     });
     
-    console.log(`🆕 New session created in memory: Code=${code}, Interval=${interval}ms (memory only)`);
+    // console.log(`🆕 New session created in memory: Code=${code}, Interval=${interval}ms (memory only)`);
     res.json({ code, interval });
   } catch (err) {
     console.error("❌ Failed to create session:", err);
@@ -927,7 +927,7 @@ app.get("/api/session/:code/status", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
     
-    console.log(`📋 Session ${code} found in memory`);
+    // console.log(`📋 Session ${code} found in memory`);
     res.json(sessionState);
   } catch (err) {
     console.error("❌ Failed to get session status:", err);
@@ -982,7 +982,7 @@ app.post("/api/session/:code/start", express.json(), async (req, res) => {
         sessionState.id = existingSession._id;
         sessionState.persisted = true;
         sessionState.ownerId = teacher.id;
-        console.log(`🔄 Session ${code} already exists in database, updated with ID: ${existingSession._id}`);
+        // console.log(`🔄 Session ${code} already exists in database, updated with ID: ${existingSession._id}`);
       } else {
         // Generate a new unique ID for database insertion
         const dbSessionId = uuid();
@@ -1003,7 +1003,7 @@ app.post("/api/session/:code/start", express.json(), async (req, res) => {
         sessionState.id = dbSessionId;
         sessionState.persisted = true;
         sessionState.ownerId = teacher.id;
-        console.log(`💾 Session ${code} persisted to database on first start with ID: ${dbSessionId}`);
+        // console.log(`💾 Session ${code} persisted to database on first start with ID: ${dbSessionId}`);
       }
     } else {
       // Update existing database record
@@ -1017,7 +1017,7 @@ app.post("/api/session/:code/start", express.json(), async (req, res) => {
           total_duration_seconds: null
         } }
       );
-      console.log(`🔄 Session ${code} updated in database`);
+      // console.log(`🔄 Session ${code} updated in database`);
     }
     
     // Update memory state
@@ -1054,13 +1054,13 @@ app.post("/api/session/:code/start", express.json(), async (req, res) => {
             current.startRetryInterval = null;
             activeSessions.set(code, current);
             if (pending.length === 0) {
-              console.log("✅ All groups acknowledged recording start");
+              // console.log("✅ All groups acknowledged recording start");
             } else {
-              console.log(`⏱️ Retry window ended. Pending groups without ack: [${pending.join(', ')}]`);
+              // console.log(`⏱️ Retry window ended. Pending groups without ack: [${pending.join(', ')}]`);
             }
             return;
           }
-          console.log(`🔄 Re-emitting record_now to pending groups: [${pending.join(', ')}]`);
+          // console.log(`🔄 Re-emitting record_now to pending groups: [${pending.join(', ')}]`);
           pending.forEach(grp => io.to(`${code}-${grp}`).emit("record_now", interval || 30000));
         } catch (e) {
           console.warn("⚠️ record_now scheduler error:", e.message);
@@ -1069,7 +1069,7 @@ app.post("/api/session/:code/start", express.json(), async (req, res) => {
       activeSessions.set(code, mem);
     }
     
-    console.log(`▶️  Session ${code} started recording (interval: ${interval || 30000}ms)`);
+    // console.log(`▶️  Session ${code} started recording (interval: ${interval || 30000}ms)`);
     res.json({ ok: true });
   } catch (err) {
     console.error("❌ Failed to start session:", err);
@@ -1110,9 +1110,9 @@ app.post("/api/session/:code/stop", async (req, res) => {
         } }
       );
       
-      console.log(`💾 Session ${code} stopped and saved to database (duration: ${totalDurationSeconds}s)`);
+      // console.log(`💾 Session ${code} stopped and saved to database (duration: ${totalDurationSeconds}s)`);
     } else {
-      console.log(`⏹️  Session ${code} stopped (was never persisted to database)`);
+      // console.log(`⏹️  Session ${code} stopped (was never persisted to database)`);
     }
     
     // Update memory state
@@ -1125,7 +1125,7 @@ app.post("/api/session/:code/stop", async (req, res) => {
     
     io.to(code).emit("stop_recording");
     
-    console.log(`⏹️  Session ${code} stopped recording`);
+    // console.log(`⏹️  Session ${code} stopped recording`);
     res.json({ ok: true });
   } catch (err) {
     console.error("❌ Failed to stop session:", err);
@@ -1140,8 +1140,8 @@ app.get("/api/transcripts/:code/:number", async (req, res) => {
     if (!teacher) return;
 
     const { code, number } = req.params;
-    console.log(`📝 Fetching transcripts for session ${code}, group ${number}`);
-    
+    // console.log(`📝 Fetching transcripts for session ${code}, group ${number}`);
+
     // Get session and group IDs
     const session = await db.collection("sessions").findOne({ code: code });
     if (!session) {
@@ -1208,7 +1208,7 @@ app.get("/api/history", async (req, res) => {
       includeSummaries = 'true'
     } = req.query;
     
-    console.log(`📊 Fetching historical data with filters:`, { sessionCode, startDate, endDate, limit, offset });
+    // console.log(`📊 Fetching historical data with filters:`, { sessionCode, startDate, endDate, limit, offset });
     
     // Get sessions with basic info
     const sessionQuery = { owner_id: teacher.id };
@@ -1329,7 +1329,7 @@ app.get("/api/history/session/:code", async (req, res) => {
     if (!teacher) return;
 
     const { code } = req.params;
-    console.log(`📋 Fetching detailed data for session: ${code}`);
+    // console.log(`📋 Fetching detailed data for session: ${code}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: code });
@@ -1404,7 +1404,7 @@ app.delete("/api/history/sessions", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Invalid session IDs provided" });
     }
     
-    console.log(`🗑️  Deleting ${sessionIds.length} sessions:`, sessionIds);
+    // console.log(`🗑️  Deleting ${sessionIds.length} sessions:`, sessionIds);
     
     // Get session details first for cleanup
     const sessions = await db.collection("sessions").find({ _id: { $in: sessionIds }, owner_id: teacher.id }).toArray();
@@ -1438,13 +1438,13 @@ app.delete("/api/history/sessions", express.json(), async (req, res) => {
       // Delete session logs
       await db.collection("session_logs").deleteMany({ session_id: session._id });
       
-      console.log(`🧹 Cleaned up data for session ${session.code}`);
+      // console.log(`🧹 Cleaned up data for session ${session.code}`);
     }
     
     // Delete the sessions themselves
     const deleteResult = await db.collection("sessions").deleteMany({ _id: { $in: sessionIds }, owner_id: teacher.id });
     
-    console.log(`✅ Deleted ${deleteResult.deletedCount} sessions successfully`);
+    // console.log(`✅ Deleted ${deleteResult.deletedCount} sessions successfully`);
     
     res.json({ 
       success: true, 
@@ -1472,7 +1472,7 @@ app.post("/api/cleanup/:sessionCode", async (req, res) => {
       return res.status(400).json({ error: "Session code and main topic required" });
     }
     
-    console.log(`🧠 Creating mindmap session: ${sessionCode} with topic: ${mainTopic}`);
+    // console.log(`🧠 Creating mindmap session: ${sessionCode} with topic: ${mainTopic}`);
     
     const now = Date.now();
     const existingSession = await db.collection("sessions").findOne({ code: sessionCode });
@@ -1573,7 +1573,7 @@ app.post("/api/mindmap/generate", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and text required" });
     }
     
-    console.log(`🧠 Generating initial mindmap for session: ${sessionCode}`);
+    // console.log(`🧠 Generating initial mindmap for session: ${sessionCode}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
@@ -1650,7 +1650,7 @@ app.post("/api/mindmap/expand", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and text required" });
     }
     
-    console.log(`🧠 Expanding mindmap for session: ${sessionCode}`);
+    // console.log(`🧠 Expanding mindmap for session: ${sessionCode}`);
     
     // Get session and current mindmap
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
@@ -1736,7 +1736,7 @@ app.post("/api/mindmap/process", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and transcript required" });
     }
     
-    console.log(`🧠 Processing transcript for mindmap session: ${sessionCode}`);
+    // console.log(`🧠 Processing transcript for mindmap session: ${sessionCode}`);
     
     // Get session and current mindmap
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
@@ -1756,7 +1756,7 @@ app.post("/api/mindmap/process", express.json(), async (req, res) => {
     
     // If no current mindmap, generate initial one
     if (!mindmapSession.current_mindmap) {
-      console.log(`🧠 No existing mindmap, generating initial one...`);
+      // console.log(`🧠 No existing mindmap, generating initial one...`);
       const mindmapData = await generateInitialMindmap(transcript, session.main_topic);
       
       await db.collection("mindmap_sessions").updateOne(
@@ -1781,7 +1781,7 @@ app.post("/api/mindmap/process", express.json(), async (req, res) => {
       };
     } else {
       // Expand existing mindmap
-      console.log(`🧠 Expanding existing mindmap...`);
+      // console.log(`🧠 Expanding existing mindmap...`);
       const expansion = await expandMindmap(transcript, mindmapSession.current_mindmap, session.main_topic);
       
       await db.collection("mindmap_sessions").updateOne(
@@ -1832,7 +1832,7 @@ app.get("/api/mindmap/:sessionCode", async (req, res) => {
 
     const { sessionCode } = req.params;
     
-    console.log(`🧠 Fetching mindmap data for session: ${sessionCode}`);
+    // console.log(`🧠 Fetching mindmap data for session: ${sessionCode}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
@@ -1882,7 +1882,7 @@ app.post("/api/mindmap/save", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code, main topic, and mindmap data required" });
     }
     
-    console.log(`🧠 Saving mindmap session: ${sessionCode} with metadata`);
+    // console.log(`🧠 Saving mindmap session: ${sessionCode} with metadata`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
@@ -1969,7 +1969,7 @@ app.post("/api/mindmap/manual-update", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and mindmap data required" });
     }
 
-    console.log(`🧠 Manual mindmap update (${reason}) for session: ${sessionCode}`);
+    // console.log(`🧠 Manual mindmap update (${reason}) for session: ${sessionCode}`);
 
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "mindmap" });
     if (!session) {
@@ -2037,7 +2037,7 @@ async function generateInitialMindmap(contextualText, mainTopic) {
   }
 
   try {
-    console.log(`🧠 OpenAI Mindmap: Generating initial academic mindmap for topic: "${mainTopic}"`);
+    // console.log(`🧠 OpenAI Mindmap: Generating initial academic mindmap for topic: "${mainTopic}"`);
 
     const completion = await callOpenAIChat(OPENAI_API_KEY, {
       model: "gpt-4.1-mini",
@@ -2086,14 +2086,14 @@ Rules:
     const parsed = parseJsonFromText(responseText) || {};
 
     if (!Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
-      console.log("⚠️ OpenAI Mindmap: No meaningful academic content detected, falling back to outline generation");
+      // console.log("⚠️ OpenAI Mindmap: No meaningful academic content detected, falling back to outline generation");
       return await generateFallbackMindmap(mainTopic);
     }
 
     const convertedResult = convertMaestroToLegacy(parsed, mainTopic);
     ensureMindmapNodeIds(convertedResult);
     if (!convertedResult.children || convertedResult.children.length === 0) {
-      console.log("⚠️ OpenAI Mindmap: Converted mindmap has no branches, invoking fallback outline");
+      // console.log("⚠️ OpenAI Mindmap: Converted mindmap has no branches, invoking fallback outline");
       return await generateFallbackMindmap(mainTopic);
     }
     return convertedResult;
@@ -2104,7 +2104,7 @@ Rules:
 }
 
 async function generateFallbackMindmap(mainTopic) {
-  console.log(`✨ Mindmap fallback: creating generic outline for "${mainTopic}"`);
+  // console.log(`✨ Mindmap fallback: creating generic outline for "${mainTopic}"`);
   if (!OPENAI_API_KEY) {
     const fallback = {
       id: generateMindmapNodeId(),
@@ -2207,7 +2207,7 @@ function convertMaestroToLegacy(maestroData, mainTopic) {
   legacy.children = rootNodes;
   ensureMindmapNodeIds(legacy);
 
-  console.log(`✅ Mind-Map Maestro: Converted ${maestroData.nodes?.length || 0} nodes to legacy format`);
+  // console.log(`✅ Mind-Map Maestro: Converted ${maestroData.nodes?.length || 0} nodes to legacy format`);
   return legacy;
 }
 
@@ -2217,7 +2217,7 @@ async function expandMindmap(contextualText, currentMindmap, mainTopic) {
   }
 
   try {
-    console.log(`🧠 OpenAI Mindmap: Expanding mindmap for topic "${mainTopic}"`);
+    // console.log(`🧠 OpenAI Mindmap: Expanding mindmap for topic "${mainTopic}"`);
     
     // Convert current mindmap to Maestro format for processing
     const currentMaestroFormat = convertLegacyToMaestro(currentMindmap, mainTopic);
@@ -2268,7 +2268,7 @@ Rules:
     const result = parseJsonFromText(responseText) || {};
 
     if (result.action === "ignore") {
-      console.log("⚠️ OpenAI Mindmap: Current chunk contained no new academic content");
+      // console.log("⚠️ OpenAI Mindmap: Current chunk contained no new academic content");
       ensureMindmapNodeIds(currentMindmap);
       return {
         updatedMindmap: currentMindmap, // Return unchanged mindmap
@@ -2282,7 +2282,7 @@ Rules:
     const updatedLegacyFormat = convertMaestroToLegacy(result, mainTopic);
     ensureMindmapNodeIds(updatedLegacyFormat);
 
-    console.log(`✅ OpenAI Mindmap: Expansion processed with ${result.nodes?.length || 0} total nodes`);
+    // console.log(`✅ OpenAI Mindmap: Expansion processed with ${result.nodes?.length || 0} total nodes`);
 
     return {
       updatedMindmap: updatedLegacyFormat,
@@ -2756,9 +2756,9 @@ app.post("/api/checkbox/session", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and criteria required" });
     }
     
-    console.log(`☑️ Creating checkbox session: ${sessionCode} with ${criteria.length} criteria`);
-    console.log(`📝 Scenario: ${scenario ? scenario.substring(0, 100) + '...' : 'None provided'}`);
-    console.log(`⚖️ Strictness level: ${strictness} (1=Lenient, 2=Moderate, 3=Strict)`);
+    // console.log(`☑️ Creating checkbox session: ${sessionCode} with ${criteria.length} criteria`);
+    // console.log(`📝 Scenario: ${scenario ? scenario.substring(0, 100) + '...' : 'None provided'}`);
+    // console.log(`⚖️ Strictness level: ${strictness} (1=Lenient, 2=Moderate, 3=Strict)`);
     
     // Check if session already exists
     let session = await db.collection("sessions").findOne({ code: sessionCode });
@@ -2882,7 +2882,7 @@ app.post("/api/checkbox/process", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Session code and transcript required" });
     }
     
-    console.log(`☑️ Processing transcript for checkbox session: ${sessionCode}, group: ${groupNumber}`);
+    // console.log(`☑️ Processing transcript for checkbox session: ${sessionCode}, group: ${groupNumber}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "checkbox" });
@@ -2930,10 +2930,10 @@ app.post("/api/checkbox/process", express.json(), async (req, res) => {
     }
     const existingProgress = extractExistingProgress(criteriaRecords, progressMap);
     
-    console.log(`📋 Prepared ${criteriaRecords.length} criteria and loaded progress map with ${Object.keys(progressMap).length} entries for group ${groupNumber}`);
+    // console.log(`📋 Prepared ${criteriaRecords.length} criteria and loaded progress map with ${Object.keys(progressMap).length} entries for group ${groupNumber}`);
     const greenCount = existingProgress.filter(p => p && p.status === 'green').length;
     if (greenCount > 0) {
-      console.log(`📋 Preserving ${greenCount} GREEN criteria from previous evaluations`);
+      // console.log(`📋 Preserving ${greenCount} GREEN criteria from previous evaluations`);
     }
     
     // Process the transcript with scenario context and strictness
@@ -2973,17 +2973,17 @@ app.post("/api/checkbox/process", express.json(), async (req, res) => {
           quote: entry.quote,
           status: entry.status
         });
-        console.log(`📋 Checkbox update for criteria idx=${match.criteria_index} (_id=${criterion._id}): "${match.quote}" - STATUS: ${entry.status}`);
+        // console.log(`📋 Checkbox update for criteria idx=${match.criteria_index} (_id=${criterion._id}): "${match.quote}" - STATUS: ${entry.status}`);
       } else if (currentEntry) {
         if (currentEntry.status === 'green') {
-          console.log(`📋 Criteria ${match.criteria_index} already GREEN (locked) with quote: "${currentEntry.quote}" - skipping update`);
+          // console.log(`📋 Criteria ${match.criteria_index} already GREEN (locked) with quote: "${currentEntry.quote}" - skipping update`);
         } else if (currentEntry.status === 'red' && match.status !== 'green') {
-          console.log(`📋 Criteria ${match.criteria_index} staying RED - cannot downgrade to ${match.status.toUpperCase()}`);
+          // console.log(`📋 Criteria ${match.criteria_index} staying RED - cannot downgrade to ${match.status.toUpperCase()}`);
         } else {
-          console.log(`📋 Criteria ${match.criteria_index} unchanged at status ${currentEntry.status.toUpperCase()}`);
+          // console.log(`📋 Criteria ${match.criteria_index} unchanged at status ${currentEntry.status.toUpperCase()}`);
         }
       } else {
-        console.log(`📋 Criteria ${match.criteria_index} produced status ${match.status.toUpperCase()} but no change required`);
+        // console.log(`📋 Criteria ${match.criteria_index} produced status ${match.status.toUpperCase()} but no change required`);
       }
     }
 
@@ -3007,7 +3007,7 @@ app.post("/api/checkbox/process", express.json(), async (req, res) => {
       }
     }
     
-    console.log(`📤 Sending ${progressUpdates.length} checkbox updates to admin for group ${groupNumber}`);
+    // console.log(`📤 Sending ${progressUpdates.length} checkbox updates to admin for group ${groupNumber}`);
     
     // Send checkbox updates to admin
     io.to(sessionCode).emit("admin_update", {
@@ -3032,7 +3032,7 @@ app.post("/api/checkbox/process", express.json(), async (req, res) => {
       sessionCode: sessionCode
     };
     
-    console.log(`📨 Emitting checklist state to all (released: ${isReleased})`);
+    // console.log(`📨 Emitting checklist state to all (released: ${isReleased})`);
     
     // Emit to everyone in session
     io.to(sessionCode).emit('checklist_state', checklistData);
@@ -3060,7 +3060,7 @@ app.get("/api/checkbox/:sessionCode", async (req, res) => {
     if (!teacher) return;
     const { sessionCode } = req.params;
     
-    console.log(`☑️ Fetching checkbox data for session: ${sessionCode}`);
+    // console.log(`☑️ Fetching checkbox data for session: ${sessionCode}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "checkbox" });
@@ -3176,7 +3176,7 @@ app.get("/api/logs/:sessionCode", async (req, res) => {
     const { sessionCode } = req.params;
     const { limit = 100, type } = req.query;
     
-    console.log(`📋 Fetching logs for session: ${sessionCode}`);
+    // console.log(`📋 Fetching logs for session: ${sessionCode}`);
     
     // Get session info
     const session = await db.collection("sessions").findOne({ code: sessionCode });
@@ -3220,20 +3220,20 @@ function startAutoSummary(sessionCode, intervalMs) {
   stopAutoSummary(sessionCode);
   
   const timer = setInterval(async () => {
-    console.log(`⏰ Auto-generating summaries for session ${sessionCode}`);
+    // console.log(`⏰ Auto-generating summaries for session ${sessionCode}`);
     
     // Check if session is still active (both in memory and database)
     const sessionState = activeSessions.get(sessionCode);
     const session = await db.collection("sessions").findOne({ code: sessionCode, active: true });
     
     if (!session || !sessionState?.active) {
-      console.log(`⚠️  Session ${sessionCode} no longer active, stopping auto-summary`);
+      // console.log(`⚠️  Session ${sessionCode} no longer active, stopping auto-summary`);
       stopAutoSummary(sessionCode);
       return;
     }
     
     const groups = await db.collection("groups").find({ session_id: session._id }).sort({ number: 1 }).toArray();
-    console.log(`🔄 Processing summaries for ${groups.length} groups in session ${sessionCode}`);
+    // console.log(`🔄 Processing summaries for ${groups.length} groups in session ${sessionCode}`);
     
     for (const group of groups) {
       await generateSummaryForGroup(sessionCode, group.number);
@@ -3241,7 +3241,7 @@ function startAutoSummary(sessionCode, intervalMs) {
   }, intervalMs); // Use the same interval as recording instead of fixed 10 seconds
   
   activeSummaryTimers.set(sessionCode, timer);
-  console.log(`⏰ Started auto-summary timer for session ${sessionCode} (every ${intervalMs}ms)`);
+  // console.log(`⏰ Started auto-summary timer for session ${sessionCode} (every ${intervalMs}ms)`);
 }
 
 function stopAutoSummary(sessionCode) {
@@ -3249,7 +3249,7 @@ function stopAutoSummary(sessionCode) {
   if (timer) {
     clearInterval(timer);
     activeSummaryTimers.delete(sessionCode);
-    console.log(`⏰ Stopped auto-summary timer for session ${sessionCode}`);
+    // console.log(`⏰ Stopped auto-summary timer for session ${sessionCode}`);
   }
 }
 
@@ -3261,21 +3261,21 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
   
   // Prevent overlapping processing for the same group
   if (processingGroups.has(groupKey)) {
-    console.log(`⏳ Group ${groupNumber} already being processed, skipping`);
+    // console.log(`⏳ Group ${groupNumber} already being processed, skipping`);
     return;
   }
   
   processingGroups.add(groupKey);
   
   try {
-    console.log(`📋 Processing group ${groupNumber} in session ${sessionCode}`);
+    // console.log(`📋 Processing group ${groupNumber} in session ${sessionCode}`);
     
     // Find sockets in this group and get their audio data
     const roomName = `${sessionCode}-${groupNumber}`;
     const socketsInRoom = await io.in(roomName).fetchSockets();
     
     if (socketsInRoom.length === 0) {
-      console.log(`ℹ️  No active sockets in group ${groupNumber}, skipping`);
+      // console.log(`ℹ️  No active sockets in group ${groupNumber}, skipping`);
       return;
     }
     
@@ -3300,14 +3300,14 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
             });
             
             if (completeContainer) {
-              console.log(`✅ Found complete WebM container (${completeContainer.data.length} bytes) from socket ${socket.id}`);
+              // console.log(`✅ Found complete WebM container (${completeContainer.data.length} bytes) from socket ${socket.id}`);
               combinedAudio.push(completeContainer);
               hasAudio = true;
             } else {
               // Don't try to combine partial chunks - they create corrupted WebM data
               // Instead, just skip this processing cycle and wait for a complete container
-              console.log(`⏭️  No complete WebM container found, skipping processing (${audioChunks.length} partial chunks available)`);
-              console.log(`💡 Waiting for complete WebM container with header 1a45dfa3...`);
+              // console.log(`⏭️  No complete WebM container found, skipping processing (${audioChunks.length} partial chunks available)`);
+              // console.log(`💡 Waiting for complete WebM container with header 1a45dfa3...`);
             }
           } else {
             // For other formats, add all substantial chunks
@@ -3321,17 +3321,17 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
     }
     
     if (!hasAudio) {
-      console.log(`ℹ️  No substantial audio data available for group ${groupNumber}, skipping`);
+      // console.log(`ℹ️  No substantial audio data available for group ${groupNumber}, skipping`);
       return;
     }
     
     // Process each blob individually instead of concatenating
     for (const audioChunk of combinedAudio) {
-      console.log(`🔄 Processing ${audioChunk.data.length} bytes of audio data for group ${groupNumber}`);
+      // console.log(`🔄 Processing ${audioChunk.data.length} bytes of audio data for group ${groupNumber}`);
       
       // Validate audio before sending to API
       if (audioChunk.data.length < 1000) {
-        console.log(`⚠️  Audio too small (${audioChunk.data.length} bytes), skipping`);
+        // console.log(`⚠️  Audio too small (${audioChunk.data.length} bytes), skipping`);
         continue;
       }
       
@@ -3345,18 +3345,18 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
       };
       
       if (validHeaders[header]) {
-        console.log(`✅ Valid ${validHeaders[header]} header detected: ${header}`);
+        // console.log(`✅ Valid ${validHeaders[header]} header detected: ${header}`);
       } else {
-        console.log(`⚠️  Unknown audio header: ${header}, proceeding anyway`);
+        // console.log(`⚠️  Unknown audio header: ${header}, proceeding anyway`);
         // Log the first few bytes for debugging
         const firstBytes = audioChunk.data.slice(0, 8).toString('hex');
-        console.log(`🔍 First 8 bytes: ${firstBytes}`);
+        // console.log(`🔍 First 8 bytes: ${firstBytes}`);
       }
       
       // Get transcription for this individual audio chunk
-      console.log("🗣️  Starting transcription for current chunk...");
+      // console.log("🗣️  Starting transcription for current chunk...");
       
-      console.log(`🎵 Audio format: ${audioChunk.format}`);
+      // console.log(`🎵 Audio format: ${audioChunk.format}`);
       
       const transcription = await transcribe(audioChunk.data, audioChunk.format);
       
@@ -3364,12 +3364,12 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
       let cleanedText = transcription.text;
       if (transcription.text && transcription.text !== "No transcription available" && transcription.text !== "Transcription failed") {
         // Transcript cleaning removed - using raw transcription
-        console.log(`📝 Transcription for group ${groupNumber}:`, {
-          text: cleanedText,
-          duration: transcription.words.length > 0 ? 
-            transcription.words[transcription.words.length - 1].end : 0,
-          wordCount: transcription.words.length
-        });
+        // console.log(`📝 Transcription for group ${groupNumber}:`, {
+        //   text: cleanedText,
+        //   duration: transcription.words.length > 0 ?
+        //     transcription.words[transcription.words.length - 1].end : 0,
+        //   wordCount: transcription.words.length
+        // });
         
         // Save this individual transcription segment
         const session = await db.collection("sessions").findOne({ code: sessionCode });
@@ -3411,7 +3411,7 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
           const fullText = segments.map(t => t.text).join(' ');
           
           // Generate summary of the entire conversation so far
-          console.log("🤖 Generating summary of full conversation...");
+          // console.log("🤖 Generating summary of full conversation...");
           
           // Get custom prompt for this session
           // Resolve the latest prompt: prefer memory cache (if admin changed it mid-session), fall back to DB
@@ -3458,10 +3458,10 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
             }
           });
           
-          console.log(`✅ Results saved and sent for session ${sessionCode}, group ${groupNumber}`);
+          // console.log(`✅ Results saved and sent for session ${sessionCode}, group ${groupNumber}`);
         }
       } else {
-        console.log(`⚠️  No valid transcription for group ${groupNumber}`);
+        // console.log(`⚠️  No valid transcription for group ${groupNumber}`);
       }
     }
     
@@ -3482,7 +3482,7 @@ async function cleanTranscriptWithOpenAI(text) {
 
 /* ---------- 3. WebSocket flow ---------- */
 io.on("connection", socket => {
-  console.log(`🔌 New socket connection: ${socket.id}`);
+  // console.log(`🔌 New socket connection: ${socket.id}`);
   let groupId, localBuf = [], sessionCode, groupNumber;
 
   // Live prompt updates from admin: keep latest prompt in memory to avoid DB reads
@@ -3508,9 +3508,9 @@ io.on("connection", socket => {
   // Admin joins session room
   socket.on("admin_join", ({ code }) => {
     try {
-      console.log(`👨‍🏫 Admin socket ${socket.id} joining session room: ${code}`);
+      // console.log(`👨‍🏫 Admin socket ${socket.id} joining session room: ${code}`);
       socket.join(code);
-      console.log(`✅ Admin joined session room: ${code}`);
+      // console.log(`✅ Admin joined session room: ${code}`);
     } catch (err) {
       console.error("❌ Error admin joining session room:", err);
     }
@@ -3518,13 +3518,13 @@ io.on("connection", socket => {
 
   socket.on("join", async ({ code, group }) => {
     try {
-      console.log(`[${ts()}] 👋 Socket ${socket.id} attempting to join session ${code}, group ${group}`);
+      // console.log(`[${ts()}] 👋 Socket ${socket.id} attempting to join session ${code}, group ${group}`);
       
       // Check memory only - no database lookup
       const sessionState = activeSessions.get(code);
       
       if (!sessionState) {
-        console.log(`❌ Session ${code} not found`);
+        // console.log(`❌ Session ${code} not found`);
         return socket.emit("error", "Session not found");
       }
       
@@ -3536,7 +3536,7 @@ io.on("connection", socket => {
         // Session exists in database, handle group creation normally
         const sess = await db.collection("sessions").findOne({ code: code });
         if (!sess) {
-          console.log(`❌ Session ${code} not found in database despite being marked as persisted`);
+          // console.log(`❌ Session ${code} not found in database despite being marked as persisted`);
           return socket.emit("error", "Session data inconsistent");
         }
         
@@ -3549,14 +3549,14 @@ io.on("connection", socket => {
             session_id: sess._id,
             number: parseInt(group)
           });
-          console.log(`📝 Created new group: Session ${code}, Group ${group}, ID: ${groupId}`);
+          // console.log(`📝 Created new group: Session ${code}, Group ${group}, ID: ${groupId}`);
         } else {
-          console.log(`🔄 Rejoined existing group: Session ${code}, Group ${group}, ID: ${groupId}`);
+          // console.log(`🔄 Rejoined existing group: Session ${code}, Group ${group}, ID: ${groupId}`);
         }
       } else {
         // Session not yet persisted, just create a temporary group ID
         groupId = uuid();
-        console.log(`📝 Created temporary group ID for unpersisted session: ${groupId}`);
+        // console.log(`📝 Created temporary group ID for unpersisted session: ${groupId}`);
       }
       
       socket.join(code);
@@ -3565,7 +3565,7 @@ io.on("connection", socket => {
       // Send different status based on session state
       if (sessionState.active) {
         socket.emit("joined", { code, group, status: "recording", interval: sessionState.interval || 30000, mode: sessionState.mode || "summary" });
-        console.log(`✅ Socket ${socket.id} joined ACTIVE session ${code}, group ${group}`);
+        // console.log(`✅ Socket ${socket.id} joined ACTIVE session ${code}, group ${group}`);
         // Track joined group for reliability retries
         const mem = activeSessions.get(code) || {};
         if (!mem.groups) mem.groups = new Map();
@@ -3575,7 +3575,7 @@ io.on("connection", socket => {
         io.to(`${code}-${parseInt(group)}`).emit("record_now", sessionState.interval || 30000);
       } else {
         socket.emit("joined", { code, group, status: "waiting", interval: sessionState.interval || 30000, mode: sessionState.mode || "summary" });
-        console.log(`✅ Socket ${socket.id} joined INACTIVE session ${code}, group ${group} - waiting for start`);
+        // console.log(`✅ Socket ${socket.id} joined INACTIVE session ${code}, group ${group} - waiting for start`);
         const mem = activeSessions.get(code) || {};
         if (!mem.groups) mem.groups = new Map();
         mem.groups.set(parseInt(group), { joined: true, recording: false, lastAck: Date.now() });
@@ -3584,22 +3584,28 @@ io.on("connection", socket => {
       
       // Notify admin about student joining
       socket.to(code).emit("student_joined", { group, socketId: socket.id });
-      console.log(`[${ts()}] 📢 Notified admin about student joining group ${group}`);
+      // console.log(`[${ts()}] 📢 Notified admin about student joining group ${group}`);
       
     } catch (err) {
       console.error("❌ Error joining session:", err);
-      socket.emit("error", "Failed to join session");
+      console.error("Error details:", {
+        message: err.message,
+        stack: err.stack,
+        sessionCode: code,
+        group: group
+      });
+      socket.emit("error", `Failed to join session: ${err.message}`);
     }
   });
 
   socket.on("student:chunk", ({ data, format }) => {
     // Note: This event is no longer used. Students now upload chunks directly via /api/transcribe-chunk
-    console.log(`⚠️  Received old-style chunk from ${sessionCode}, group ${groupNumber} - ignoring (use /api/transcribe-chunk instead)`);
+    // console.log(`⚠️  Received old-style chunk from ${sessionCode}, group ${groupNumber} - ignoring (use /api/transcribe-chunk instead)`);
   });
 
   // Handle heartbeat to keep connection alive (especially for background recording)
   socket.on("heartbeat", ({ session, group }) => {
-    console.log(`[${ts()}] 💓 Heartbeat from session ${session}, group ${group} (socket: ${socket.id})`);
+    // console.log(`[${ts()}] 💓 Heartbeat from session ${session}, group ${group} (socket: ${socket.id})`);
     socket.emit("heartbeat_ack");
     // Mark group alive; if session active, also flag as recording
     const mem = activeSessions.get(session);
@@ -3626,7 +3632,7 @@ io.on("connection", socket => {
       st.lastAck = Date.now();
       mem.groups.set(parseInt(group), st);
       activeSessions.set(session, mem);
-      console.log(`✅ recording_started ack from group ${group} (session ${session})`);
+      // console.log(`✅ recording_started ack from group ${group} (session ${session})`);
     } catch (e) {
       console.warn('⚠️ recording_started handler error:', e.message);
     }
@@ -3634,7 +3640,7 @@ io.on("connection", socket => {
 
   // Handle admin heartbeat
   socket.on("admin_heartbeat", ({ sessionCode }) => {
-    console.log(`[${ts()}] 💓 Admin heartbeat from session ${sessionCode} (socket: ${socket.id})`);
+    // console.log(`[${ts()}] 💓 Admin heartbeat from session ${sessionCode} (socket: ${socket.id})`);
     socket.emit("admin_heartbeat_ack");
   });
 
@@ -3644,11 +3650,11 @@ io.on("connection", socket => {
   /* ===== DEV ONLY: Simulate disconnect test (guarded by env) ===== */
   socket.on('dev_simulate_disconnect', ({ sessionCode: code, target = 'all', group = 1, durationMs = 5000 }) => {
     if (!process.env.ALLOW_DEV_TEST) {
-      console.log('🚫 dev_simulate_disconnect ignored (ALLOW_DEV_TEST not set)');
+      // console.log('🚫 dev_simulate_disconnect ignored (ALLOW_DEV_TEST not set)');
       return;
     }
     try {
-      console.log(`🧪 DEV: simulate disconnect → session ${code}, target=${target}, group=${group}, duration=${durationMs}ms`);
+      // console.log(`🧪 DEV: simulate disconnect → session ${code}, target=${target}, group=${group}, duration=${durationMs}ms`);
       const payload = { durationMs: Number(durationMs) || 5000 };
       if (target === 'all') {
         io.to(code).emit('dev_simulate_disconnect', payload);
@@ -3663,7 +3669,7 @@ io.on("connection", socket => {
 
   // Handle upload errors from students
   socket.on("upload_error", ({ session, group, error, chunkSize, timestamp }) => {
-    console.log(`❌ Upload error from session ${session}, group ${group}: ${error}`);
+    // console.log(`❌ Upload error from session ${session}, group ${group}: ${error}`);
     
     // Notify admin about the upload error
     socket.to(session).emit("upload_error", {
@@ -3675,13 +3681,13 @@ io.on("connection", socket => {
     });
     
     // Log error for debugging
-    console.log(`📊 Upload error details: ${chunkSize} bytes, ${error}`);
+    // console.log(`📊 Upload error details: ${chunkSize} bytes, ${error}`);
   });
 
   // Handle student disconnection
   socket.on("disconnect", () => {
     if (sessionCode && groupNumber) {
-      console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
+      // console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
 
       // Notify admin about student leaving
       socket.to(sessionCode).emit("student_left", { group: groupNumber, socketId: socket.id });
@@ -3690,12 +3696,12 @@ io.on("connection", socket => {
       const sessionState = activeSessions.get(sessionCode);
       if (sessionState && sessionState.groups) {
         sessionState.groups.delete(parseInt(groupNumber));
-        console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
+        // console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
 
         // If no groups remain and session is not active, consider cleaning up the session
         if (sessionState.groups.size === 0 && !sessionState.active && !sessionState.persisted) {
           activeSessions.delete(sessionCode);
-          console.log(`🧹 Cleaned up empty unpersisted session ${sessionCode} from memory`);
+          // console.log(`🧹 Cleaned up empty unpersisted session ${sessionCode} from memory`);
         }
       }
 
@@ -3703,7 +3709,7 @@ io.on("connection", socket => {
       const groupKey = `${sessionCode}-${groupNumber}`;
       processingGroups.delete(groupKey);
     } else {
-      console.log(`🔌 Socket ${socket.id} disconnected (no session/group)`);
+      // console.log(`🔌 Socket ${socket.id} disconnected (no session/group)`);
     }
 
     // Clean up socket buffer to prevent memory leaks
@@ -3717,8 +3723,8 @@ io.on("connection", socket => {
 
   // Debug helper - tell client what rooms they're in
   socket.on('get_my_rooms', () => {
-    console.log(`🔍 Socket ${socket.id} requested room info`);
-    console.log(`🔍 Socket ${socket.id} is in rooms:`, Array.from(socket.rooms));
+    // console.log(`🔍 Socket ${socket.id} requested room info`);
+    // console.log(`🔍 Socket ${socket.id} is in rooms:`, Array.from(socket.rooms));
     socket.emit('room_info', {
       socketId: socket.id,
       rooms: Array.from(socket.rooms)
@@ -3728,7 +3734,7 @@ io.on("connection", socket => {
   // Handle checklist release to students
   socket.on('release_checklist', async (data) => {
     try {
-      console.log(`📤 Teacher releasing checklist to Group ${data.groupNumber} in session ${data.sessionCode}`);
+      // console.log(`📤 Teacher releasing checklist to Group ${data.groupNumber} in session ${data.sessionCode}`);
       const groupNumber = Number(data.groupNumber);
       if (!Number.isFinite(groupNumber)) {
         console.error(`❌ Invalid group number received for release_checklist: ${data.groupNumber}`);
@@ -3737,7 +3743,7 @@ io.on("connection", socket => {
       const cacheKey = `${data.sessionCode}-${groupNumber}`;
       const cached = latestChecklistState.get(cacheKey);
       if (cached) {
-        console.log(`🗄️ Using cached checklist_state as merge source (cached ${cached.criteria?.length || 0} items)`);
+        // console.log(`🗄️ Using cached checklist_state as merge source (cached ${cached.criteria?.length || 0} items)`);
       }
       
       // Get the session from database to get its _id
@@ -3770,7 +3776,7 @@ io.on("connection", socket => {
         { upsert: true }
       );
 
-      console.log(`✅ Release flag set for group ${groupNumber} in session ${data.sessionCode}`);
+      // console.log(`✅ Release flag set for group ${groupNumber} in session ${data.sessionCode}`);
       
       const checkboxSession = updatedCheckboxSession;
 
@@ -3881,18 +3887,18 @@ io.on("connection", socket => {
         isReleased: true
       };
       
-      console.log('📤 Emitting authoritative released checklist:', {
-        group: checklistData.groupNumber,
-        criteriaCount: checklistData.criteria.length,
-        sampleStatuses: checklistData.criteria.map(c => c.status).slice(0, 7)
-      });
+      // console.log('📤 Emitting authoritative released checklist:', {
+      //   group: checklistData.groupNumber,
+      //   criteriaCount: checklistData.criteria.length,
+      //   sampleStatuses: checklistData.criteria.map(c => c.status).slice(0, 7)
+      // });
       
       // Emit to everyone - students will now see it because isReleased is true
       io.to(data.sessionCode).emit('checklist_state', checklistData);
       io.to(`${data.sessionCode}-${groupNumber}`).emit('checklist_state', checklistData);
       latestChecklistState.set(cacheKey, checklistData);
       
-      console.log(`✅ Checklist released to session ${data.sessionCode} for Group ${groupNumber}`);
+      // console.log(`✅ Checklist released to session ${data.sessionCode} for Group ${groupNumber}`);
     } catch (error) {
       console.error('❌ Error handling checklist release:', error);
     }
@@ -3908,16 +3914,16 @@ function extractMime(mime) {
 
 async function transcribe(buf, format = 'audio/webm') {
   try {
-    console.log(`🌐 Calling ElevenLabs API for transcription (${buf.length} bytes, format: ${format})`);
+    // console.log(`🌐 Calling ElevenLabs API for transcription (${buf.length} bytes, format: ${format})`);
     
     // Additional validation
     if (!buf || buf.length === 0) {
-      console.log("⚠️  Empty audio buffer provided");
+      // console.log("⚠️  Empty audio buffer provided");
       return { text: "No audio data available", words: [] };
     }
     
     if (buf.length < 1000) {
-      console.log(`⚠️  Audio buffer too small (${buf.length} bytes) for transcription`);
+      // console.log(`⚠️  Audio buffer too small (${buf.length} bytes) for transcription`);
       return { text: "Audio too short for transcription", words: [] };
     }
     
@@ -3960,23 +3966,23 @@ async function transcribe(buf, format = 'audio/webm') {
     
     // Validate audio headers based on format
     const header = buf.slice(0, 4).toString('hex');
-    console.log(`🔍 Audio header: ${header} (format: ${audioMime})`);
+    // console.log(`🔍 Audio header: ${header} (format: ${audioMime})`);
     
     // Additional validation for WebM containers
     if (audioMime === 'audio/webm') {
       if (header !== '1a45dfa3') {
-        console.log(`❌ Invalid WebM header: ${header}, expected: 1a45dfa3`);
-        console.log(`🚫 Rejecting WebM data - only complete containers should be processed`);
+        // console.log(`❌ Invalid WebM header: ${header}, expected: 1a45dfa3`);
+        // console.log(`🚫 Rejecting WebM data - only complete containers should be processed`);
         return { text: "Invalid WebM container - only complete containers are supported", words: [] };
       }
       
       // Check for minimum WebM container size
       if (buf.length < 1000) {
-        console.log(`❌ WebM container too small: ${buf.length} bytes`);
+        // console.log(`❌ WebM container too small: ${buf.length} bytes`);
         return { text: "WebM container too small", words: [] };
       }
       
-      console.log(`✅ Valid WebM container detected (${buf.length} bytes)`);
+      // console.log(`✅ Valid WebM container detected (${buf.length} bytes)`);
     }
     
     // Add the audio buffer as a file
@@ -4007,8 +4013,8 @@ async function transcribe(buf, format = 'audio/webm') {
         try {
           const errorJson = JSON.parse(errorText);
           if (errorJson.detail?.message?.includes('corrupted')) {
-            console.log("🔄 Audio appears corrupted - this might be due to WebM container issues");
-            console.log(`📊 Audio details: ${buf.length} bytes, format: ${audioMime}, header: ${buf.slice(0, 4).toString('hex')}`);
+            // console.log("🔄 Audio appears corrupted - this might be due to WebM container issues");
+            // console.log(`📊 Audio details: ${buf.length} bytes, format: ${audioMime}, header: ${buf.slice(0, 4).toString('hex')}`);
             return { text: "Audio quality issue - WebM container may be incomplete", words: [] };
           }
         } catch (e) {
@@ -4020,7 +4026,7 @@ async function transcribe(buf, format = 'audio/webm') {
     }
     
     const result = await response.json();
-    console.log("✅ ElevenLabs transcription successful");
+    // console.log("✅ ElevenLabs transcription successful");
     
     // Return both text and word-level data
     return {
@@ -4043,7 +4049,7 @@ async function transcribe(buf, format = 'audio/webm') {
 
 async function summarise(text, customPrompt) {
   try {
-    console.log(`🌐 Calling OpenAI API for summarization`);
+    // console.log(`🌐 Calling OpenAI API for summarization`);
     const basePrompt = customPrompt || "Summarise the following classroom discussion in ≤6 clear bullet points:";
     const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
     if (!apiKey) {
@@ -4065,7 +4071,7 @@ ${text}`
       ]
     });
     const summaryText = response.choices?.[0]?.message?.content?.trim();
-    console.log("✅ OpenAI summarization successful");
+    // console.log("✅ OpenAI summarization successful");
     return summaryText ?? "(no summary)";
   } catch (err) {
     console.error("❌ Summarization error:", err);
@@ -4075,7 +4081,7 @@ ${text}`
 
 async function processMindmapTranscript(text, mainTopic, existingNodes = []) {
   try {
-    console.log(`🧠 Processing transcript for mindmap...`);
+    // console.log(`🧠 Processing transcript for mindmap...`);
     const existingNodesText = existingNodes.length > 0 ? 
       `\n\nExisting mindmap structure:\n${existingNodes.map(node => 
         `${node.level === 0 ? 'MAIN:' : node.level === 1 ? 'TOPIC:' : node.level === 2 ? 'SUBTOPIC:' : 'EXAMPLE:'} ${node.content}`
@@ -4161,7 +4167,7 @@ Levels: 1=main topic, 2=subtopic, 3=sub-subtopic/example`;
     const rawText = response.choices?.[0]?.message?.content?.trim() ?? "";
     const parsed = parseJsonFromText(rawText) || { action: "ignore", reason: "parsing error", node: null };
     
-    console.log("✅ Mindmap processing successful");
+    // console.log("✅ Mindmap processing successful");
     return parsed;
   } catch (err) {
     console.error("❌ Mindmap processing error:", err);
@@ -4171,13 +4177,13 @@ Levels: 1=main topic, 2=subtopic, 3=sub-subtopic/example`;
 
 async function processCheckboxTranscript(text, criteria, scenario = "", strictness = 2, existingProgress = []) {
   try {
-    console.log(`☑️ Processing transcript for 3-state checkbox evaluation (strictness: ${strictness})...`);
+    // console.log(`☑️ Processing transcript for 3-state checkbox evaluation (strictness: ${strictness})...`);
     
     // Check if API key is available
     const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
     if (!apiKey) {
-      console.log(`🧪 OpenAI API key not set - returning mock test data for demonstration`);
-      console.log(`🔍 Checked for: OPENAI_API_KEY and OPENAI_KEY environment variables`);
+      // console.log(`🧪 OpenAI API key not set - returning mock test data for demonstration`);
+      // console.log(`🔍 Checked for: OPENAI_API_KEY and OPENAI_KEY environment variables`);
       
       // Return mock matches for testing when API key is not available
       const mockMatches = [];
@@ -4207,7 +4213,7 @@ async function processCheckboxTranscript(text, criteria, scenario = "", strictne
       };
     }
     
-    console.log(`✅ Using OpenAI API for ${strictness === 1 ? 'LENIENT' : strictness === 2 ? 'MODERATE' : 'STRICT'} transcript analysis`);
+    // console.log(`✅ Using OpenAI API for ${strictness === 1 ? 'LENIENT' : strictness === 2 ? 'MODERATE' : 'STRICT'} transcript analysis`);
     
     // Filter out already GREEN criteria from evaluation
     const criteriaToEvaluate = [];
@@ -4222,18 +4228,18 @@ async function processCheckboxTranscript(text, criteria, scenario = "", strictne
           quote: progress.quote,
           status: "green"
         });
-        console.log(`📋 Skipping evaluation for criteria ${i} - already GREEN with quote: "${progress.quote}"`);
+        // console.log(`📋 Skipping evaluation for criteria ${i} - already GREEN with quote: "${progress.quote}"`);
       } else {
         // This criterion needs evaluation
         criteriaToEvaluate.push({ ...c, originalIndex: i });
       }
     });
     
-    console.log(`📋 Evaluating ${criteriaToEvaluate.length} criteria (skipping ${greenCriteria.length} already GREEN)`);
+    // console.log(`📋 Evaluating ${criteriaToEvaluate.length} criteria (skipping ${greenCriteria.length} already GREEN)`);
     
     // If all criteria are already GREEN, just return them
     if (criteriaToEvaluate.length === 0) {
-      console.log(`✅ All criteria already GREEN - no evaluation needed`);
+      // console.log(`✅ All criteria already GREEN - no evaluation needed`);
       return {
         matches: greenCriteria
       };
@@ -4418,7 +4424,7 @@ Begin evaluation now:`;
     }
     const responseText = response.choices?.[0]?.message?.content?.trim();
 
-    console.log(`🔍 OpenAI response text: "${responseText?.substring(0, 300)}..."`);
+    // console.log(`🔍 OpenAI response text: "${responseText?.substring(0, 300)}..."`);
 
     let result = parseJsonFromText(responseText) || { matches: [] };
     
@@ -4575,7 +4581,7 @@ Begin evaluation now:`;
       }
       // Reroute only when there is a clear improvement and current match is weak
       if (bestIdx !== current && bestScore >= Math.max(2, bestScore - 0) && bestScore >= (scoreOverlap(m.quote, current) + 2)) {
-        console.log(`🔀 Re-routing match from idx=${current} to idx=${bestIdx} based on token overlap (old=${scoreOverlap(m.quote, current)}, new=${bestScore})`);
+        // console.log(`🔀 Re-routing match from idx=${current} to idx=${bestIdx} based on token overlap (old=${scoreOverlap(m.quote, current)}, new=${bestScore})`);
         return { ...m, criteria_index: bestIdx };
       }
       return m;
@@ -4596,11 +4602,11 @@ Begin evaluation now:`;
       });
     })();
     
-    console.log(`✅ 3-state checkbox processing successful: ${result.matches.length} valid matches found`);
-    console.log(`📊 Status breakdown:`, result.matches.reduce((acc, match) => {
-      acc[match.status] = (acc[match.status] || 0) + 1;
-      return acc;
-    }, {}));
+    // console.log(`✅ 3-state checkbox processing successful: ${result.matches.length} valid matches found`);
+    // console.log(`📊 Status breakdown:`, result.matches.reduce((acc, match) => {
+    //   acc[match.status] = (acc[match.status] || 0) + 1;
+    //   return acc;
+    // }, {}));
     
     // Build complete matches array for ALL criteria
     const allMatches = [];
@@ -4643,11 +4649,11 @@ Begin evaluation now:`;
     // Sort by criteria_index for consistent ordering
     allMatches.sort((a, b) => a.criteria_index - b.criteria_index);
     
-    console.log(`📊 Complete results: ${allMatches.length} total matches for ${criteria.length} criteria`);
-    console.log(`📊 Final status breakdown:`, allMatches.reduce((acc, match) => {
-      acc[match.status] = (acc[match.status] || 0) + 1;
-      return acc;
-    }, {}));
+    // console.log(`📊 Complete results: ${allMatches.length} total matches for ${criteria.length} criteria`);
+    // console.log(`📊 Final status breakdown:`, allMatches.reduce((acc, match) => {
+    //   acc[match.status] = (acc[match.status] || 0) + 1;
+    //   return acc;
+    // }, {}));
     
     return { matches: allMatches };
   } catch (err) {
@@ -4658,17 +4664,17 @@ Begin evaluation now:`;
 
 // Clean up on server shutdown
 process.on('SIGINT', async () => {
-  console.log('🛑 Server shutting down...');
+  // console.log('🛑 Server shutting down...');
   
   // Stop all auto-summary timers
   for (const [sessionCode, timer] of activeSummaryTimers) {
     clearInterval(timer);
-    console.log(`⏰ Stopped timer for session ${sessionCode}`);
+    // console.log(`⏰ Stopped timer for session ${sessionCode}`);
   }
   
   // Mark all sessions as inactive in database
   await db.collection("sessions").updateMany({}, { $set: { active: false } });
-  console.log('💾 Marked all sessions as inactive');
+  // console.log('💾 Marked all sessions as inactive');
   
   process.exit(0);
 });
@@ -4676,7 +4682,7 @@ process.on('SIGINT', async () => {
 /* New 30-second chunk transcription endpoint */
 app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
   try {
-    console.log("📦 Received chunk for transcription");
+    // console.log("📦 Received chunk for transcription");
     
     if (!req.file) {
       return res.status(400).json({ error: "No audio file provided", success: false });
@@ -4690,11 +4696,11 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: "Session code and group number are required", success: false });
     }
     
-    console.log(`📁 Processing chunk: ${audioBuffer.length} bytes, mimetype: ${mimeType}, session: ${sessionCode}, group: ${groupNumber}`);
+    // console.log(`📁 Processing chunk: ${audioBuffer.length} bytes, mimetype: ${mimeType}, session: ${sessionCode}, group: ${groupNumber}`);
     
     // Enhanced chunk validation
     if (audioBuffer.length < 100) {
-      console.log("⚠️ Chunk too small, skipping");
+      // console.log("⚠️ Chunk too small, skipping");
       return res.json({ 
         success: false, 
         message: "Chunk too small (< 100 bytes)",
@@ -4703,7 +4709,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
     }
     
     if (audioBuffer.length > 10 * 1024 * 1024) { // 10MB limit
-      console.log("⚠️ Chunk too large, skipping");
+      // console.log("⚠️ Chunk too large, skipping");
       return res.status(400).json({ error: "Chunk too large (>10MB)", success: false });
     }
     
@@ -4717,15 +4723,15 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
     };
     
     if (!validHeaders[header]) {
-      console.log(`⚠️ Unknown audio format, header: ${header}`);
+      // console.log(`⚠️ Unknown audio format, header: ${header}`);
       // Don't reject - ElevenLabs might still be able to process it
     } else {
-      console.log(`✅ Detected ${validHeaders[header]} format`);
+      // console.log(`✅ Detected ${validHeaders[header]} format`);
     }
     
     // Validate WebM containers more strictly
     if (mimeType.includes('webm') && header !== '1a45dfa3') {
-      console.log(`❌ Invalid WebM container, header: ${header}`);
+      // console.log(`❌ Invalid WebM container, header: ${header}`);
       return res.status(400).json({ 
         error: "Invalid WebM container - corrupted audio data", 
         success: false,
@@ -4743,7 +4749,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
       contentType: mimeType
     });
     
-    console.log("🌐 Forwarding to ElevenLabs Speech-to-Text API...");
+    // console.log("🌐 Forwarding to ElevenLabs Speech-to-Text API...");
     
     const startTime = Date.now();
     let response;
@@ -4767,12 +4773,12 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
           break; // Success, exit retry loop
         } else if (response.status === 429) {
           // Rate limit - wait and retry
-          console.log(`⏳ Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
+          // console.log(`⏳ Rate limited, retrying in ${Math.pow(2, retryCount)} seconds...`);
           await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
           retryCount++;
         } else if (response.status >= 500) {
           // Server error - retry
-          console.log(`🔄 Server error ${response.status}, retrying...`);
+          // console.log(`🔄 Server error ${response.status}, retrying...`);
           retryCount++;
           await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
@@ -4822,14 +4828,14 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
     }
     
     const result = await response.json();
-    console.log(`✅ ElevenLabs transcription successful (${processingTime}ms, ${retryCount} retries)`);
+    // console.log(`✅ ElevenLabs transcription successful (${processingTime}ms, ${retryCount} retries)`);
     
     // Use the raw transcription without cleaning
     let transcriptionText = result.text || "";
     
     // Skip empty transcriptions
     if (!transcriptionText.trim()) {
-      console.log("⚠️ Empty transcription result, skipping database save");
+      // console.log("⚠️ Empty transcription result, skipping database save");
       return res.json({
         success: true,
         message: "Empty transcription - no speech detected",
@@ -4849,7 +4855,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
       // Get session and group
       const session = await db.collection("sessions").findOne({ code: sessionCode });
       if (!session) {
-        console.log(`⚠️  Session ${sessionCode} not found in database - session may not have started recording yet`);
+        // console.log(`⚠️  Session ${sessionCode} not found in database - session may not have started recording yet`);
         return res.json({
           success: true,
           message: "Session not yet persisted - transcription processed but not saved",
@@ -4875,7 +4881,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
         number: parseInt(groupNumber) 
       });
       if (!group) {
-        console.log(`⚠️  Group ${groupNumber} not found in database - creating new group`);
+        // console.log(`⚠️  Group ${groupNumber} not found in database - creating new group`);
         
         // Create the group since it doesn't exist
         const newGroupId = uuid();
@@ -4885,7 +4891,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
           number: parseInt(groupNumber)
         });
         
-        console.log(`📝 Created new group: Session ${sessionCode}, Group ${groupNumber}, ID: ${newGroupId}`);
+        // console.log(`📝 Created new group: Session ${sessionCode}, Group ${groupNumber}, ID: ${newGroupId}`);
         
         // Continue with the newly created group
         const newGroup = { _id: newGroupId, session_id: session._id, number: parseInt(groupNumber) };
@@ -4897,7 +4903,7 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
         await processTranscriptionForGroup(session, group, transcriptionText, result, now, sessionCode, groupNumber);
       }
       
-      console.log(`✅ Transcription and summary saved for session ${sessionCode}, group ${groupNumber}`);
+      // console.log(`✅ Transcription and summary saved for session ${sessionCode}, group ${groupNumber}`);
       
     } catch (dbError) {
       console.error("❌ Database error:", dbError);
@@ -4936,12 +4942,12 @@ app.post("/api/transcribe-chunk", upload.single('file'), async (req, res) => {
       retryCount: retryCount
     };
     
-    console.log("📝 Chunk transcription result:", {
-      text: transcriptionText.substring(0, 100) + (transcriptionText.length > 100 ? "..." : ""),
-      wordCount: finalResult.transcription.wordCount,
-      duration: finalResult.transcription.duration,
-      retries: retryCount
-    });
+    // console.log("📝 Chunk transcription result:", {
+    //   text: transcriptionText.substring(0, 100) + (transcriptionText.length > 100 ? "..." : ""),
+    //   wordCount: finalResult.transcription.wordCount,
+    //   duration: finalResult.transcription.duration,
+    //   retries: retryCount
+    // });
     
     res.json(finalResult);
     
@@ -5000,7 +5006,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
                    /^\([^)]*\)\s*\([^)]*\)$/.test(lowerText); // Only parenthetical descriptions
     
     if (isNoise) {
-      console.log(`🔇 Noise/background transcript (still logging to UI): "${transcriptionText.substring(0, 50)}..."`);
+      // console.log(`🔇 Noise/background transcript (still logging to UI): "${transcriptionText.substring(0, 50)}..."`);
       // Log minimal transcript entry for timeline
       const transcriptId = uuid();
       const noiseRecord = createTranscriptRecord({
@@ -5066,7 +5072,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
     
     // Check if this is a checkbox mode session
     if (session.mode === "checkbox") {
-      console.log(`☑️ Processing checkbox mode transcript for session ${sessionCode}, group ${groupNumber}`);
+      // console.log(`☑️ Processing checkbox mode transcript for session ${sessionCode}, group ${groupNumber}`);
       
       // Get checkbox session data and criteria
       const checkboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
@@ -5084,7 +5090,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
         // Join everything up to the current point
         const concatenatedText = allTranscriptsForGroup.map(t => t.text).join(' ').trim();
         
-        console.log(`📋 Using FULL context for checkbox analysis: ${allTranscriptsForGroup.length} segments`);
+        // console.log(`📋 Using FULL context for checkbox analysis: ${allTranscriptsForGroup.length} segments`);
         
         const progressDoc = await ensureGroupProgressDoc(session._id, groupNumber, criteriaRecords);
         const progressMap = progressDoc?.progress || {};
@@ -5093,10 +5099,10 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
         }
         const existingProgress = extractExistingProgress(criteriaRecords, progressMap);
         
-        console.log(`📋 Loaded progress map with ${Object.keys(progressMap).length} entries for group ${groupNumber}`);
+        // console.log(`📋 Loaded progress map with ${Object.keys(progressMap).length} entries for group ${groupNumber}`);
         const greenCount = existingProgress.filter(p => p && p.status === 'green').length;
         if (greenCount > 0) {
-          console.log(`📋 Preserving ${greenCount} GREEN criteria from previous evaluations`);
+          // console.log(`📋 Preserving ${greenCount} GREEN criteria from previous evaluations`);
         }
         
         // Process through checkbox analysis with concatenated text
@@ -5141,17 +5147,17 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
               quote: entry.quote,
               status: entry.status
             });
-            console.log(`📋 Checkbox update for criteria idx=${match.criteria_index} (_id=${criterion._id}): "${match.quote}" - STATUS: ${entry.status}`);
+            // console.log(`📋 Checkbox update for criteria idx=${match.criteria_index} (_id=${criterion._id}): "${match.quote}" - STATUS: ${entry.status}`);
           } else if (currentEntry) {
             if (currentEntry.status === 'green') {
-              console.log(`📋 Criteria ${match.criteria_index} already GREEN (locked) with quote: "${currentEntry.quote}" - skipping update`);
+              // console.log(`📋 Criteria ${match.criteria_index} already GREEN (locked) with quote: "${currentEntry.quote}" - skipping update`);
             } else if (currentEntry.status === 'red' && match.status !== 'green') {
-              console.log(`📋 Criteria ${match.criteria_index} staying RED - cannot downgrade to ${match.status.toUpperCase()}`);
+              // console.log(`📋 Criteria ${match.criteria_index} staying RED - cannot downgrade to ${match.status.toUpperCase()}`);
             } else {
-              console.log(`📋 Criteria ${match.criteria_index} unchanged at status ${currentEntry.status.toUpperCase()}`);
+              // console.log(`📋 Criteria ${match.criteria_index} unchanged at status ${currentEntry.status.toUpperCase()}`);
             }
           } else {
-            console.log(`📋 Criteria ${match.criteria_index} produced status ${match.status.toUpperCase()} but no change required`);
+            // console.log(`📋 Criteria ${match.criteria_index} produced status ${match.status.toUpperCase()} but no change required`);
           }
         }
         
@@ -5175,7 +5181,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
           }
         }
         
-        console.log(`📤 Sending ${progressUpdates.length} checkbox updates to admin for group ${groupNumber}`);
+        // console.log(`📤 Sending ${progressUpdates.length} checkbox updates to admin for group ${groupNumber}`);
         
         // Send checkbox updates to admin
         io.to(sessionCode).emit("admin_update", {
@@ -5198,7 +5204,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
           sessionCode: sessionCode
         };
         
-        console.log(`📨 Emitting checklist state to all (released: ${isReleased})`);
+        // console.log(`📨 Emitting checklist state to all (released: ${isReleased})`);
         
         // Emit to everyone in session
         io.to(sessionCode).emit('checklist_state', checklistData);
@@ -5220,12 +5226,12 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
           isLatestSegment: true
         });
         
-        console.log(`✅ Checkbox analysis complete: ${checkboxResult.matches.length} criteria matched for group ${groupNumber}`);
+        // console.log(`✅ Checkbox analysis complete: ${checkboxResult.matches.length} criteria matched for group ${groupNumber}`);
       }
       
     } else {
     // Regular summary mode processing
-      console.log(`📝 Processing summary mode transcript for session ${sessionCode}, group ${groupNumber}`);
+      // console.log(`📝 Processing summary mode transcript for session ${sessionCode}, group ${groupNumber}`);
     
     // Get all transcripts for this group to create cumulative conversation
     const allTranscripts = appendOutcome.segments;
@@ -5234,7 +5240,7 @@ async function processTranscriptionForGroup(session, group, transcriptionText, r
     const cumulativeText = allTranscripts.map(t => t.text).join(' ');
     
     // Generate summary of the entire conversation so far
-    console.log("🤖 Generating summary of full conversation...");
+    // console.log("🤖 Generating summary of full conversation...");
     
     // Get custom prompt for this session
     // Resolve the latest prompt: prefer memory cache, fall back to DB
@@ -5303,17 +5309,17 @@ app.post("/api/checkbox/test", express.json(), async (req, res) => {
   try {
     const { sessionCode, transcript } = req.body;
     
-    console.log(`🧪 TEST MODE ACTIVATED for session ${sessionCode}`);
-    console.log(`🧪 Test transcript length: ${transcript?.length || 0} characters`);
-    console.log(`🧪 Test transcript preview: "${transcript?.substring(0, 100)}..."`);
+    // console.log(`🧪 TEST MODE ACTIVATED for session ${sessionCode}`);
+    // console.log(`🧪 Test transcript length: ${transcript?.length || 0} characters`);
+    // console.log(`🧪 Test transcript preview: "${transcript?.substring(0, 100)}..."`);
     
     // Forward to regular checkbox processing but with test logging
     const result = await processTestTranscript(sessionCode, transcript);
     
-    console.log(`🧪 TEST RESULT: ${result.matches?.length || 0} matches found`);
+    // console.log(`🧪 TEST RESULT: ${result.matches?.length || 0} matches found`);
     if (result.matches?.length > 0) {
       result.matches.forEach((match, index) => {
-        console.log(`🧪 Match ${index + 1}: Criteria ${match.criteria_index} - "${match.quote}"`);
+        // console.log(`🧪 Match ${index + 1}: Criteria ${match.criteria_index} - "${match.quote}"`);
       });
     }
     
@@ -5341,7 +5347,7 @@ async function processTestTranscript(sessionCode, transcript) {
     throw new Error("No criteria found for session");
   }
 
-  console.log(`🧪 Processing test transcript against ${criteria.length} criteria`);
+  // console.log(`🧪 Processing test transcript against ${criteria.length} criteria`);
 
   // Get scenario
   const checkboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
@@ -5366,8 +5372,8 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
       });
     }
 
-    console.log(`📦 Received mindmap chunk for transcription`);
-    console.log(`📁 Processing mindmap chunk: ${file.size} bytes, session: ${sessionCode}`);
+    // console.log(`📦 Received mindmap chunk for transcription`);
+    // console.log(`📁 Processing mindmap chunk: ${file.size} bytes, session: ${sessionCode}`);
 
     // Get session data
     const session = await db.collection("sessions").findOne({ code: sessionCode });
@@ -5379,7 +5385,7 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
     }
 
     // Transcribe the audio chunk
-    console.log(`🎯 Transcribing audio chunk...`);
+    // console.log(`🎯 Transcribing audio chunk...`);
     const transcriptionResult = await transcribe(file.buffer, file.mimetype);
     
     // Extract transcript text properly
@@ -5405,7 +5411,7 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
       });
     }
 
-    console.log(`📝 Transcription successful: "${transcript}"`);
+    // console.log(`📝 Transcription successful: "${transcript}"`);
     
     // Add to transcript history for context
     addToTranscriptHistory(sessionCode, transcript);
@@ -5421,7 +5427,7 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
 
     if (!currentMindmapData || !currentMindmapData.children || currentMindmapData.children.length === 0) {
       // Generate initial mindmap with contextual transcript
-      console.log(`🧠 Generating initial mindmap from transcript...`);
+      // console.log(`🧠 Generating initial mindmap from transcript...`);
       mindmapData = await generateInitialMindmap(contextualTranscript, session.main_topic);
       ensureMindmapNodeIds(mindmapData);
       
@@ -5474,7 +5480,7 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
       }
     } else {
       // Expand existing mindmap with contextual transcript
-      console.log(`🧠 Expanding mindmap with contextual speech...`);
+      // console.log(`🧠 Expanding mindmap with contextual speech...`);
       const expansionResult = await expandMindmap(contextualTranscript, currentMindmapData, session.main_topic);
 
       if (!expansionResult.filtered) {
@@ -5531,7 +5537,7 @@ app.post("/api/transcribe-mindmap-chunk", upload.single('file'), async (req, res
     }
 
     const processingTime = Date.now() - startTime;
-    console.log(`✅ Mindmap chunk processed successfully in ${processingTime}ms`);
+    // console.log(`✅ Mindmap chunk processed successfully in ${processingTime}ms`);
     
     res.json(result);
 
@@ -5563,9 +5569,9 @@ async function markAllSessionsInactive() {
     
     // Clear all transcript histories
     sessionTranscriptHistory.clear();
-    console.log("🗑️ Cleared all transcript histories");
+    // console.log("🗑️ Cleared all transcript histories");
     
-    console.log(`💾 Marked ${result.modifiedCount} sessions as inactive`);
+    // console.log(`💾 Marked ${result.modifiedCount} sessions as inactive`);
   } catch (error) {
     console.error("❌ Error marking sessions inactive:", error);
   }
@@ -5613,7 +5619,7 @@ app.get("/api/data/sessions", async (req, res) => {
     const startTime = Date.now();
     const { limit = 20, offset = 0, mode = null } = req.query;
 
-    console.log(`📊 Fetching comprehensive session data (limit: ${limit}, offset: ${offset}, mode: ${mode})`);
+    // console.log(`📊 Fetching comprehensive session data (limit: ${limit}, offset: ${offset}, mode: ${mode})`);
 
     // Build query filter
     const query = {};
@@ -5865,7 +5871,7 @@ app.get("/api/data/sessions", async (req, res) => {
     const totalCount = await db.collection("sessions").countDocuments(query);
 
     const duration = Date.now() - startTime;
-    console.log(`✅ Data fetch completed in ${duration}ms (${enrichedSessions.length} sessions)`);
+    // console.log(`✅ Data fetch completed in ${duration}ms (${enrichedSessions.length} sessions)`);
 
     res.json({
       success: true,
@@ -5893,7 +5899,7 @@ app.get("/api/data/session/:sessionCode", async (req, res) => {
   try {
     const { sessionCode } = req.params;
     
-    console.log(`📊 Fetching detailed data for session: ${sessionCode}`);
+    // console.log(`📊 Fetching detailed data for session: ${sessionCode}`);
     
     // Get session
     const session = await db.collection("sessions").findOne({ code: sessionCode });
@@ -6019,7 +6025,7 @@ app.get("/api/prompts", async (req, res) => {
       sortOrder = "desc"
     } = req.query;
     
-    console.log(`📝 Fetching prompts (search: "${search}", category: "${category}", mode: "${mode}")`);
+    // console.log(`📝 Fetching prompts (search: "${search}", category: "${category}", mode: "${mode}")`);
     
     const baseFilter = {};
     if (category) baseFilter.category = category;
@@ -6096,7 +6102,7 @@ app.get("/api/prompts/:id", async (req, res) => {
   try {
     const { id } = req.params;
     
-    console.log(`📝 Fetching prompt: ${id}`);
+    // console.log(`📝 Fetching prompt: ${id}`);
     
     const prompt = await db.collection("teacher_prompts").findOne({ _id: id });
     if (!prompt) {
@@ -6141,7 +6147,7 @@ app.post("/api/prompts", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Title and content are required" });
     }
     
-    console.log(`📝 Creating new prompt: "${title}"`);
+    // console.log(`📝 Creating new prompt: "${title}"`);
     
     const promptId = uuid();
     const now = Date.now();
@@ -6197,7 +6203,7 @@ app.put("/api/prompts/:id", express.json(), async (req, res) => {
       return res.status(400).json({ error: "Title and content are required" });
     }
     
-    console.log(`📝 Updating prompt: ${id}`);
+    // console.log(`📝 Updating prompt: ${id}`);
     
     const updateData = {
       title: title.trim(),
@@ -6240,7 +6246,7 @@ app.delete("/api/prompts/:id", async (req, res) => {
   try {
     const { id } = req.params;
     
-    console.log(`📝 Deleting prompt: ${id}`);
+    // console.log(`📝 Deleting prompt: ${id}`);
     
     const result = await db.collection("teacher_prompts").deleteOne({ _id: id });
     
@@ -6265,7 +6271,7 @@ app.post("/api/prompts/:id/use", express.json(), async (req, res) => {
     const { id } = req.params;
     const { sessionCode } = req.body;
     
-    console.log(`📝 Using prompt ${id} for session ${sessionCode}`);
+    // console.log(`📝 Using prompt ${id} for session ${sessionCode}`);
     
     const prompt = await db.collection("teacher_prompts").findOne({ _id: id });
     if (!prompt) {
@@ -6296,7 +6302,7 @@ app.post("/api/prompts/:id/use", express.json(), async (req, res) => {
 /* Get prompt statistics */
 app.get("/api/prompts/stats/overview", async (req, res) => {
   try {
-    console.log("📊 Fetching prompt statistics");
+    // console.log("📊 Fetching prompt statistics");
     
     const totalPrompts = await db.collection("teacher_prompts").countDocuments();
     const publicPrompts = await db.collection("teacher_prompts").countDocuments({ isPublic: true });
@@ -6357,7 +6363,7 @@ app.post("/api/prompts/:id/clone", express.json(), async (req, res) => {
     const { id } = req.params;
     const { authorName = "Anonymous Teacher" } = req.body;
     
-    console.log(`📝 Cloning prompt: ${id}`);
+    // console.log(`📝 Cloning prompt: ${id}`);
     
     const originalPrompt = await db.collection("teacher_prompts").findOne({ _id: id });
     if (!originalPrompt) {
@@ -6400,15 +6406,15 @@ app.post("/api/prompts/:id/clone", express.json(), async (req, res) => {
 /* Seed default prompts for teachers */
 async function seedDefaultPrompts() {
   try {
-    console.log('🌱 Checking for default prompts...');
+    // console.log('🌱 Checking for default prompts...');
     
     const existingPrompts = await db.collection("teacher_prompts").countDocuments();
     if (existingPrompts > 0) {
-      console.log('🌱 Default prompts already exist, skipping seed');
+      // console.log('🌱 Default prompts already exist, skipping seed');
       return;
     }
     
-    console.log('🌱 Seeding default teacher prompts...');
+    // console.log('🌱 Seeding default teacher prompts...');
     
     const defaultPrompts = [
       {
@@ -6622,7 +6628,7 @@ Provide specific quotes that demonstrate each completed criterion.`,
     ];
     
     await db.collection("teacher_prompts").insertMany(defaultPrompts);
-    console.log(`🌱 Successfully seeded ${defaultPrompts.length} default prompts`);
+    // console.log(`🌱 Successfully seeded ${defaultPrompts.length} default prompts`);
     
   } catch (err) {
     console.error('❌ Failed to seed default prompts:', err);
@@ -6634,28 +6640,28 @@ Provide specific quotes that demonstrate each completed criterion.`,
 // Clean up old session data to prevent contamination
 async function cleanupOldSessionData(sessionCode) {
   try {
-    console.log(`🧹 Cleaning up old data for session: ${sessionCode}`);
+    // console.log(`🧹 Cleaning up old data for session: ${sessionCode}`);
     
     // Get the session document
     const session = await db.collection("sessions").findOne({ code: sessionCode });
     if (!session) {
-      console.log(`📋 No session found with code: ${sessionCode}`);
+      // console.log(`📋 No session found with code: ${sessionCode}`);
       return;
     }
     
     // Delete old checkbox progress
     const progressResult = await db.collection("checkbox_progress").deleteMany({ session_id: session._id });
-    console.log(`🗑️ Deleted ${progressResult.deletedCount} old progress records`);
+    // console.log(`🗑️ Deleted ${progressResult.deletedCount} old progress records`);
     
     // Delete old checkbox criteria
     const criteriaResult = await db.collection("checkbox_criteria").deleteMany({ session_id: session._id });
-    console.log(`🗑️ Deleted ${criteriaResult.deletedCount} old criteria records`);
+    // console.log(`🗑️ Deleted ${criteriaResult.deletedCount} old criteria records`);
     
     // Delete old checkbox session
     const sessionResult = await db.collection("checkbox_sessions").deleteMany({ session_id: session._id });
-    console.log(`🗑️ Deleted ${sessionResult.deletedCount} old checkbox session records`);
+    // console.log(`🗑️ Deleted ${sessionResult.deletedCount} old checkbox session records`);
     
-    console.log(`✅ Session ${sessionCode} cleaned up successfully`);
+    // console.log(`✅ Session ${sessionCode} cleaned up successfully`);
   } catch (err) {
     console.error(`❌ Error cleaning up session ${sessionCode}:`, err);
   }

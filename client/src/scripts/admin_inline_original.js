@@ -133,7 +133,7 @@ window.loadPrompt = async function(promptId) {
         try {
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
-                console.log('✅ Lucide icons initialized successfully');
+                // console.log('✅ Lucide icons initialized successfully');
             } else {
                 console.warn('⚠️ Lucide library not loaded, using fallback icons');
                 showFallbackIcons();
@@ -149,7 +149,7 @@ window.loadPrompt = async function(promptId) {
         try {
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
-                console.log('✅ Lucide icons re-initialized via timeout');
+                // console.log('✅ Lucide icons re-initialized via timeout');
             } else {
                 console.warn('⚠️ Lucide library still not loaded, using fallback icons');
                 showFallbackIcons();
@@ -173,7 +173,7 @@ window.loadPrompt = async function(promptId) {
             icon.style.display = 'inline-block';
         });
         
-        console.log('🔄 Switched to fallback icons');
+        // console.log('🔄 Switched to fallback icons');
     }
     
     // Connection status management
@@ -190,14 +190,14 @@ window.loadPrompt = async function(promptId) {
             text.textContent = 'Connected';
             text.className = 'text-xs font-medium text-black';
             isConnected = true;
-            console.log('🟢 Admin dashboard connected');
+            // console.log('🟢 Admin dashboard connected');
         } else if (!connected && isConnected) {
             // Disconnected
             dot.className = 'w-2 h-2 bg-red-400 rounded-full animate-pulse';
             text.textContent = 'Disconnected';
             text.className = 'text-xs font-medium text-red-200';
             isConnected = false;
-            console.log('🔴 Admin dashboard disconnected');
+            // console.log('🔴 Admin dashboard disconnected');
             showErrorToast('Connection lost. Attempting to reconnect...');
         }
     }
@@ -208,7 +208,7 @@ window.loadPrompt = async function(promptId) {
         heartbeatInterval = setInterval(() => {
             if (socket.connected && sessionCode) {
                 socket.emit('admin_heartbeat', { sessionCode });
-                console.log('💓 Admin heartbeat sent');
+                // console.log('💓 Admin heartbeat sent');
             }
         }, 10000);
         
@@ -384,7 +384,7 @@ window.loadPrompt = async function(promptId) {
                 }
             }
         } catch (err) {
-            console.log('No saved prompt found, using default');
+            // console.log('No saved prompt found, using default');
         } finally {
             if (pendingPromptFromQuery) {
                 applyPromptFromQuery();
@@ -394,12 +394,13 @@ window.loadPrompt = async function(promptId) {
     
     function showPromptFeedback(message, type) {
         const feedback = document.getElementById('promptFeedback');
+        if (!feedback) return; // Guard against null element
         const colors = {
             success: 'bg-green-50 border-green-200 text-green-800',
             error: 'bg-red-50 border-red-200 text-red-800',
             info: 'bg-blue-50 border-blue-200 text-blue-800'
         };
-        
+
         feedback.className = `p-4 rounded-lg border ${colors[type]}`;
         feedback.textContent = message;
         feedback.classList.remove('hidden');
@@ -423,6 +424,7 @@ window.loadPrompt = async function(promptId) {
         }
 
         const list = document.getElementById('promptList');
+        if (!list) return; // Guard against null element
         list.innerHTML = '';
         promptLibrary.forEach((item, idx) => {
             const li = document.createElement('li');
@@ -440,7 +442,9 @@ window.loadPrompt = async function(promptId) {
 
     async function addPromptToLibrary() {
         const nameInput = document.getElementById('newPromptName');
-        const text = document.getElementById('promptText').value.trim();
+        const promptTextEl = document.getElementById('promptText');
+        if (!nameInput || !promptTextEl) return; // Guard against null elements
+        const text = promptTextEl.value.trim();
         const name = nameInput.value.trim();
         if (!name || !text) return;
         try {
@@ -464,7 +468,9 @@ window.loadPrompt = async function(promptId) {
 
     function usePrompt(index) {
         if (promptLibrary[index]) {
-            document.getElementById('promptText').value = promptLibrary[index].text;
+            const promptTextEl = document.getElementById('promptText');
+            if (!promptTextEl) return; // Guard against null element
+            promptTextEl.value = promptLibrary[index].text;
             collapsePromptEditor();
             showPromptFeedback('Prompt loaded from library', 'success');
         }
@@ -502,7 +508,7 @@ window.loadPrompt = async function(promptId) {
     document.addEventListener('DOMContentLoaded', () => {
         // Only load prompt library if we're on admin dashboard
         if (document.getElementById('promptLibraryGrid')) {
-            loadPromptLibrary();
+            loadPromptLibraryV2();
         }
     });
     
@@ -846,7 +852,7 @@ window.loadPrompt = async function(promptId) {
     
     // Socket event handlers
     socket.on('student_joined', ({ group, socketId }) => {
-        console.log(`Student joined group ${group}`);
+        // console.log(`Student joined group ${group}`);
         updateGroup(group, { isActive: true });
         
         // Fetch existing data for this group
@@ -884,7 +890,7 @@ window.loadPrompt = async function(promptId) {
     });
     
     socket.on('admin_update', (data) => {
-        console.log('Received admin update:', data);
+        // console.log('Received admin update:', data);
         updateGroup(data.group, {
             latestTranscript: data.latestTranscript,
             cumulativeTranscript: data.cumulativeTranscript,
@@ -920,30 +926,30 @@ window.loadPrompt = async function(promptId) {
     });
 
     socket.on('session_reset', () => {
-        console.log('Session reset received');
+        // console.log('Session reset received');
         resetUI();
     });
     
     // Heartbeat and connection event handlers
     socket.on('admin_heartbeat_ack', () => {
         lastHeartbeatTime = Date.now();
-        console.log('💓 Admin heartbeat acknowledged');
+        // console.log('💓 Admin heartbeat acknowledged');
     });
     
     socket.on('connect', () => {
-        console.log('🔌 Admin socket connected');
+        // console.log('🔌 Admin socket connected');
         updateConnectionStatus(true);
         lastHeartbeatTime = Date.now();
         
         // Rejoin current session if we have one
         if (sessionCode) {
             socket.emit('admin_join', { code: sessionCode });
-            console.log(`🔄 Rejoining session: ${sessionCode}`);
+            // console.log(`🔄 Rejoining session: ${sessionCode}`);
         }
     });
     
     socket.on('disconnect', () => {
-        console.log('🔌 Admin socket disconnected');
+        // console.log('🔌 Admin socket disconnected');
         updateConnectionStatus(false);
     });
     
@@ -952,11 +958,11 @@ window.loadPrompt = async function(promptId) {
         // Only run if we're actually on the admin dashboard (check for admin-specific elements)
         const promptLibraryGrid = document.getElementById('promptLibraryGrid');
         if (!promptLibraryGrid) {
-            console.log('Admin script: Not on admin dashboard, skipping initialization');
+            // console.log('Admin script: Not on admin dashboard, skipping initialization');
             return;
         }
 
-        loadPromptLibrary();
+        loadPromptLibraryV2();
 
         // Add form submission handler for create prompt modal (if it exists)
         const createPromptForm = document.getElementById('createPromptForm');
@@ -1044,8 +1050,8 @@ window.loadPrompt = async function(promptId) {
     let currentPrompts = [];
     let availableCategories = [];
     
-    // Load prompt library from API
-    async function loadPromptLibrary() {
+    // Load prompt library from API (v2 implementation)
+    async function loadPromptLibraryV2() {
         try {
             const response = await fetch('/api/prompts?mode=summary&limit=50');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1084,7 +1090,7 @@ window.loadPrompt = async function(promptId) {
             </div>
         `;
         lucide.createIcons();
-        loadPromptLibrary();
+        loadPromptLibraryV2();
     }
     
     // Update category filter options
@@ -1132,10 +1138,10 @@ window.loadPrompt = async function(promptId) {
                     <h5 class="text-sm font-medium text-gray-900 truncate flex-1 mr-2">${prompt.title}</h5>
                     <div class="flex items-center space-x-1 flex-shrink-0">
                         ${prompt.isPublic ? '<i data-lucide="globe" class="w-3 h-3 text-green-500" title="Public"></i>' : '<i data-lucide="lock" class="w-3 h-3 text-gray-400" title="Private"></i>'}
-                        <button onclick="event.stopPropagation(); editPrompt('${prompt._id}')" class="text-blue-500 hover:text-blue-700" title="Edit">
+                        <button onclick="event.stopPropagation(); editPromptV2('${prompt._id}')" class="text-blue-500 hover:text-blue-700" title="Edit">
                             <i data-lucide="edit" class="w-3 h-3"></i>
                         </button>
-                        <button onclick="event.stopPropagation(); deletePrompt('${prompt._id}')" class="text-red-500 hover:text-red-700" title="Delete">
+                        <button onclick="event.stopPropagation(); deletePromptV2('${prompt._id}')" class="text-red-500 hover:text-red-700" title="Delete">
                             <i data-lucide="trash-2" class="w-3 h-3"></i>
                         </button>
                     </div>
@@ -1197,7 +1203,7 @@ window.loadPrompt = async function(promptId) {
     }
     
     // Edit prompt
-    async function editPrompt(promptId) {
+    async function editPromptV2(promptId) {
         try {
             const response = await fetch(`/api/prompts/${promptId}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1226,7 +1232,7 @@ window.loadPrompt = async function(promptId) {
     }
     
     // Delete prompt
-    async function deletePrompt(promptId) {
+    async function deletePromptV2(promptId) {
         const prompt = currentPrompts.find(p => p._id === promptId);
         if (!prompt) return;
         
@@ -1304,7 +1310,7 @@ window.loadPrompt = async function(promptId) {
     }
     
     // Show prompt feedback
-    function showPromptFeedback(message, type = 'info') {
+    function showPromptFeedbackV2(message, type = 'info') {
         const feedback = document.getElementById('promptFeedback');
         const bgColor = type === 'success' ? 'bg-green-100 text-green-800' : 
                        type === 'error' ? 'bg-red-100 text-red-800' : 
@@ -1349,7 +1355,10 @@ window.loadPrompt = async function(promptId) {
             container.innerHTML = '';
             try { new QRCode(container, { text: url, width: 220, height: 220 }); } catch (_) {}
         }
-        if (linkEl) linkEl.textContent = url;
+        // Update the text inside the qrLinkText span
+        const linkTextEl = document.getElementById('qrLinkText');
+        if (linkTextEl) linkTextEl.textContent = url;
+        if (linkEl) linkEl.setAttribute('data-url', url);
         const modal = document.getElementById('qrModal');
         if (modal) {
             modal.classList.remove('hidden');
@@ -1365,14 +1374,45 @@ window.loadPrompt = async function(promptId) {
         modal.classList.remove('flex');
     }
 
+    window.copyQrLink = function copyQrLink() {
+        const linkTextEl = document.getElementById('qrLinkText');
+        const feedbackEl = document.getElementById('copyFeedback');
+
+        if (!linkTextEl) return;
+
+        const url = linkTextEl.textContent;
+
+        // Copy to clipboard
+        navigator.clipboard.writeText(url).then(() => {
+            // Show feedback
+            if (feedbackEl) {
+                feedbackEl.classList.remove('hidden');
+                setTimeout(() => {
+                    feedbackEl.classList.add('hidden');
+                }, 2000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+        });
+    }
+
     // Expose all necessary functions to window for onclick handlers
     window.togglePromptEditor = togglePromptEditor;
     window.openCreatePromptModal = openCreatePromptModal;
     window.closeCreatePromptModal = closeCreatePromptModal;
     window.saveCurrentPrompt = saveCurrentPrompt;
+    window.savePrompt = savePrompt;
+    window.testPrompt = testPrompt;
+    window.resetToDefaultPrompt = resetToDefaultPrompt;
+    window.showPromptFeedback = showPromptFeedback;
+    window.refreshPromptLibrary = refreshPromptLibrary;
+    window.filterPrompts = filterPrompts;
+    window.editPromptV2 = editPromptV2;
+    window.deletePromptV2 = deletePromptV2;
+    window.showPromptFeedbackV2 = showPromptFeedbackV2;
 
-    console.log('✅ Admin functions exposed to window:', {
-        togglePromptEditor: typeof window.togglePromptEditor,
-        openCreatePromptModal: typeof window.openCreatePromptModal,
-        openQrModal: typeof window.openQrModal
-    });
+    // console.log('✅ Admin functions exposed to window:', {
+        // togglePromptEditor: typeof window.togglePromptEditor,
+        // openCreatePromptModal: typeof window.openCreatePromptModal,
+        // openQrModal: typeof window.openQrModal
+    // });

@@ -95,7 +95,7 @@ function updateRecordingButtons(state) {
 
 // Load a checkbox prompt into the current editor - MUST be global for onclick handlers
 window.loadCheckboxPrompt = async function(promptId) {
-    console.log('🔍 loadCheckboxPrompt called with promptId:', promptId);
+    // console.log('🔍 loadCheckboxPrompt called with promptId:', promptId);
     try {
         const response = await fetch(`/api/prompts/${promptId}/use`, {
             method: 'POST',
@@ -131,25 +131,25 @@ window.loadCheckboxPrompt = async function(promptId) {
         const scenarioInput = document.getElementById('scenarioInput');
         const criteriaInput = document.getElementById('criteriaInput');
 
-        console.log('📝 Setting input values:', {
-            scenarioInput: !!scenarioInput,
-            criteriaInput: !!criteriaInput,
-            scenario,
-            criteriaCount: criteria.length
-        });
+        // console.log('📝 Setting input values:', {
+        //     scenarioInput: !!scenarioInput,
+        //     criteriaInput: !!criteriaInput,
+        //     scenario,
+        //     criteriaCount: criteria.length
+        // });
 
         if (scenarioInput) scenarioInput.value = scenario;
         if (criteriaInput) criteriaInput.value = criteria.join('\n');
 
-        console.log('✅ Values set. Criteria input value:', criteriaInput?.value?.substring(0, 100));
+        // console.log('✅ Values set. Criteria input value:', criteriaInput?.value?.substring(0, 100));
 
         // Manually trigger the update by clicking the "Update Criteria" button if it exists
         const updateButton = document.querySelector('button[onclick*="updateCriteria"]');
         if (updateButton) {
-            console.log('🔘 Found and clicking Update Criteria button');
+            // console.log('🔘 Found and clicking Update Criteria button');
             updateButton.click();
         } else {
-            console.log('⚠️ Update Criteria button not found');
+            // console.log('⚠️ Update Criteria button not found');
         }
 
     } catch (err) {
@@ -158,7 +158,7 @@ window.loadCheckboxPrompt = async function(promptId) {
     }
 }
 
-console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof window.loadCheckboxPrompt);
+// console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof window.loadCheckboxPrompt);
 
         // Update strictness label and description
         function updateStrictnessLabel(value) {
@@ -190,7 +190,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             // Only run if we're on the checkbox dashboard (check for checkbox-specific elements)
             const sessionCodeEl = document.getElementById('sessionCode');
             if (!sessionCodeEl) {
-                console.log('Checkbox script: Not on checkbox dashboard, skipping initialization');
+                // console.log('Checkbox script: Not on checkbox dashboard, skipping initialization');
                 return;
             }
 
@@ -210,7 +210,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 sessionCode = data.code;
                 document.getElementById('sessionCode').textContent = sessionCode;
                 socket.emit('admin_join', { code: sessionCode });
-                console.log('📋 Checkbox mode session created:', sessionCode);
+                // console.log('📋 Checkbox mode session created:', sessionCode);
                 
                 // Clear any existing data to start fresh
                 groups.clear();
@@ -245,7 +245,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 });
 
                 if (response.ok) {
-                    console.log('📋 Criteria auto-saved to backend:', currentCriteria.length, 'items with strictness:', currentStrictness);
+                    // console.log('📋 Criteria auto-saved to backend:', currentCriteria.length, 'items with strictness:', currentStrictness);
                     criteriaSavedOnce = true;
                 } else {
                     console.warn('📋 Failed to auto-save criteria:', response.status);
@@ -258,12 +258,12 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         // Load existing session data including checkbox progress
         async function loadExistingSessionData() {
             try {
-                console.log('📋 Loading existing session data for:', sessionCode);
+                // console.log('📋 Loading existing session data for:', sessionCode);
                 
                 const response = await fetch(`/api/checkbox/${sessionCode}`);
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('📋 Existing session data loaded:', data);
+                    // console.log('📋 Existing session data loaded:', data);
                     
                     if (data.success && data.criteriaWithProgress) {
                         // Update current criteria with existing progress
@@ -274,7 +274,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                             quote: item.quote || item.evidence
                         }));
                         
-                        console.log('📋 Loaded existing criteria with progress:', currentCriteria.length, 'items');
+                        // console.log('📋 Loaded existing criteria with progress:', currentCriteria.length, 'items');
                         
                         // If we have scenario data, update the UI
                         if (data.scenario) {
@@ -293,7 +293,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                         }
                     }
                 } else if (response.status === 404) {
-                    console.log('📋 No existing checkbox session found - this is normal for new sessions');
+                    // console.log('📋 No existing checkbox session found - this is normal for new sessions');
                 } else {
                     console.warn('📋 Failed to load existing session data:', response.status);
                 }
@@ -346,15 +346,15 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             criteriaFromQuery = checkboxQueryParams.get('criteria');
             strictnessFromQuery = checkboxQueryParams.get('strictness');
 
-            console.log('🔍 applyCriteriaFromQuery called with:', {
-                url: window.location.href,
-                scenarioFromQuery,
-                criteriaFromQuery: criteriaFromQuery?.substring(0, 100),
-                strictnessFromQuery
-            });
+            // console.log('🔍 applyCriteriaFromQuery called with:', {
+            //     url: window.location.href,
+            //     scenarioFromQuery,
+            //     criteriaFromQuery: criteriaFromQuery?.substring(0, 100),
+            //     strictnessFromQuery
+            // });
 
             if (!scenarioFromQuery && !criteriaFromQuery && !strictnessFromQuery) {
-                console.log('⚠️ No query params to apply');
+                // console.log('⚠️ No query params to apply');
                 return;
             }
 
@@ -362,24 +362,24 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             const criteriaEl = document.getElementById('criteriaInput');
             const strictnessEl = document.getElementById('strictnessSlider');
 
-            console.log('📝 Found elements:', {
-                scenarioEl: !!scenarioEl,
-                criteriaEl: !!criteriaEl,
-                strictnessEl: !!strictnessEl
-            });
+            // console.log('📝 Found elements:', {
+            //     scenarioEl: !!scenarioEl,
+            //     criteriaEl: !!criteriaEl,
+            //     strictnessEl: !!strictnessEl
+            // });
 
             if (scenarioFromQuery && scenarioEl) {
                 scenarioEl.value = scenarioFromQuery;
                 currentScenario = scenarioFromQuery;
-                console.log('✅ Set scenario:', scenarioFromQuery);
+                // console.log('✅ Set scenario:', scenarioFromQuery);
             }
 
             if (criteriaFromQuery && criteriaEl) {
                 criteriaEl.value = criteriaFromQuery;
-                console.log('✅ Set criteria, calling updateCriteria()');
+                // console.log('✅ Set criteria, calling updateCriteria()');
                 updateCriteria();
             } else if (scenarioFromQuery) {
-                console.log('✅ Only scenario, calling updateDisplay()');
+                // console.log('✅ Only scenario, calling updateDisplay()');
                 updateDisplay();
             }
 
@@ -387,7 +387,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             if (strictnessEl && Number.isFinite(strictnessVal) && strictnessVal >= 1 && strictnessVal <= 3) {
                 strictnessEl.value = strictnessVal;
                 updateStrictnessLabel(strictnessVal);
-                console.log('✅ Set strictness:', strictnessVal);
+                // console.log('✅ Set strictness:', strictnessVal);
             }
 
             collapseCriteriaEditor();
@@ -396,7 +396,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             scenarioFromQuery = null;
             criteriaFromQuery = null;
             strictnessFromQuery = null;
-            console.log('✅ applyCriteriaFromQuery completed');
+            // console.log('✅ applyCriteriaFromQuery completed');
         }
 
         // Clear criteria
@@ -472,9 +472,36 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
 
                 if (response.ok) {
                     showFeedback(`Criteria saved successfully! ${currentCriteria.length} criteria ready (Strictness: ${['', 'Lenient', 'Moderate', 'Strict'][currentStrictness]}).`, 'success');
-                    console.log('📋 Criteria saved:', currentCriteria.length, 'items with rubrics, strictness:', currentStrictness);
+                    // console.log('📋 Criteria saved:', currentCriteria.length, 'items with rubrics, strictness:', currentStrictness);
                     criteriaSavedOnce = true;
                     collapseCriteriaEditor();
+
+                    // Initialize all groups with the new criteria
+                    groups.forEach((groupData, groupNumber) => {
+                        // Create initial checkboxes from criteria
+                        const initialCheckboxes = currentCriteria.map((criterion, index) => ({
+                            id: index,
+                            description: criterion.description,
+                            rubric: criterion.rubric,
+                            completed: false,
+                            quote: null,
+                            status: 'grey'
+                        }));
+
+                        // Update group with criteria
+                        groupData.checkboxes = initialCheckboxes;
+                        groups.set(groupNumber, groupData);
+
+                        // Re-render the group
+                        updateGroup(groupNumber, {
+                            checkboxUpdates: initialCheckboxes.map(c => ({
+                                criteriaId: c.id,
+                                completed: c.completed,
+                                quote: c.quote,
+                                status: c.status
+                            }))
+                        });
+                    });
                 } else {
                     showFeedback('Failed to save criteria', 'error');
                 }
@@ -563,7 +590,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             
             // Handle new transcript data - improved handling
             if (data.latestTranscript) {
-                console.log('📝 Adding transcript to group', groupNumber, ':', data.latestTranscript);
+                // console.log('📝 Adding transcript to group', groupNumber, ':', data.latestTranscript);
                 
                 // Check if this transcript is already added (avoid duplicates)
                 const isDuplicate = groupData.transcripts.some(t => 
@@ -581,42 +608,42 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                     
                     // Do not trim; keep full history so "Show All" truly shows all
                     
-                console.log('📚 Group', groupNumber, 'now has', groupData.transcripts.length, 'transcript segments');
+                // console.log('📚 Group', groupNumber, 'now has', groupData.transcripts.length, 'transcript segments');
             } else {
-                    console.log('🔄 Skipping duplicate transcript for group', groupNumber);
+                    // console.log('🔄 Skipping duplicate transcript for group', groupNumber);
                 }
             }
             
             // Handle existing transcripts data (when loading from database)
             if (data.existingTranscripts && data.existingTranscripts.length > 0) {
-                console.log('📂 Loading existing transcripts for group', groupNumber, ':', data.existingTranscripts.length, 'segments');
+                // console.log('📂 Loading existing transcripts for group', groupNumber, ':', data.existingTranscripts.length, 'segments');
                 groupData.transcripts = data.existingTranscripts;
             }
 
             // Handle checkbox updates from AI processing
             if (data.checkboxUpdates) {
-                console.log('🔄 Processing', data.checkboxUpdates.length, 'checkbox updates');
-                console.log('🔄 Current checkboxes before update:', groupData.checkboxes.map(c => ({id: c.id, completed: c.completed, status: c.status})));
+                // console.log('🔄 Processing', data.checkboxUpdates.length, 'checkbox updates');
+                // console.log('🔄 Current checkboxes before update:', groupData.checkboxes.map(c => ({id: c.id, completed: c.completed, status: c.status})));
                 
                 data.checkboxUpdates.forEach(update => {
-                    console.log('🔄 Looking for checkbox with id:', update.criteriaId, 'in checkboxes:', groupData.checkboxes.map(c => c.id));
+                    // console.log('🔄 Looking for checkbox with id:', update.criteriaId, 'in checkboxes:', groupData.checkboxes.map(c => c.id));
                     const checkbox = groupData.checkboxes.find(c => c.id === update.criteriaId);
                     if (checkbox) {
-                        console.log('✅ Found checkbox, updating:', checkbox.id, 'to completed:', update.completed, 'status:', update.status);
+                        // console.log('✅ Found checkbox, updating:', checkbox.id, 'to completed:', update.completed, 'status:', update.status);
                         // Only update if not already completed with correct status (preserve original correct answers)
                         if (!checkbox.completed || checkbox.status !== 'green') {
                         checkbox.completed = update.completed;
                         checkbox.quote = update.quote;
                             checkbox.status = update.status || 'grey'; // green, red, or grey
                         } else {
-                            console.log('📋 Checkbox', checkbox.id, 'already completed correctly - preserving green status and quote:', checkbox.quote);
+                            // console.log('📋 Checkbox', checkbox.id, 'already completed correctly - preserving green status and quote:', checkbox.quote);
                         }
                     } else {
                         console.warn('❌ Could not find checkbox with id:', update.criteriaId);
                     }
                 });
                 
-                console.log('🔄 Current checkboxes after update:', groupData.checkboxes.map(c => ({id: c.id, completed: c.completed, status: c.status})));
+                // console.log('🔄 Current checkboxes after update:', groupData.checkboxes.map(c => ({id: c.id, completed: c.completed, status: c.status})));
             }
             
             // Assign rebuilt, ordered, de-duplicated list
@@ -768,7 +795,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
 
         // Socket event handlers (similar to admin.html)
         socket.on('student_joined', ({ group, socketId }) => {
-            console.log(`✅ Student joined group ${group}`);
+            // console.log(`✅ Student joined group ${group}`);
             updateGroup(group, { isActive: true });
             
             // Fetch existing transcript data for this group
@@ -778,7 +805,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                     return res.json();
                 })
                 .then(data => {
-                    console.log('📂 Fetched existing data for group', group, ':', data);
+                    // console.log('📂 Fetched existing data for group', group, ':', data);
                     
                     // Format existing transcripts with proper structure
                     const formattedTranscripts = data.transcripts.map(t => ({
@@ -788,7 +815,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                         wordCount: t.word_count || 0
                     }));
                     
-                    console.log('📂 Formatted', formattedTranscripts.length, 'existing transcripts for group', group);
+                    // console.log('📂 Formatted', formattedTranscripts.length, 'existing transcripts for group', group);
                     
                     updateGroup(group, {
                         existingTranscripts: formattedTranscripts,
@@ -815,7 +842,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             heartbeatInterval = setInterval(() => {
                 if (socket.connected && sessionCode) {
                     socket.emit('admin_heartbeat', { sessionCode });
-                    console.log('💓 Admin heartbeat sent (checkbox)');
+                    // console.log('💓 Admin heartbeat sent (checkbox)');
                 }
             }, 10000);
             
@@ -871,8 +898,8 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
 
         // Listen for checklist state updates (includes real-time progress)
         socket.on('checklist_state', (data) => {
-            console.log('📋 Received checklist state update for group', data.groupNumber);
-            console.log('📋 Criteria updates:', data.criteria?.length || 0, 'items');
+            // console.log('📋 Received checklist state update for group', data.groupNumber);
+            // console.log('📋 Criteria updates:', data.criteria?.length || 0, 'items');
             
             // Get existing group data or create new
             const groupData = groups.get(data.groupNumber) || {
@@ -930,10 +957,10 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         });
 
         socket.on('admin_update', (data) => {
-            console.log('📋 Received checkbox update:', data);
-            console.log('📋 Update for group:', data.group);
-            console.log('📋 Latest transcript:', data.latestTranscript ? data.latestTranscript : 'None');
-            console.log('📋 Checkbox updates received:', data.checkboxUpdates);
+            // console.log('📋 Received checkbox update:', data);
+            // console.log('📋 Update for group:', data.group);
+            // console.log('📋 Latest transcript:', data.latestTranscript ? data.latestTranscript : 'None');
+            // console.log('📋 Checkbox updates received:', data.checkboxUpdates);
             
             // Ensure we always pass transcript data to updateGroup
             const groupData = groups.get(data.group) || { transcripts: [], checkboxes: [] };
@@ -952,7 +979,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         });
 
         socket.on('connect', () => {
-            console.log('🔌 Checkbox admin connected');
+            // console.log('🔌 Checkbox admin connected');
             lastHeartbeatTime = Date.now();
             updateConnectionStatus(true, true);
             if (sessionCode) {
@@ -966,7 +993,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         });
 
         socket.io.on('reconnect', (attempt) => {
-            console.log('🔄 Checkbox admin reconnected after', attempt, 'attempts');
+            // console.log('🔄 Checkbox admin reconnected after', attempt, 'attempts');
             lastHeartbeatTime = Date.now();
             updateConnectionStatus(true, true);
         });
@@ -981,7 +1008,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             
             // Prevent multiple clicks
             if (startBtn.disabled || isRecording) {
-                console.log('🚫 Start button already processing or recording active');
+                // console.log('🚫 Start button already processing or recording active');
                 return;
             }
 
@@ -1022,19 +1049,19 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             }
             
             try {
-                console.log('🎬 Start Recording button clicked');
+                // console.log('🎬 Start Recording button clicked');
                 
                 // Step 1: Ensure criteria are loaded, but don't block recording start
                 showFeedback('📋 Preparing criteria...', 'info');
                 if (currentCriteria.length === 0) {
-                    console.log('📋 No criteria found. Will start recording immediately and save criteria when available.');
+                    // console.log('📋 No criteria found. Will start recording immediately and save criteria when available.');
                 } else {
-                    console.log('📋 Using criteria:', currentCriteria.length, 'items');
+                    // console.log('📋 Using criteria:', currentCriteria.length, 'items');
                 }
 
                 // Step 2: Start the recording session IMMEDIATELY (no waiting on criteria save)
                 showFeedback('▶️ Starting recording session...', 'info');
-                console.log('▶️ Starting recording session...');
+                // console.log('▶️ Starting recording session...');
                 const intervalSeconds = parseInt(intervalInput.value) || 30;
                 const intervalMs = intervalSeconds * 1000;
                 
@@ -1050,7 +1077,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                     throw new Error(`Failed to start recording: HTTP ${response.status}`);
                 }
                 
-                console.log('✅ Recording session started successfully');
+                // console.log('✅ Recording session started successfully');
                 
                 updateRecordingButtons(true);
                 intervalInput.disabled = true;
@@ -1074,7 +1101,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 if (!criteriaSavedOnce && currentCriteria.length > 0) {
                     (async () => {
                         try {
-                            console.log('💾 Saving criteria to backend (background)...');
+                            // console.log('💾 Saving criteria to backend (background)...');
                             const bgRes = await fetch('/api/checkbox/session', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -1088,7 +1115,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                             });
                             if (bgRes.ok) {
                                 criteriaSavedOnce = true;
-                                console.log('✅ Criteria saved (background)');
+                                // console.log('✅ Criteria saved (background)');
                             } else {
                                 const text = await bgRes.text();
                                 console.warn('⚠️ Criteria save failed (background):', text);
@@ -1120,7 +1147,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             
             // Prevent multiple clicks
             if (stopBtn.disabled || !isRecording) {
-                console.log('🚫 Stop button already processing or not recording');
+                // console.log('🚫 Stop button already processing or not recording');
                 return;
             }
             
@@ -1426,7 +1453,10 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 container.innerHTML = '';
                 try { new QRCode(container, { text: url, width: 220, height: 220 }); } catch (_) {}
             }
-            if (linkEl) linkEl.textContent = url;
+            // Update the text inside the qrLinkText span
+            const linkTextEl = document.getElementById('qrLinkText');
+            if (linkTextEl) linkTextEl.textContent = url;
+            if (linkEl) linkEl.setAttribute('data-url', url);
             const modal = document.getElementById('qrModal');
             if (modal) modal.classList.remove('hidden');
         }
@@ -1434,6 +1464,28 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         window.closeQrModal = function closeQrModal() {
             const modal = document.getElementById('qrModal');
             if (modal) modal.classList.add('hidden');
+        }
+
+        window.copyQrLink = function copyQrLink() {
+            const linkTextEl = document.getElementById('qrLinkText');
+            const feedbackEl = document.getElementById('copyFeedback');
+
+            if (!linkTextEl) return;
+
+            const url = linkTextEl.textContent;
+
+            // Copy to clipboard
+            navigator.clipboard.writeText(url).then(() => {
+                // Show feedback
+                if (feedbackEl) {
+                    feedbackEl.classList.remove('hidden');
+                    setTimeout(() => {
+                        feedbackEl.classList.add('hidden');
+                    }, 2000);
+                }
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+            });
         }
 
         // Edit checkbox prompt
@@ -1614,8 +1666,8 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             currentScenario = scenarioText;
             
             updateDisplay();
-            console.log('✅ Updated criteria:', currentCriteria.length, 'items');
-            console.log('✅ Updated scenario:', currentScenario);
+            // console.log('✅ Updated criteria:', currentCriteria.length, 'items');
+            // console.log('✅ Updated scenario:', currentScenario);
         }
 
         // Release checklist to students
@@ -1664,8 +1716,8 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
 
             try {
                 // Debug log to see what we're sending
-                console.log('📤 Preparing to release checklist for group', normalizedGroup);
-                console.log('📤 Group data checkboxes:', safeGroupData.checkboxes);
+                // console.log('📤 Preparing to release checklist for group', normalizedGroup);
+                // console.log('📤 Group data checkboxes:', safeGroupData.checkboxes);
                 
                 // Send checklist data to students - USE THE ACTUAL STATUS, don't recalculate
                 const checklistData = {
@@ -1675,7 +1727,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                         // Use the actual status that was set by the AI, don't recalculate
                         const actualStatus = c.status === 'green' ? 'green' : (c.status || 'grey');
                         
-                        console.log(`📤 Criterion ${c.id}: status=${actualStatus}, completed=${c.completed}, quote="${c.quote}"`);
+                        // console.log(`📤 Criterion ${c.id}: status=${actualStatus}, completed=${c.completed}, quote="${c.quote}"`);
                         
                         return {
                             id: c.id,
@@ -1690,8 +1742,8 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                     timestamp: Date.now()
                 };
 
-                console.log('📤 Final checklist data to send:', checklistData);
-                console.log('📤 Status breakdown:', checklistData.criteria.map(c => `${c.id}: ${c.status}`));
+                // console.log('📤 Final checklist data to send:', checklistData);
+                // console.log('📤 Status breakdown:', checklistData.criteria.map(c => `${c.id}: ${c.status}`));
 
                 // Emit to students
                 socket.emit('release_checklist', checklistData);
@@ -1701,7 +1753,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 updateGroup(normalizedGroup, { isReleased: true });
                 showFeedback(`✅ Checklist released to Group ${normalizedGroup}`, 'success');
 
-                console.log('📤 Released checklist to group', normalizedGroup, ':', checklistData);
+                // console.log('📤 Released checklist to group', normalizedGroup, ':', checklistData);
 
             } catch (error) {
                 console.error('❌ Error releasing checklist:', error);
@@ -1752,6 +1804,18 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
             }
         }
 
+        // Add a new criterion (stub function for UI compatibility)
+        function addCriterion() {
+            // This function is called from the UI but criteria are managed via textarea
+            console.warn('addCriterion called - criteria should be managed via textarea');
+        }
+
+        // Remove a criterion (stub function for UI compatibility)
+        function removeCriterion(index) {
+            // This function is called from the UI but criteria are managed via textarea
+            console.warn('removeCriterion called - criteria should be managed via textarea');
+        }
+
         // Toggle format help visibility
         function toggleFormatHelp() {
             const helpSection = document.querySelector('[class*="bg-blue-50"][class*="border-blue-200"]');
@@ -1761,7 +1825,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
                 } else {
                     helpSection.classList.add('hidden');
                 }
-                
+
                 // Re-initialize icons after DOM change
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
@@ -1771,7 +1835,7 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
 
         // Reset UI when server stops recording
         socket.on('stop_recording', () => {
-            console.log('⏹️ Received stop_recording from server');
+            // console.log('⏹️ Received stop_recording from server');
             const startBtn = document.getElementById('startBtn');
             const stopBtn = document.getElementById('stopBtn');
             const intervalInput = document.getElementById('intervalInput');
@@ -1786,9 +1850,10 @@ console.log('✅ Checkbox script: window.loadCheckboxPrompt defined =', typeof w
         window.removeCriterion = removeCriterion;
         window.saveCriteria = saveCriteria;
         window.toggleFormatHelp = toggleFormatHelp;
+        window.releaseChecklistToGroup = releaseChecklistToGroup;
 
-        console.log('✅ Checkbox functions exposed to window:', {
-            toggleCriteriaEditor: typeof window.toggleCriteriaEditor,
-            addCriterion: typeof window.addCriterion,
-            saveCriteria: typeof window.saveCriteria
-        });
+        // console.log('✅ Checkbox functions exposed to window:', {
+            // toggleCriteriaEditor: typeof window.toggleCriteriaEditor,
+            // addCriterion: typeof window.addCriterion,
+            // saveCriteria: typeof window.saveCriteria
+        // });

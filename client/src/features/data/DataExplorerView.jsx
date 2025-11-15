@@ -16,12 +16,12 @@ const MODE_META = {
   summary: {
     label: "Summary",
     icon: MessageSquare,
-    badge: "bg-blue-100 text-blue-800",
+    badge: "bg-gradient-to-br from-blue-400/20 to-indigo-500/20 text-blue-700 border border-blue-300/30",
   },
   checkbox: {
     label: "Checkbox",
     icon: CheckSquare,
-    badge: "bg-green-100 text-green-800",
+    badge: "bg-gradient-to-br from-emerald-400/20 to-teal-500/20 text-emerald-700 border border-emerald-300/30",
   },
 };
 
@@ -56,12 +56,12 @@ function ModeBadge({ mode }) {
   const meta = MODE_META[mode] ?? {
     label: "Unknown",
     icon: Database,
-    badge: "bg-gray-100 text-gray-700",
+    badge: "bg-gradient-to-br from-slate-400/20 to-gray-500/20 text-slate-700 border border-slate-300/30",
   };
   const Icon = meta.icon;
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${meta.badge}`}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold backdrop-blur-sm ${meta.badge}`}
     >
       <Icon className="w-3.5 h-3.5 mr-1" />
       {meta.label}
@@ -73,15 +73,15 @@ function CheckboxPreview({ data }) {
   if (!data) return null;
   const rate = data.completionRate ?? 0;
   return (
-    <div className="mt-4 p-4 bg-emerald-50 border border-emerald-100 rounded-lg text-sm text-emerald-900 space-y-1">
-      <p className="font-semibold">Checklist Progress</p>
+    <div className="mt-4 p-4 bg-gradient-to-br from-emerald-50/60 to-teal-50/60 backdrop-blur-sm border border-emerald-200/50 rounded-lg text-sm text-emerald-900 space-y-1">
+      <p className="font-semibold text-emerald-700">Checklist Progress</p>
       <p>
-        <strong>Completion:</strong> {rate}% ({data.completedCriteria}/
+        <strong className="text-emerald-800">Completion:</strong> {rate}% ({data.completedCriteria}/
         {data.totalCriteria})
       </p>
       {data.scenario && (
         <p className="text-emerald-800/80">
-          <strong>Scenario:</strong> {truncate(data.scenario, 120)}
+          <strong className="text-emerald-800">Scenario:</strong> {truncate(data.scenario, 120)}
         </p>
       )}
     </div>
@@ -93,23 +93,18 @@ function SessionCard({ session, onSelect }) {
   const Icon = meta.icon;
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-shadow">
+    <div className="glass-panel overflow-hidden hover:shadow-2xl transition-all duration-300 group">
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center space-x-3">
-            <div
-              className={`w-10 h-10 ${meta.badge.replace(
-                "text-",
-                "text-",
-              )} rounded-lg bg-opacity-20 flex items-center justify-center`}
-            >
-              <Icon className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-cyan-400/20 to-blue-500/20 backdrop-blur-sm border border-cyan-300/30 group-hover:scale-110 transition-transform">
+              <Icon className="w-5 h-5 text-cyan-600" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold gradient-text">
                 Session {session.code}
               </h3>
-              <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+              <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
                 <ModeBadge mode={session.mode} />
                 <span>{formatDate(session.created_at)}</span>
               </div>
@@ -118,37 +113,37 @@ function SessionCard({ session, onSelect }) {
           <div className="text-right">
             <div
               className={`text-sm font-semibold ${
-                session.active ? "text-green-600" : "text-gray-600"
+                session.active ? "text-emerald-600" : "text-slate-600"
               }`}
             >
               {session.active ? "Live" : "Complete"}
             </div>
             {session.duration && (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-slate-500">
                 {formatDuration(session.duration)}
               </div>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
+        <div className="grid grid-cols-2 gap-4 text-sm text-slate-700">
           <div className="flex items-center space-x-2">
-            <Users className="w-4 h-4 text-gray-500" />
-            <span>
+            <Users className="w-4 h-4 text-cyan-500" />
+            <span className="font-medium">
               {session.totalStudents || session.groups?.length || 0} students
             </span>
           </div>
           <div className="flex items-center space-x-2">
-            <Database className="w-4 h-4 text-gray-500" />
-            <span>{session.totalTranscripts || 0} transcripts</span>
+            <Database className="w-4 h-4 text-blue-500" />
+            <span className="font-medium">{session.totalTranscripts || 0} transcripts</span>
           </div>
           <div className="flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-gray-500" />
-            <span>{formatDuration(session.duration)}</span>
+            <Clock className="w-4 h-4 text-violet-500" />
+            <span className="font-medium">{formatDuration(session.duration)}</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <RefreshCw className="w-4 h-4 text-gray-500" />
-            <span>
+          <div className="flex items-center space-x-2 col-span-2">
+            <RefreshCw className="w-4 h-4 text-slate-500" />
+            <span className="text-xs">
               Last update {formatDate(session.updated_at || session.end_time)}
             </span>
           </div>
@@ -160,7 +155,7 @@ function SessionCard({ session, onSelect }) {
 
         <button
           type="button"
-          className="mt-6 w-full btn btn-muted text-sm justify-center"
+          className="mt-6 w-full btn btn-primary text-sm justify-center"
           onClick={() => onSelect(session)}
         >
           View groups &amp; transcripts
@@ -173,79 +168,79 @@ function SessionCard({ session, onSelect }) {
 function SessionModal({ session, onClose }) {
   if (!session) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+    <div className="qr-modal-backdrop flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="qr-modal-content max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-white/20">
           <div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-500">
               {formatDate(session.created_at)}
             </p>
-            <h3 className="text-xl font-semibold text-gray-900">
+            <h3 className="text-xl font-semibold gradient-text">
               Session {session.code}
             </h3>
           </div>
           <button
             type="button"
-            className="rounded-full p-2 hover:bg-gray-100"
+            className="rounded-full p-2 hover:bg-white/40 transition-colors"
             onClick={onClose}
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5 text-slate-600" />
           </button>
         </div>
         <div className="p-6 overflow-y-auto space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-700">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-slate-700">
             <div>
-              <p className="text-xs uppercase text-gray-500">Mode</p>
+              <p className="text-xs uppercase text-slate-500 font-semibold mb-1">Mode</p>
               <ModeBadge mode={session.mode} />
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-500">Students</p>
-              <p className="text-base font-semibold">
+              <p className="text-xs uppercase text-slate-500 font-semibold mb-1">Students</p>
+              <p className="text-base font-bold gradient-text">
                 {session.totalStudents || session.groups?.length || 0}
               </p>
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-500">Transcripts</p>
-              <p className="text-base font-semibold">
+              <p className="text-xs uppercase text-slate-500 font-semibold mb-1">Transcripts</p>
+              <p className="text-base font-bold gradient-text">
                 {session.totalTranscripts || 0}
               </p>
             </div>
             <div>
-              <p className="text-xs uppercase text-gray-500">Duration</p>
-              <p className="text-base font-semibold">
+              <p className="text-xs uppercase text-slate-500 font-semibold mb-1">Duration</p>
+              <p className="text-base font-bold gradient-text">
                 {formatDuration(session.duration)}
               </p>
             </div>
           </div>
 
           <div>
-            <h4 className="text-lg font-semibold text-gray-900 mb-3">Groups</h4>
+            <h4 className="text-lg font-semibold gradient-text mb-3">Groups</h4>
             {session.groups?.length ? (
               <div className="space-y-4">
                 {session.groups.map((group) => (
                   <div
                     key={group._id ?? group.number}
-                    className="border border-gray-200 rounded-xl p-4"
+                    className="glass-panel p-4"
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <p className="text-sm text-gray-500">Group</p>
-                        <p className="text-xl font-semibold text-gray-900">
+                        <p className="text-sm text-slate-500 font-medium">Group</p>
+                        <p className="text-xl font-bold gradient-text">
                           #{group.number ?? "—"}
                         </p>
                       </div>
                       {group.summary && (
-                        <span className="text-sm text-emerald-600 font-medium">
+                        <span className="premium-chip text-emerald-600 font-semibold">
                           Summary available
                         </span>
                       )}
                     </div>
                     {group.summary && (
                       <div className="mb-3">
-                        <p className="text-xs font-semibold text-gray-700 mb-1">
+                        <p className="text-xs font-semibold text-slate-700 mb-1">
                           Summary
                         </p>
-                        <p className="text-sm text-gray-700 bg-emerald-50 rounded-lg p-3 border border-emerald-100">
+                        <p className="text-sm text-slate-700 bg-gradient-to-br from-emerald-50/60 to-teal-50/60 backdrop-blur-sm rounded-lg p-3 border border-emerald-200/50">
                           {group.summary}
                         </p>
                       </div>
@@ -254,35 +249,35 @@ function SessionModal({ session, onClose }) {
                     {/* Show all transcripts */}
                     {group.transcripts?.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-gray-700 mb-2">
+                        <p className="text-xs font-semibold text-slate-700 mb-2">
                           Transcripts ({group.transcripts.length})
                         </p>
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                           {group.transcripts.map((transcript, idx) => (
                             <div
                               key={idx}
-                              className="text-xs text-gray-600 bg-blue-50 rounded-lg border border-blue-100 p-3"
+                              className="text-xs text-slate-600 bg-gradient-to-br from-blue-50/60 to-indigo-50/60 backdrop-blur-sm rounded-lg border border-blue-200/50 p-3"
                             >
                               <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-gray-800">
+                                <span className="font-semibold text-slate-800">
                                   Transcript #{idx + 1}
                                 </span>
                                 {transcript.created_at && (
-                                  <span className="text-xs text-gray-500">
+                                  <span className="text-xs text-slate-500">
                                     {new Date(transcript.created_at).toLocaleString()}
                                   </span>
                                 )}
                               </div>
-                              <p className="text-gray-700 whitespace-pre-wrap">
+                              <p className="text-slate-700 whitespace-pre-wrap">
                                 {transcript.text}
                               </p>
                               {(transcript.word_count || transcript.duration_seconds) && (
-                                <div className="flex gap-3 mt-2 text-xs text-gray-500">
+                                <div className="flex gap-3 mt-2 text-xs text-slate-500">
                                   {transcript.word_count && (
-                                    <span>{transcript.word_count} words</span>
+                                    <span className="font-medium">{transcript.word_count} words</span>
                                   )}
                                   {transcript.duration_seconds && (
-                                    <span>{Math.round(transcript.duration_seconds)}s</span>
+                                    <span className="font-medium">{Math.round(transcript.duration_seconds)}s</span>
                                   )}
                                 </div>
                               )}
@@ -295,7 +290,7 @@ function SessionModal({ session, onClose }) {
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-slate-600 text-center py-8">
                 No group data recorded for this session.
               </div>
             )}
@@ -399,19 +394,16 @@ export default function DataExplorerView() {
 
   return (
     <main className="page-shell stack">
-      <div
-        className="surface surface--padded surface--static stack"
-        style={{ gap: "1.25rem" }}
-      >
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="glass-panel mx-4 sm:mx-6 md:mx-8 my-4">
+        <div className="flex flex-wrap items-center gap-4 p-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
               Filter by Mode:
             </label>
             <select
               value={modeFilter}
               onChange={handleChangeMode}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="premium-input px-3 py-2"
             >
               <option value="">All Modes</option>
               <option value="summary">Summary Mode</option>
@@ -419,13 +411,13 @@ export default function DataExplorerView() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
               Results per page:
             </label>
             <select
               value={limit}
               onChange={handleChangeLimit}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="premium-input px-3 py-2"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
@@ -447,18 +439,20 @@ export default function DataExplorerView() {
 
       {loading && (
         <div className="text-center py-16">
-          <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-600">Loading session data...</p>
+          <div className="animate-spin w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-slate-600 font-medium">Loading session data...</p>
         </div>
       )}
 
       {error && !loading && (
         <div className="text-center py-16">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-600 font-medium mb-2">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-red-400/20 to-rose-500/20 backdrop-blur-sm border-2 border-red-300/30 flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <p className="text-red-600 font-semibold mb-2 text-lg">
             Failed to load session data
           </p>
-          <p className="text-gray-600 text-sm mb-4">{error}</p>
+          <p className="text-slate-600 text-sm mb-4">{error}</p>
           <button
             type="button"
             className="btn btn-primary glow"
@@ -471,11 +465,13 @@ export default function DataExplorerView() {
 
       {!loading && !error && sessions.length === 0 && (
         <div className="text-center py-16">
-          <Database className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
+          <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-slate-400/20 to-gray-500/20 backdrop-blur-sm border-2 border-white/40 flex items-center justify-center">
+            <Database className="w-12 h-12 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-semibold gradient-text mb-2">
             No Sessions Found
           </h3>
-          <p className="text-gray-600">
+          <p className="text-slate-600">
             No sessions match your current filters.
           </p>
         </div>
@@ -494,14 +490,14 @@ export default function DataExplorerView() {
       )}
 
       {!loading && !error && pagination.total > 0 && (
-        <div className="mt-8 flex items-center justify-between">
-          <div className="text-sm text-gray-600">{paginationInfo}</div>
+        <div className="mt-8 mx-4 sm:mx-6 md:mx-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="premium-chip text-sm font-medium">{paginationInfo}</div>
           <div className="flex space-x-2">
             <button
               type="button"
               onClick={handlePrev}
               disabled={!canGoPrev}
-              className="btn btn-muted disabled:opacity-60 disabled:cursor-not-allowed flex items-center"
+              className="btn btn-muted disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
               Previous
@@ -510,7 +506,7 @@ export default function DataExplorerView() {
               type="button"
               onClick={handleNext}
               disabled={!canGoNext}
-              className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed flex items-center"
+              className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               Next
               <ChevronRight className="w-4 h-4 ml-1" />

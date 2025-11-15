@@ -128,14 +128,14 @@ const socket = io();
                 text.textContent = 'Connected';
                 text.className = 'text-xs font-medium text-black';
                 isConnected = true;
-                console.log('🟢 Student connected');
+                // console.log('🟢 Student connected');
             } else if (!connected && isConnected) {
                 // Disconnected
                 dot.className = 'w-2 h-2 bg-red-400 rounded-full animate-pulse';
                 text.textContent = 'Disconnected';
                 text.className = 'text-xs font-medium text-red-200';
                 isConnected = false;
-                console.log('🔴 Student disconnected');
+                // console.log('🔴 Student disconnected');
             }
         }
         
@@ -145,7 +145,7 @@ const socket = io();
             heartbeatInterval = setInterval(() => {
                 if (socket.connected && currentSession && currentGroup) {
                     socket.emit('heartbeat', { session: currentSession, group: currentGroup });
-                    console.log('💓 Student heartbeat sent');
+                    // console.log('💓 Student heartbeat sent');
                 }
             }, 10000);
             
@@ -182,9 +182,9 @@ const socket = io();
                 typeof document.webkitHidden !== "undefined" || 
                 typeof document.mozHidden !== "undefined") {
                 backgroundRecordingSupported = true;
-                console.log("✅ Background recording supported");
+                // console.log("✅ Background recording supported");
             } else {
-                console.log("⚠️ Background recording may be limited on this browser");
+                // console.log("⚠️ Background recording may be limited on this browser");
             }
         }
 
@@ -194,10 +194,10 @@ const socket = io();
             isPageVisible = !isHidden;
             
             if (isPageVisible) {
-                console.log("👁️ Page is now visible");
+                // console.log("👁️ Page is now visible");
                 updateStatus(isRecording ? "Recording..." : "Connected", isRecording ? "recording" : "connected");
             } else {
-                console.log("🫥 Page is now hidden - continuing recording in background");
+                // console.log("🫥 Page is now hidden - continuing recording in background");
                 if (isRecording) {
                     updateStatus("Recording in background...", "recording");
                 }
@@ -221,9 +221,9 @@ const socket = io();
             if ('wakeLock' in navigator) {
                 // Request a wake lock to keep the page active (when supported)
                 navigator.wakeLock.request('screen').then(wakeLock => {
-                    console.log("🔒 Screen wake lock acquired for background recording");
+                    // console.log("🔒 Screen wake lock acquired for background recording");
                 }).catch(err => {
-                    console.log("⚠️ Could not acquire wake lock:", err);
+                    // console.log("⚠️ Could not acquire wake lock:", err);
                 });
             }
             
@@ -239,7 +239,12 @@ const socket = io();
 
         async function startRecording() {
             try {
-                console.log("🎙️ Starting recording at", new Date().toISOString());
+                // console.log("🎙️ Starting recording at", new Date().toISOString());
+
+                // Check if getUserMedia is supported
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Browser doesn't support audio recording. Please use HTTPS or a modern browser.");
+                }
 
                 stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -270,7 +275,7 @@ const socket = io();
             if (!isRecording || !stream) return;
             
             try {
-                console.log(`🎬 Starting new recording cycle (${chunkInterval}ms with ${overlapDuration}ms overlap)${isPageVisible ? '' : ' [BACKGROUND]'}`);
+                // console.log(`🎬 Starting new recording cycle (${chunkInterval}ms with ${overlapDuration}ms overlap)${isPageVisible ? '' : ' [BACKGROUND]'}`);
                 
                 // Use proper WebM/Opus format
                 const options = { mimeType: 'audio/webm;codecs=opus' };
@@ -283,7 +288,7 @@ const socket = io();
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
                         const msSinceStart = firstChunkTimerStarted ? (Date.now() - recordingStart) : 'n/a';
-                        console.log(`📦 Received complete chunk: ${event.data.size} bytes after ${msSinceStart}ms${isPageVisible ? '' : ' [BACKGROUND]'}`);
+                        // console.log(`📦 Received complete chunk: ${event.data.size} bytes after ${msSinceStart}ms${isPageVisible ? '' : ' [BACKGROUND]'}`);
                         uploadChunk(event.data);
                     }
                 };
@@ -303,7 +308,7 @@ const socket = io();
                 };
                 
                 mediaRecorder.onstop = () => {
-                    console.log(`⏹️ Recording cycle stopped${isPageVisible ? '' : ' [BACKGROUND]'}`);
+                    // console.log(`⏹️ Recording cycle stopped${isPageVisible ? '' : ' [BACKGROUND]'}`);
                     
                     // If still recording, start the next cycle with overlap
                     if (isRecording) {
@@ -326,7 +331,7 @@ const socket = io();
                 }
                 recordingTimer = setTimeout(() => {
                     if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        console.log(`⏰ Stopping recording after ${chunkInterval + overlapDuration}ms${isPageVisible ? '' : ' [BACKGROUND]'}`);
+                        // console.log(`⏰ Stopping recording after ${chunkInterval + overlapDuration}ms${isPageVisible ? '' : ' [BACKGROUND]'}`);
                         mediaRecorder.stop();
                     }
                 }, chunkInterval + overlapDuration);
@@ -348,7 +353,7 @@ const socket = io();
                     formData.append('sessionCode', currentSession);
                     formData.append('groupNumber', currentGroup);
                     
-                    console.log(`📤 Uploading chunk (attempt ${retryCount + 1}/${maxRetries}): ${blob.size} bytes, type: ${blob.type}, session: ${currentSession}, group: ${currentGroup}`);
+                    // console.log(`📤 Uploading chunk (attempt ${retryCount + 1}/${maxRetries}): ${blob.size} bytes, type: ${blob.type}, session: ${currentSession}, group: ${currentGroup}`);
                     
                     // Show upload progress
                     updateStatus(`Uploading audio chunk... (${retryCount + 1}/${maxRetries})`, "processing");
@@ -381,7 +386,7 @@ const socket = io();
                     }
                     
                     const result = await response.json();
-                    console.log("✅ Chunk uploaded successfully:", result);
+                    // console.log("✅ Chunk uploaded successfully:", result);
                     
                     // Update status based on result
                     if (result.success) {
@@ -389,7 +394,7 @@ const socket = io();
                         
                         // Show processing info if available
                         if (result.processingTime) {
-                            console.log(`⏱️ Processing time: ${result.processingTime}`);
+                            // console.log(`⏱️ Processing time: ${result.processingTime}`);
                         }
                     } else {
                         console.warn("⚠️ Upload completed but marked as unsuccessful:", result);
@@ -406,7 +411,7 @@ const socket = io();
                     if (retryCount < maxRetries) {
                         // Wait before retrying (exponential backoff)
                         const delay = Math.pow(2, retryCount) * 1000; // 2s, 4s, 8s
-                        console.log(`⏳ Retrying in ${delay/1000} seconds...`);
+                        // console.log(`⏳ Retrying in ${delay/1000} seconds...`);
                         updateStatus(`Upload failed, retrying in ${delay/1000}s...`, "waiting");
                         
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -471,7 +476,7 @@ const socket = io();
 
         function stopRecording() {
             if (isRecording) {
-                console.log(`🛑 Stopping recording...${isPageVisible ? '' : ' [BACKGROUND]'}`);
+                // console.log(`🛑 Stopping recording...${isPageVisible ? '' : ' [BACKGROUND]'}`);
                 isRecording = false;
                 
                 if (recordingTimer) {
@@ -647,7 +652,7 @@ const socket = io();
                 return;
             }
             
-            console.log(`🔗 Joining session ${sessionCode}, group ${groupNumber}`);
+            // console.log(`🔗 Joining session ${sessionCode}, group ${groupNumber}`);
             updateStatus("Connecting...", "waiting");
             
             // Join the session
@@ -665,9 +670,9 @@ const socket = io();
 
         // Socket event handlers
         socket.on('joined', (data) => {
-            console.log('✅ Joined session:', data);
-            console.log('✅ Socket ID:', socket.id);
-            console.log('✅ Socket connected:', socket.connected);
+            // console.log('✅ Joined session:', data);
+            // console.log('✅ Socket ID:', socket.id);
+            // console.log('✅ Socket connected:', socket.connected);
             currentSession = data.code;
             currentGroup = data.group;
             hasJoinedSession = true;
@@ -677,11 +682,19 @@ const socket = io();
             } else {
                 setStudentUIMode('summary');
             }
-            
+
+            // Clear any previous error messages since we successfully joined
+            const errorElements = document.querySelectorAll('[class*="error"]');
+            errorElements.forEach(el => {
+                if (el.textContent.includes('Failed to join')) {
+                    el.style.display = 'none';
+                }
+            });
+
             updateStatus(`Joined session ${data.code}, group ${data.group}`, "connected");
             stopElapsedTimer(true);
             
-            console.log('🔍 Requesting room info...');
+            // console.log('🔍 Requesting room info...');
             socket.emit('get_my_rooms');
             
             if (data.status === "recording") {
@@ -696,7 +709,7 @@ const socket = io();
         });
 
         socket.on('record_now', (interval) => {
-            console.log(`🎬 record_now received at ${new Date().toISOString()} (interval=${interval}ms)${isPageVisible ? '' : ' [BACKGROUND]'}`);
+            // console.log(`🎬 record_now received at ${new Date().toISOString()} (interval=${interval}ms)${isPageVisible ? '' : ' [BACKGROUND]'}`);
             recordingInterval = interval;
             chunkInterval = interval;
             startElapsedTimer();
@@ -704,18 +717,18 @@ const socket = io();
         });
 
         socket.on('stop_recording', () => {
-            console.log(`🛑 Session stopped recording${isPageVisible ? '' : ' [BACKGROUND]'}`);
+            // console.log(`🛑 Session stopped recording${isPageVisible ? '' : ' [BACKGROUND]'}`);
             stopRecording();
             stopElapsedTimer(true);
         });
 
         socket.on('session_reset', () => {
-            console.log('Session reset received');
+            // console.log('Session reset received');
             resetView();
         });
 
         socket.on('transcription_and_summary', (data) => {
-            console.log(`📝 Received transcription and summary${isPageVisible ? '' : ' [BACKGROUND]'}:`, data);
+            // console.log(`📝 Received transcription and summary${isPageVisible ? '' : ' [BACKGROUND]'}:`, data);
             
             if (data.transcription && data.transcription.text) {
                 displayTranscription(data.transcription.text, data.transcription.cumulativeText);
@@ -728,25 +741,30 @@ const socket = io();
 
         socket.on('error', (message) => {
             console.error('❌ Socket error:', message);
+            // Don't show "Failed to join" errors if we've already successfully joined
+            if (message.includes('Failed to join') && hasJoinedSession) {
+                console.warn('⚠️ Ignoring stale join error - already connected');
+                return;
+            }
             updateStatus(`Error: ${message}`, "error");
         });
 
         socket.on('disconnect', () => {
-            console.log(`🔌 Disconnected from server${isPageVisible ? '' : ' [BACKGROUND]'}`);
+            // console.log(`🔌 Disconnected from server${isPageVisible ? '' : ' [BACKGROUND]'}`);
             updateStatus("Disconnected from server", "disconnected");
             updateConnectionStatus(false);
             stopRecording();
         });
 
         socket.on('reconnect', () => {
-            console.log(`🔌 Reconnected to server${isPageVisible ? '' : ' [BACKGROUND]'}`);
+            // console.log(`🔌 Reconnected to server${isPageVisible ? '' : ' [BACKGROUND]'}`);
             updateStatus("Reconnected to server", "connected");
             updateConnectionStatus(true);
             lastHeartbeatTime = Date.now();
             
             // If we were in a session, rejoin
             if (currentSession && currentGroup) {
-                console.log(`🔄 Rejoining session ${currentSession}, group ${currentGroup}`);
+                // console.log(`🔄 Rejoining session ${currentSession}, group ${currentGroup}`);
                 socket.emit('join', { 
                     code: currentSession, 
                     group: parseInt(currentGroup) 
@@ -779,21 +797,21 @@ const socket = io();
         socket.on('heartbeat_ack', () => {
             // Just acknowledge the heartbeat - keeps connection alive
             if (!isPageVisible) {
-                console.log('💓 Heartbeat acknowledged [BACKGROUND]');
+                // console.log('💓 Heartbeat acknowledged [BACKGROUND]');
             }
             lastHeartbeatTime = Date.now(); // Update last heartbeat time on successful ack
         });
         
         // Handle connection events
         socket.on('connect', () => {
-            console.log('🔌 Student socket connected');
+            // console.log('🔌 Student socket connected');
             updateConnectionStatus(true);
             lastHeartbeatTime = Date.now();
         });
 
         // Handle summary updates
         socket.on('summary_update', (data) => {
-            console.log('📄 Received summary update:', data);
+            // console.log('📄 Received summary update:', data);
             
             if (data.group == currentGroup) {
                 updateSummary(data.summary, data.timestamp);
@@ -802,23 +820,23 @@ const socket = io();
 
         // Debug: receive room info
         socket.on('room_info', (data) => {
-            console.log('🔍 My socket rooms:', data.rooms);
+            // console.log('🔍 My socket rooms:', data.rooms);
         });
         
         // Handle checklist state updates from server
         socket.on('checklist_state', (data) => {
-            console.log('📋 Received checklist state:', data);
-            console.log('📋 Is released?', data.isReleased);
-            console.log('📋 Current group:', currentGroup, 'Event group:', data.groupNumber);
+            // console.log('📋 Received checklist state:', data);
+            // console.log('📋 Is released?', data.isReleased);
+            // console.log('📋 Current group:', currentGroup, 'Event group:', data.groupNumber);
             
             // Only show if it's for our group
             if (data.groupNumber == currentGroup) {
                 setStudentUIMode('checklist');
                 if (data.isReleased) {
-                    console.log('✅ Checklist is released - displaying to student');
+                    // console.log('✅ Checklist is released - displaying to student');
                     displayChecklist(data);
                 } else {
-                    console.log('⏳ Checklist not yet released - showing waiting message');
+                    // console.log('⏳ Checklist not yet released - showing waiting message');
                     showChecklistPlaceholder();
                 }
             }
@@ -826,19 +844,19 @@ const socket = io();
         
         // Keep the old handler for backward compatibility (can be removed later)
         socket.on('checklist_released', (data) => {
-            console.log('📋 Received checklist release event:', data);
-            console.log('📋 Current session:', currentSession, 'Event session:', data.sessionCode || 'undefined');
-            console.log('📋 Current group:', currentGroup, 'Event group:', data.groupNumber);
-            console.log('📋 Criteria count:', data.criteria?.length || 0);
-            console.log('📋 Socket rooms:', socket.rooms); // Debug socket rooms
+            // console.log('📋 Received checklist release event:', data);
+            // console.log('📋 Current session:', currentSession, 'Event session:', data.sessionCode || 'undefined');
+            // console.log('📋 Current group:', currentGroup, 'Event group:', data.groupNumber);
+            // console.log('📋 Criteria count:', data.criteria?.length || 0);
+            // console.log('📋 Socket rooms:', socket.rooms); // Debug socket rooms
             
             setStudentUIMode('checklist');
             
             if (data.groupNumber == currentGroup) {
-                console.log('✅ Group matches - displaying checklist');
+                // console.log('✅ Group matches - displaying checklist');
                 displayChecklist(data);
             } else {
-                console.log('❌ Group mismatch - showing debug info');
+                // console.log('❌ Group mismatch - showing debug info');
                 // Show debug info in checklist area
                 const checklistArea = document.getElementById('checklistArea');
                 if (checklistArea) {
@@ -858,8 +876,8 @@ const socket = io();
         });
 
         function displayChecklist(data) {
-            console.log('📋 displayChecklist called with data:', data);
-            console.log('📋 Criteria details:', data.criteria);
+            // console.log('📋 displayChecklist called with data:', data);
+            // console.log('📋 Criteria details:', data.criteria);
             
             setStudentUIMode('checklist');
             const checklistArea = document.getElementById('checklistArea');
@@ -871,7 +889,7 @@ const socket = io();
             
             // Count progress with detailed logging
             const greenCount = data.criteria.filter(c => {
-                console.log(`Checking criterion ${c.id}: status=${c.status}, completed=${c.completed}`);
+                // console.log(`Checking criterion ${c.id}: status=${c.status}, completed=${c.completed}`);
                 return c.status === 'green';
             }).length;
             const redCount = data.criteria.filter(c => c.status === 'red').length;
@@ -879,7 +897,7 @@ const socket = io();
             const totalCount = data.criteria.length;
             const completionRate = Math.round((greenCount / totalCount) * 100);
             
-            console.log(`📋 Progress: ${greenCount} green, ${redCount} red, ${greyCount} grey out of ${totalCount} total`);
+            // console.log(`📋 Progress: ${greenCount} green, ${redCount} red, ${greyCount} grey out of ${totalCount} total`);
             
             // Build checklist HTML
             const checklistHTML = `
@@ -997,7 +1015,7 @@ const socket = io();
                 lucide.createIcons();
             }
             
-            console.log('✅ Checklist displayed to student');
+            // console.log('✅ Checklist displayed to student');
         }
 
         // Clean up on page unload
