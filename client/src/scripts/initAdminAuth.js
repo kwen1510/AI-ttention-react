@@ -161,12 +161,16 @@ export function initAdminAuth() {
   async function sendOtp() {
     setStatus({ message: 'Sending code…' });
     const email = emailEl.value;
+    console.log('📧 Sending OTP to:', email);
+
     if (!isAllowed(email)) {
+      console.warn('⚠️ Email domain not allowed:', email);
       setStatus({ err: `Only ${defaultDomainLabel} emails are allowed.` });
       return;
     }
 
     try {
+      console.log('📤 Calling Supabase signInWithOtp...');
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -175,11 +179,12 @@ export function initAdminAuth() {
         },
       });
       if (err) throw err;
+      console.log('✅ OTP sent successfully to:', email);
       setStatus({ success: 'OTP sent. Check your inbox.' });
       otpSection.classList.remove('hidden');
       startCooldown();
     } catch (err) {
-      console.error('Failed to send OTP', err);
+      console.error('❌ Failed to send OTP:', err);
       setStatus({ err: err?.message || 'Failed to send OTP. Please try again.' });
     }
   }
@@ -193,19 +198,37 @@ export function initAdminAuth() {
   async function verifyOtp() {
     if (!otpEl || !otpEl.value) return;
     setStatus({ message: 'Verifying…' });
+
+    console.log('🔐 Starting OTP verification for:', emailEl.value);
+
     try {
-      const { data, error: err } = await supabase.auth.verifyOtp({
+      // Create a timeout promise (15 seconds)
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Verification timeout - please try again')), 15000);
+      });
+
+      // Race between verification and timeout
+      const verifyPromise = supabase.auth.verifyOtp({
         email: emailEl.value,
         token: otpEl.value,
         type: 'email',
       });
+
+      console.log('⏳ Waiting for Supabase verification response...');
+      const { data, error: err } = await Promise.race([verifyPromise, timeoutPromise]);
+
+      console.log('📬 Received verification response:', { hasData: !!data, hasError: !!err });
+
       if (err) throw err;
       if (!data.session) throw new Error('Invalid OTP response');
+
+      console.log('✅ OTP verified successfully, logging in user:', data.session.user?.email);
       await recordLogin(data.session);
       const destination = resolvePostSignInDestination(data.session);
+      console.log('🚀 Redirecting to:', destination);
       window.location.replace(destination);
     } catch (err) {
-      console.error('Failed to verify OTP', err);
+      console.error('❌ Failed to verify OTP:', err);
       setStatus({ err: err?.message || 'Verification failed. Please try again.' });
     }
   }
