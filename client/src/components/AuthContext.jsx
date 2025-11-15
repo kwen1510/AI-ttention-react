@@ -44,6 +44,11 @@ export function AuthProvider({ children }) {
         if (!isMounted) return;
         setSession(data.session ?? null);
         setUser(data.session?.user ?? null);
+        if (data.session) {
+          console.log('✅ Supabase session loaded:', data.session.user?.email);
+        } else {
+          console.warn('⚠️ No Supabase session found - user may need to log in');
+        }
       } catch (error) {
         console.error('Failed to load Supabase session', error);
       } finally {
@@ -81,6 +86,9 @@ export function AuthProvider({ children }) {
             );
             headers.set('Authorization', `Bearer ${currentSession.access_token}`);
             init = { ...init, headers };
+            console.log('✅ Auth token attached to request:', typeof input === 'string' ? input : input?.url);
+          } else {
+            console.warn('⚠️ No session available for authenticated request:', typeof input === 'string' ? input : input?.url);
           }
         } catch (error) {
           console.warn('Failed to attach Supabase auth header', error);
