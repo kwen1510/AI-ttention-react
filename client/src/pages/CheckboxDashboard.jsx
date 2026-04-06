@@ -1,86 +1,184 @@
-import { useEffect } from "react";
-import { io } from "socket.io-client";
-import { createIcons, icons } from "lucide";
-import CheckboxDashboardView from "../features/checkbox/CheckboxDashboardView.jsx";
-import checkboxScriptSource from "../scripts/checkbox_inline_original.js?raw";
+import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useCheckboxSocket } from '../hooks/useCheckboxSocket';
+import { useCriteriaManager } from '../hooks/useCriteriaManager';
+import { SessionHeader } from '../features/admin/components/SessionHeader';
+import { CriteriaManager } from '../features/checkbox/components/CriteriaManager';
+import { CheckboxGroupGrid } from '../features/checkbox/components/CheckboxGroupGrid';
+import { QRCodeModal } from '../features/admin/components/QRCodeModal';
 
 function CheckboxDashboard() {
+  const [searchParams] = useSearchParams();
+  const {
+    socket,
+    isConnected,
+    sessionCode,
+    groups,
+    setGroups,
+    joinSession
+  } = useCheckboxSocket();
+
+  const {
+    scenario,
+    setScenario,
+    criteriaText,
+    setCriteriaText,
+    currentCriteria,
+    strictness,
+    setStrictness,
+    feedback,
+    saveCriteria
+  } = useCriteriaManager(sessionCode, socket);
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [interval, setInterval] = useState(30);
+  const [showQR, setShowQR] = useState(false);
+
+  // Initialize session
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.io = window.io || io;
-      // Wrap createIcons to automatically pass icons parameter
-      window.lucide = window.lucide || {
-        createIcons: (options) => createIcons({ icons, ...options }),
-        icons,
-      };
-      // QRCode is loaded from CDN (see index.html)
-    }
-
-    const enhancedScript = `(function(){\n${checkboxScriptSource}\nif (typeof window !== 'undefined') {\n  window.__checkboxCleanup = () => {\n    try { socket?.disconnect?.(); } catch (err) { console.warn('Socket cleanup failed', err); }\n    try { clearInterval(heartbeatInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(connectionCheckInterval); } catch (err) { console.warn(err); }\n    try { clearInterval(elapsedInterval); } catch (err) { console.warn(err); }\n    // Clean up global functions\n    window.openQrModal = undefined;\n    window.closeQrModal = undefined;\n    window.loadCheckboxPrompt = undefined;\n    window.toggleCriteriaEditor = undefined;\n    window.addCriterion = undefined;\n    window.removeCriterion = undefined;\n    window.saveCriteria = undefined;\n    window.toggleFormatHelp = undefined;\n  };\n}\n})();`;
-
-    let script = null;
-    let timeoutId = null;
-
-    // Delay script execution to ensure AuthContext has set up fetch wrapper with session
-    timeoutId = setTimeout(() => {
-      // console.log("💉 CheckboxDashboard injecting script");
-      // Clean up any existing dashboard scripts first
-      const existingScripts = document.querySelectorAll(
-        "script[data-dashboard]",
-      );
-      // console.log("🗑️ Removing", existingScripts.length, "existing scripts");
-      existingScripts.forEach((s) => s.parentNode?.removeChild(s));
-
-      // Run cleanup functions from other dashboards
-      if (window.__adminCleanup) {
-        // console.log("🧹 Running admin cleanup from checkbox");
-        try {
-          window.__adminCleanup();
-        } catch (err) {
-          console.warn(err);
-        }
-        window.__adminCleanup = undefined;
-      }
-
-      script = document.createElement("script");
-      script.type = "text/javascript";
-      script.setAttribute("data-dashboard", "checkbox");
-      script.text = enhancedScript;
-      document.body.appendChild(script);
-      if (typeof document !== "undefined") {
-        setTimeout(
-          () => document.dispatchEvent(new Event("DOMContentLoaded")),
-          0,
-        );
-      }
-    }, 100); // 100ms delay to let AuthContext fetch wrapper initialize
-
-    const cleanup = () => {
-      // console.log("🧹 CheckboxDashboard cleanup called");
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      if (typeof window !== "undefined") {
-        try {
-          window.__checkboxCleanup?.();
-        } catch (err) {
-          console.warn("Checkbox cleanup failed", err);
-        }
-        window.__checkboxCleanup = undefined;
-      }
-      if (script?.parentNode) {
-        script.parentNode.removeChild(script);
-        script = null;
+    const initSession = async () => {
+      try {
+        const res = await fetch('/api/new-session?mode=checkbox');
+        const data = await res.json();
+        joinSession(data.code);
+      } catch (err) {
+        console.error('Failed to create session:', err);
       }
     };
+    initSession();
+  }, [joinSession]);
 
-    return cleanup;
-  }, []);
+  useEffect(() => {
+    const scenarioParam = searchParams.get('scenario');
+    const criteriaParam = searchParams.get('criteria');
+    const strictnessParam = searchParams.get('strictness');
+
+    if (scenarioParam) setScenario(scenarioParam);
+    if (criteriaParam) setCriteriaText(criteriaParam);
+    if (strictnessParam) setStrictness(Number(strictnessParam));
+  }, [searchParams, setCriteriaText, setScenario, setStrictness]);
+
+  const handleStartRecording = async () => {
+    if (!sessionCode) return;
+    try {
+      const res = await fetch(`/api/session/${sessionCode}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interval: interval * 1000,
+          mode: 'checkbox'
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to start session (${res.status})`);
+      }
+
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!sessionCode) return;
+    try {
+      const res = await fetch(`/api/session/${sessionCode}/stop`, {
+        method: 'POST'
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to stop session (${res.status})`);
+      }
+
+      setIsRecording(false);
+    } catch (err) {
+      console.error('Failed to stop recording:', err);
+    }
+  };
+
+  const handleSaveCriteria = async () => {
+    const savedCriteria = await saveCriteria(interval);
+    if (savedCriteria) {
+      // Update all groups with new criteria
+      setGroups(prev => {
+        const newGroups = new Map(prev);
+        newGroups.forEach((groupData, groupNum) => {
+          newGroups.set(groupNum, {
+            ...groupData,
+            checkboxes: savedCriteria.map(c => ({
+              ...c,
+              completed: false,
+              quote: null,
+              status: 'grey'
+            }))
+          });
+        });
+        return newGroups;
+      });
+    }
+  };
+
+  const handleReleaseChecklist = (groupNumber) => {
+    if (socket && sessionCode) {
+      socket.emit('release_checklist', {
+        sessionCode,
+        groupNumber,
+        isReleased: true // Toggle logic could be added here
+      });
+
+      // Optimistic update
+      setGroups(prev => {
+        const newGroups = new Map(prev);
+        const group = newGroups.get(groupNumber);
+        if (group) {
+          newGroups.set(groupNumber, { ...group, isReleased: true });
+        }
+        return newGroups;
+      });
+    }
+  };
 
   return (
-    <div className="checkbox-dashboard-wrapper">
-      <CheckboxDashboardView />
+    <div className="checkbox-dashboard-wrapper min-h-screen bg-gray-50 pb-20">
+      <SessionHeader
+        sessionCode={sessionCode}
+        isConnected={isConnected}
+        isRecording={isRecording}
+        onStartRecording={handleStartRecording}
+        onStopRecording={handleStopRecording}
+        onOpenQR={() => setShowQR(true)}
+        interval={interval}
+        onIntervalChange={setInterval}
+      />
+
+      <main className="page-shell page-shell--fluid stack max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <CriteriaManager
+          scenario={scenario}
+          onScenarioChange={setScenario}
+          criteriaText={criteriaText}
+          onCriteriaChange={setCriteriaText}
+          strictness={strictness}
+          onStrictnessChange={setStrictness}
+          onSave={handleSaveCriteria}
+          onClear={() => {
+            setScenario('');
+            setCriteriaText('');
+          }}
+          feedback={feedback}
+        />
+
+        <CheckboxGroupGrid
+          groups={groups}
+          onRelease={handleReleaseChecklist}
+        />
+      </main>
+
+      <QRCodeModal
+        isOpen={showQR}
+        onClose={() => setShowQR(false)}
+        sessionCode={sessionCode}
+      />
     </div>
   );
 }

@@ -22,6 +22,9 @@ export function getSupabaseConfig() {
   const allowedDomains = readArrayConfig(
     import.meta.env.VITE_ADMIN_ALLOWED_DOMAINS || readWindowConfig('ADMIN_ALLOWED_DOMAINS')
   );
+  const allowedEmails = readArrayConfig(
+    import.meta.env.VITE_ADMIN_ALLOWED_EMAILS || readWindowConfig('ADMIN_ALLOWED_EMAILS')
+  );
   const domain = import.meta.env.VITE_ADMIN_DOMAIN || readWindowConfig('ADMIN_DOMAIN');
   const firstLoginRedirect =
     import.meta.env.VITE_ADMIN_FIRST_LOGIN_REDIRECT || readWindowConfig('ADMIN_FIRST_LOGIN_REDIRECT');
@@ -32,6 +35,7 @@ export function getSupabaseConfig() {
     url,
     anonKey,
     allowedDomains,
+    allowedEmails,
     domain,
     firstLoginRedirect,
     emailRedirect,

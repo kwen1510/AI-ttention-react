@@ -14,7 +14,7 @@ const modeItems = [
   { key: "summary", path: "/admin", label: "Summary", icon: MessageSquare },
   { key: "checkbox", path: "/checkbox", label: "Checkbox", icon: CheckSquare },
   { key: "prompts", path: "/prompts", label: "Prompts", icon: FileText },
-  { key: "data", path: "/data", label: "Data", icon: Database },
+  { key: "history", path: "/history", label: "History", icon: Database },
 ];
 
 function ModeButton({ item, isActive, onNavigate }) {

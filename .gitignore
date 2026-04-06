@@ -2,12 +2,16 @@ node_modules/
 dist/
 .DS_Store
 .env
+.env.*
+!.env.example
 client/dist/
 
 # Development files
 todo.md
 plan.md
 DEPLOYMENT_PLAN.md
+REDUNDANT_CODE/
+test_backend.js
 
 # IDE and editor files
 .vscode/

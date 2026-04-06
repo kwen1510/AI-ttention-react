@@ -10,7 +10,8 @@
     "client:dev": "vite",
     "client:build": "vite build",
     "client:preview": "vite preview",
-    "test": "NODE_ENV=test node --test tests",
+    "test": "npm run build && npm run test:smoke",
+    "test:smoke": "NODE_ENV=test node scripts/smoke-test.mjs",
     "build": "npm run client:build"
   },
   "keywords": [

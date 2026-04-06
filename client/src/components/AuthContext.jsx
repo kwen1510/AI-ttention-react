@@ -7,6 +7,7 @@ const AuthContext = createContext({
   user: null,
   loading: true,
   allowedDomains: [],
+  allowedEmails: [],
   signOut: async () => {},
 });
 
@@ -110,6 +111,7 @@ export function AuthProvider({ children }) {
       user,
       loading,
       allowedDomains: config.allowedDomains?.length ? config.allowedDomains : [],
+      allowedEmails: config.allowedEmails?.length ? config.allowedEmails : [],
       signOut: () => supabase.auth.signOut(),
     }),
     [config, loading, session, supabase, user]
