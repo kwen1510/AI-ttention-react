@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
-export function useStudentSocket(joinToken) {
+export function useStudentSocket() {
     const socketRef = useRef(null);
     const [isConnected, setIsConnected] = useState(false);
     const [sessionInfo, setSessionInfo] = useState({ code: null, group: null, mode: 'summary' });
@@ -14,17 +14,7 @@ export function useStudentSocket(joinToken) {
 
     // Initialize socket
     useEffect(() => {
-        if (!joinToken) {
-            setIsConnected(false);
-            return undefined;
-        }
-
-        const socket = io({
-            auth: {
-                type: 'student',
-                joinToken
-            }
-        });
+        const socket = io();
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -50,7 +40,7 @@ export function useStudentSocket(joinToken) {
             socket.disconnect();
             socketRef.current = null;
         };
-    }, [joinToken]);
+    }, []);
 
     // Event handlers
     useEffect(() => {
@@ -138,6 +128,7 @@ export function useStudentSocket(joinToken) {
         const interval = setInterval(() => {
             if (socketRef.current?.connected) {
                 socketRef.current.emit('heartbeat', {
+                    session: sessionInfo.code,
                     group: sessionInfo.group
                 });
             }
@@ -146,9 +137,12 @@ export function useStudentSocket(joinToken) {
         return () => clearInterval(interval);
     }, [sessionInfo.code, sessionInfo.group]);
 
-    const joinSession = useCallback((group) => {
+    const joinSession = useCallback((code, group) => {
         if (socketRef.current) {
-            socketRef.current.emit('join', { group: parseInt(group, 10) });
+            socketRef.current.emit('join', {
+                code: String(code || '').trim().toUpperCase(),
+                group: parseInt(group, 10)
+            });
         }
     }, []);
 

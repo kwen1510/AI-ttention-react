@@ -10,19 +10,25 @@ test("upload validation accepts supported audio types and rejects other mime typ
   assert.equal(isSupportedAudioUploadMimeType("text/plain"), false);
 });
 
-test("student upload validation requires join tokens and positive group numbers", async () => {
+test("student upload validation requires a session reference and positive group numbers", async () => {
   applyBaseTestEnv(10000);
   const { validateStudentUploadRequest } = await import("../server/routes/api.js");
 
   assert.throws(
-    () => validateStudentUploadRequest({ file: null, joinToken: "", groupNumber: 1 }),
-    /missing file, join token, or group number/i
+    () => validateStudentUploadRequest({ file: null, sessionCode: "", groupNumber: 1 }),
+    /missing file, session code, or group number/i
   );
 
   assert.throws(
-    () => validateStudentUploadRequest({ file: { size: 1 }, joinToken: "token", groupNumber: 0 }),
-    /missing file, join token, or group number/i
+    () => validateStudentUploadRequest({ file: { size: 1 }, sessionCode: "ROOM42", groupNumber: 0 }),
+    /missing file, session code, or group number/i
   );
+
+  assert.doesNotThrow(() => validateStudentUploadRequest({
+    file: { size: 128 },
+    sessionCode: "ROOM42",
+    groupNumber: 2
+  }));
 
   assert.doesNotThrow(() => validateStudentUploadRequest({
     file: { size: 128 },

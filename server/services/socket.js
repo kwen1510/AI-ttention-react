@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/db.js";
 import { authenticateTeacherFromToken } from "../middleware/auth.js";
-import { assertJoinableSessionState, verifyJoinToken } from "./joinTokens.js";
+import { verifyJoinToken } from "./joinTokens.js";
 import { activeSessions, latestChecklistState } from "./state.js";
 import { transcribe, extractMime } from "./elevenlabs.js";
 import { summarise } from "./openai.js";
@@ -23,9 +23,20 @@ function createSocketPrincipalError(message, status = 401) {
 }
 
 export async function authenticateSocketPrincipal(auth = {}) {
-    const socketType = auth.type || (auth.joinToken ? "student" : "teacher");
+    const socketType =
+        auth.type ||
+        (auth.joinToken ? "student" : null) ||
+        (auth.token || auth.accessToken ? "teacher" : "student");
 
     if (socketType === "student") {
+        if (!auth.joinToken) {
+            return {
+                kind: "student",
+                sessionCode: null,
+                tokenPayload: null
+            };
+        }
+
         const payload = verifyJoinToken(auth.joinToken);
         return {
             kind: "student",
@@ -415,13 +426,18 @@ export function initSocket(io) {
             }
         }
 
-        async function resolveStudentJoinContext() {
+        async function resolveStudentJoinContext(requestedCode) {
             const principal = getStudentPrincipal();
             if (!principal) {
                 return null;
             }
 
-            const normalizedCode = principal.sessionCode;
+            const normalizedCode = String(principal.sessionCode || requestedCode || "").trim().toUpperCase();
+            if (!normalizedCode) {
+                socket.emit("error", "Session not found");
+                return null;
+            }
+
             let sessionState = activeSessions.get(normalizedCode);
             let session = null;
 
@@ -429,10 +445,8 @@ export function initSocket(io) {
                 session = await db.collection("sessions").findOne({ code: normalizedCode });
             }
 
-            try {
-                assertJoinableSessionState(normalizedCode, sessionState, session);
-            } catch (error) {
-                socket.emit("error", error.message);
+            if (!sessionState && !session) {
+                socket.emit("error", "Session not found");
                 return null;
             }
 
@@ -485,7 +499,7 @@ export function initSocket(io) {
             }
         });
 
-        socket.on("join", async ({ group }) => {
+        socket.on("join", async ({ code, group }) => {
             try {
                 const parsedGroup = Number.parseInt(group, 10);
                 if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) {
@@ -493,7 +507,7 @@ export function initSocket(io) {
                     return;
                 }
 
-                const joinContext = await resolveStudentJoinContext();
+                const joinContext = await resolveStudentJoinContext(code);
                 if (!joinContext) {
                     return;
                 }
@@ -531,7 +545,7 @@ export function initSocket(io) {
 
                 const mem = activeSessions.get(code) || {
                     code,
-                    active: true,
+                    active: Boolean(sessionState?.active),
                     interval: sessionState?.interval || 30000,
                     mode: sessionState?.mode || "summary",
                     groups: new Map()
@@ -544,15 +558,24 @@ export function initSocket(io) {
                 });
                 activeSessions.set(code, mem);
 
-                socket.emit("joined", {
-                    code,
-                    group: parsedGroup,
-                    status: "recording",
-                    interval: mem.interval || 30000,
-                    mode: mem.mode || "summary"
-                });
-
-                io.to(`${code}-${parsedGroup}`).emit("record_now", mem.interval || 30000);
+                if (mem.active) {
+                    socket.emit("joined", {
+                        code,
+                        group: parsedGroup,
+                        status: "recording",
+                        interval: mem.interval || 30000,
+                        mode: mem.mode || "summary"
+                    });
+                    io.to(`${code}-${parsedGroup}`).emit("record_now", mem.interval || 30000);
+                } else {
+                    socket.emit("joined", {
+                        code,
+                        group: parsedGroup,
+                        status: "waiting",
+                        interval: mem.interval || 30000,
+                        mode: mem.mode || "summary"
+                    });
+                }
                 socket.to(code).emit("student_joined", { group: parsedGroup, socketId: socket.id });
                 console.log(`[${ts()}] 📢 Notified admin about student joining group ${parsedGroup}`);
             } catch (error) {
@@ -565,16 +588,18 @@ export function initSocket(io) {
             getStudentPrincipal();
         });
 
-        socket.on("heartbeat", ({ group }) => {
+        socket.on("heartbeat", ({ session, group }) => {
             const principal = getStudentPrincipal();
             if (!principal) return;
+            const sessionKey = String(principal.sessionCode || session || sessionCode || "").trim().toUpperCase();
+            if (!sessionKey) return;
             const parsedGroup = Number.parseInt(group, 10);
             if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
 
-            console.log(`[${ts()}] 💓 Heartbeat from session ${principal.sessionCode}, group ${parsedGroup} (socket: ${socket.id})`);
+            console.log(`[${ts()}] 💓 Heartbeat from session ${sessionKey}, group ${parsedGroup} (socket: ${socket.id})`);
             socket.emit("heartbeat_ack");
 
-            const mem = activeSessions.get(principal.sessionCode);
+            const mem = activeSessions.get(sessionKey);
             if (!mem) return;
 
             if (!mem.groups) mem.groups = new Map();
@@ -583,18 +608,20 @@ export function initSocket(io) {
             state.lastAck = Date.now();
             if (mem.active) state.recording = true;
             mem.groups.set(parsedGroup, state);
-            activeSessions.set(principal.sessionCode, mem);
+            activeSessions.set(sessionKey, mem);
         });
 
-        socket.on("recording_started", ({ group }) => {
+        socket.on("recording_started", ({ session, group }) => {
             try {
                 const principal = getStudentPrincipal();
                 if (!principal) return;
+                const sessionKey = String(principal.sessionCode || session || sessionCode || "").trim().toUpperCase();
+                if (!sessionKey) return;
 
                 const parsedGroup = Number.parseInt(group, 10);
                 if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
 
-                const mem = activeSessions.get(principal.sessionCode);
+                const mem = activeSessions.get(sessionKey);
                 if (!mem) return;
 
                 if (!mem.groups) mem.groups = new Map();
@@ -603,8 +630,8 @@ export function initSocket(io) {
                 state.recording = true;
                 state.lastAck = Date.now();
                 mem.groups.set(parsedGroup, state);
-                activeSessions.set(principal.sessionCode, mem);
-                console.log(`✅ recording_started ack from group ${parsedGroup} (session ${principal.sessionCode})`);
+                activeSessions.set(sessionKey, mem);
+                console.log(`✅ recording_started ack from group ${parsedGroup} (session ${sessionKey})`);
             } catch (error) {
                 console.warn("⚠️ recording_started handler error:", error.message);
             }
@@ -637,14 +664,16 @@ export function initSocket(io) {
             }
         });
 
-        socket.on("upload_error", ({ group, error, chunkSize, timestamp }) => {
+        socket.on("upload_error", ({ session, group, error, chunkSize, timestamp }) => {
             const principal = getStudentPrincipal();
             if (!principal) return;
+            const sessionKey = String(principal.sessionCode || session || sessionCode || "").trim().toUpperCase();
+            if (!sessionKey) return;
 
             const parsedGroup = Number.parseInt(group, 10);
             if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
 
-            socket.to(principal.sessionCode).emit("upload_error", {
+            socket.to(sessionKey).emit("upload_error", {
                 group: parsedGroup,
                 error,
                 chunkSize,

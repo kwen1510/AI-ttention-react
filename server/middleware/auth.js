@@ -38,7 +38,7 @@ export function isLegacyTeacherAllowlistEnabled() {
         return process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST === "true";
     }
 
-    return process.env.NODE_ENV !== "production";
+    return true;
 }
 
 export function isTeacherUser(user, config = getTeacherAccessConfig()) {

@@ -132,9 +132,10 @@ function resolveAppOrigin(req) {
     return process.env.APP_PUBLIC_ORIGIN || `${req.protocol}://${req.get("host")}`;
 }
 
-export function validateStudentUploadRequest({ file, joinToken, groupNumber }) {
-    if (!file || !joinToken || !Number.isFinite(groupNumber) || groupNumber <= 0) {
-        throw createHttpError("Missing file, join token, or group number", 400);
+export function validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber }) {
+    const normalizedSessionCode = String(sessionCode || "").trim().toUpperCase();
+    if (!file || (!joinToken && !normalizedSessionCode) || !Number.isFinite(groupNumber) || groupNumber <= 0) {
+        throw createHttpError("Missing file, session code, or group number", 400);
     }
 }
 
@@ -777,14 +778,31 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
     try {
         const file = req.file;
         const joinToken = String(req.body?.joinToken || "").trim();
+        const sessionCode = String(req.body?.sessionCode || "").trim().toUpperCase();
         const groupNumber = Number(req.body?.groupNumber);
 
-        validateStudentUploadRequest({ file, joinToken, groupNumber });
+        validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber });
 
-        const { sessionCode, sessionRecord: session, sessionState: memory } = await resolveJoinableSession(joinToken);
+        let session;
+        let memory;
+        let resolvedSessionCode;
 
-        if (!session) {
-            return res.status(404).json({ error: "Active session not found" });
+        if (joinToken) {
+            const resolved = await resolveJoinableSession(joinToken);
+            session = resolved.sessionRecord;
+            memory = resolved.sessionState;
+            resolvedSessionCode = resolved.sessionCode;
+            if (!session) {
+                return res.status(404).json({ error: "Active session not found" });
+            }
+        } else {
+            session = await db.collection("sessions").findOne({ code: sessionCode });
+            memory = activeSessions.get(sessionCode);
+            resolvedSessionCode = sessionCode;
+
+            if (!session || !(session.active || memory?.active)) {
+                return res.status(404).json({ error: "Active session not found" });
+            }
         }
 
         const sessionMode = session.mode || memory?.mode || "summary";
@@ -938,10 +956,10 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
                 scenario: checkboxSession?.scenario || memory?.checkbox?.scenario || "",
                 timestamp: now,
                 isReleased,
-                sessionCode
+                sessionCode: resolvedSessionCode
             };
 
-            io?.to(sessionCode).emit("checkbox_update", {
+            io?.to(resolvedSessionCode).emit("checkbox_update", {
                 group: groupNumber,
                 latestTranscript: text,
                 checkboxUpdates: progressUpdates,
@@ -955,9 +973,9 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
                 isActive: true,
                 isReleased
             });
-            io?.to(sessionCode).emit("checklist_state", checklistData);
-            io?.to(`${sessionCode}-${groupNumber}`).emit("checklist_state", checklistData);
-            latestChecklistState.set(`${sessionCode}-${groupNumber}`, checklistData);
+            io?.to(resolvedSessionCode).emit("checklist_state", checklistData);
+            io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("checklist_state", checklistData);
+            latestChecklistState.set(`${resolvedSessionCode}-${groupNumber}`, checklistData);
 
             return res.json({
                 success: true,
@@ -988,7 +1006,7 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
             timestamp: now
         });
 
-        io?.to(`${sessionCode}-${groupNumber}`).emit("transcription_and_summary", {
+        io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("transcription_and_summary", {
             transcription: {
                 text,
                 words: transcription.words,
@@ -998,7 +1016,7 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
             summary,
             isLatestSegment: true
         });
-        io?.to(sessionCode).emit("admin_update", {
+        io?.to(resolvedSessionCode).emit("admin_update", {
             group: groupNumber,
             latestTranscript: text,
             cumulativeTranscript: fullText,

@@ -33,10 +33,9 @@ test("socket principal helpers enforce auth, ownership, and role separation", as
     assert.equal(studentPrincipal.kind, "student");
     assert.equal(studentPrincipal.sessionCode, "ROOM42");
 
-    await assert.rejects(
-      authenticateSocketPrincipal({}),
-      /unauthorized/i
-    );
+    const anonymousStudent = await authenticateSocketPrincipal({});
+    assert.equal(anonymousStudent.kind, "student");
+    assert.equal(anonymousStudent.sessionCode, null);
 
     const ownSession = ensureTeacherOwnsSessionPrincipal(
       teacherPrincipal,
