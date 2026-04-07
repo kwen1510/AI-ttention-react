@@ -12,8 +12,15 @@ export function useCheckboxSocket() {
 
     // Initialize socket connection
     useEffect(() => {
+        if (!session?.access_token) {
+            return undefined;
+        }
+
         const socket = io({
-            auth: session?.access_token ? { token: session.access_token } : {}
+            auth: {
+                type: 'teacher',
+                accessToken: session.access_token
+            }
         });
         socketRef.current = socket;
 
@@ -38,6 +45,7 @@ export function useCheckboxSocket() {
 
         return () => {
             socket.disconnect();
+            socketRef.current = null;
         };
     }, [session?.access_token]);
 
@@ -136,6 +144,7 @@ export function useCheckboxSocket() {
             });
         };
 
+        socket.on('checkbox_update', handleCheckboxUpdate);
         socket.on('student_joined', handleStudentJoined);
 
         return () => {

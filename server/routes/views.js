@@ -54,12 +54,12 @@ spaRoutes.forEach((route) => {
     router.get(route, sendIndexHtml);
     if (route !== '/') {
         router.get(`${route}.html`, sendIndexHtml);
-        router.get(`${route}/*`, sendIndexHtml);
+        router.get(`${route}/*splat`, sendIndexHtml);
     }
 });
 
 /* Fallback handler to support client-side routing */
-router.get('*', (req, res, next) => {
+router.get('/{*path}', (req, res, next) => {
     const requestPath = req.path;
 
     const isApiRequest = requestPath.startsWith('/api/');

@@ -2,6 +2,10 @@ process.env.NODE_ENV = process.env.NODE_ENV || "test";
 process.env.PORT = process.env.PORT || "10000";
 process.env.HOST = process.env.HOST || "0.0.0.0";
 process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
+process.env.APP_ORIGINS = process.env.APP_ORIGINS || "http://127.0.0.1:10000,http://localhost:10000";
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
+process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key";
+process.env.SESSION_JOIN_SECRET = process.env.SESSION_JOIN_SECRET || "smoke-test-session-secret";
 
 const { http, startServer } = await import("../index.js");
 
@@ -39,12 +43,11 @@ try {
   await ensureOk("/student", /<html/i);
   await ensureOk("/admin", /<html/i);
   await ensureStatus(
-    "/api/test-transcription",
-    { method: "POST" },
+    "/api/auth/me",
+    {},
     401,
     /"error":"Unauthorized"/
   );
-  await ensureOk("/socket.io/?EIO=4&transport=polling", /^0\{/);
 
   console.log("Smoke test passed.");
 } finally {

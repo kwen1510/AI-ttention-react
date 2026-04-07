@@ -12,6 +12,7 @@ function StudentView() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
+  const joinToken = params.get('token');
   const {
     socket,
     isConnected,
@@ -23,7 +24,7 @@ function StudentView() {
     error: socketError,
     recordingState,
     joinSession
-  } = useStudentSocket();
+  } = useStudentSocket(joinToken);
 
   const [uploadError, setUploadError] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -34,7 +35,7 @@ function StudentView() {
     stopRecording,
     isPageVisible
   } = useAudioRecorder(
-    sessionInfo.code,
+    joinToken,
     sessionInfo.group,
     setUploadError
   );
@@ -63,19 +64,27 @@ function StudentView() {
 
   // Auto-join from URL params
   useEffect(() => {
-    const code = params.get('code');
     const group = params.get('group');
-    if (code && group && !sessionInfo.code) {
-      joinSession(code, group);
+    if (joinToken && group && !sessionInfo.code) {
+      joinSession(group);
     }
-  }, [joinSession, location.search, sessionInfo.code]);
+  }, [joinSession, joinToken, location.search, sessionInfo.code]);
 
   if (!sessionInfo.code) {
+    const defaultNotice = joinToken
+      ? 'Enter your group number to join this session.'
+      : 'Use the teacher-provided join link to access this session.';
+    const blockedNotice = blockedTeacherAccess
+      ? 'Teacher tools require an approved teacher account. Student access is limited to the join screen.'
+      : '';
+    const notice = [defaultNotice, blockedNotice].filter(Boolean).join(' ');
+
     return (
       <JoinForm
         onJoin={joinSession}
+        hasJoinToken={Boolean(joinToken)}
         error={socketError}
-        notice={blockedTeacherAccess ? 'Teacher tools require an approved teacher account. Student access is limited to the session join screen.' : ''}
+        notice={notice}
       />
     );
   }

@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../components/AuthContext.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getSupabaseClient } from "../config/supabaseClient";
-import { isAllowedTeacherUser } from "../lib/teacherAccess.js";
+import { sanitizeRedirect } from "../lib/sanitizeRedirect.js";
 
 function LoginPage() {
-  const { user, loading, allowedDomains, allowedEmails } = useAuth();
+  const { user, loading, isTeacher } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -17,14 +17,14 @@ function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      if (!isAllowedTeacherUser(user, allowedDomains, allowedEmails)) {
+      if (!isTeacher) {
         navigate("/student?blocked=teacher", { replace: true });
         return;
       }
-      const redirect = params.get("redirect");
+      const redirect = sanitizeRedirect(params.get("redirect"));
       navigate(redirect || "/admin", { replace: true });
     }
-  }, [allowedDomains, allowedEmails, loading, navigate, params, user]);
+  }, [isTeacher, loading, navigate, params, user]);
 
   useEffect(() => {
     let interval;
@@ -45,7 +45,7 @@ function LoginPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          shouldCreateUser: true,
+          shouldCreateUser: false,
           emailRedirectTo: window.location.origin + "/admin",
         },
       });

@@ -1,5 +1,7 @@
 import { supabase } from "../db/supabaseClient.js";
 
+let authTestOverrides = null;
+
 function createAuthError(message, status = 401) {
     const error = new Error(message);
     error.status = status;
@@ -31,6 +33,14 @@ export function getTeacherAccessConfig() {
     };
 }
 
+export function isLegacyTeacherAllowlistEnabled() {
+    if (typeof process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST === "string") {
+        return process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST === "true";
+    }
+
+    return process.env.NODE_ENV !== "production";
+}
+
 export function isTeacherUser(user, config = getTeacherAccessConfig()) {
     const email = user?.email ? String(user.email).trim().toLowerCase() : '';
     if (!email) {
@@ -45,6 +55,10 @@ export function isTeacherUser(user, config = getTeacherAccessConfig()) {
 }
 
 export async function authenticateUserFromToken(token) {
+    if (authTestOverrides?.authenticateUserFromToken) {
+        return authTestOverrides.authenticateUserFromToken(token);
+    }
+
     if (!token) {
         throw createAuthError('Missing bearer token', 401);
     }
@@ -59,55 +73,141 @@ export async function authenticateUserFromToken(token) {
     return data.user;
 }
 
-export async function authenticateTeacher(req) {
-    const authHeader = req.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-        throw createAuthError('Missing bearer token', 401);
-    }
-    const token = authHeader.replace('Bearer', '').trim();
-    const user = await authenticateUserFromToken(token);
-
-    if (!isTeacherUser(user)) {
-        throw createAuthError('Teacher access required', 403);
+export async function lookupTeacherAccessRecord(user) {
+    if (authTestOverrides?.lookupTeacherAccessRecord) {
+        return authTestOverrides.lookupTeacherAccessRecord(user);
     }
 
-    return user;
+    const { data, error } = await supabase
+        .from("teacher_access")
+        .select("user_id,email,role,active,created_at,updated_at")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
 }
 
-export async function primeSocketTeacher(socket) {
-    const token =
-        socket.handshake?.auth?.token ||
-        socket.handshake?.auth?.accessToken ||
-        null;
+function buildTeacherPrincipal(user, accessRecord) {
+    return {
+        ...user,
+        role: accessRecord?.role || "teacher",
+        teacherAccess: accessRecord
+            ? {
+                user_id: accessRecord.user_id,
+                email: accessRecord.email,
+                role: accessRecord.role,
+                active: accessRecord.active,
+                created_at: accessRecord.created_at,
+                updated_at: accessRecord.updated_at,
+                source: "table"
+            }
+            : {
+                user_id: user.id,
+                email: user.email,
+                role: "teacher",
+                active: true,
+                source: "legacy"
+            }
+    };
+}
 
-    socket.data.teacher = null;
-    socket.data.teacherAuthError = null;
+function canUseLegacyTeacherFallback(user) {
+    return isLegacyTeacherAllowlistEnabled() && isTeacherUser(user);
+}
+
+export async function authorizeTeacherUser(user) {
+    try {
+        const accessRecord = await lookupTeacherAccessRecord(user);
+
+        if (accessRecord?.active) {
+            return buildTeacherPrincipal(user, accessRecord);
+        }
+
+        if (accessRecord && accessRecord.active === false) {
+            throw createAuthError("Teacher access required", 403);
+        }
+    } catch (error) {
+        if (canUseLegacyTeacherFallback(user)) {
+            console.warn("⚠️ Falling back to legacy teacher allowlist:", error.message);
+            return buildTeacherPrincipal(user, null);
+        }
+
+        if (error?.status) {
+            throw error;
+        }
+
+        console.error("❌ Failed to resolve teacher_access record:", error);
+        throw createAuthError("Teacher access unavailable", 503);
+    }
+
+    if (canUseLegacyTeacherFallback(user)) {
+        return buildTeacherPrincipal(user, null);
+    }
+
+    throw createAuthError("Teacher access required", 403);
+}
+
+export async function authenticateTeacherFromToken(token) {
+    const user = await authenticateUserFromToken(token);
+    return authorizeTeacherUser(user);
+}
+
+export function extractBearerToken(authHeader = "") {
+    if (!authHeader.startsWith("Bearer ")) {
+        return null;
+    }
+
+    return authHeader.replace("Bearer", "").trim();
+}
+
+export async function authenticateTeacher(req) {
+    if (req.teacher) {
+        return req.teacher;
+    }
+
+    if (req.teacherAuthError) {
+        throw req.teacherAuthError;
+    }
+
+    const token = req.authToken || extractBearerToken(req.headers.authorization || "");
+    if (!token) {
+        throw createAuthError("Missing bearer token", 401);
+    }
+
+    const teacher = await authenticateTeacherFromToken(token);
+    req.teacher = teacher;
+    req.authToken = token;
+    req.teacherAuthError = null;
+    return teacher;
+}
+
+export async function optionalTeacherContext(req, _res, next) {
+    if (req.teacher || req.teacherAuthError) {
+        if (next) next();
+        return;
+    }
+
+    const token = extractBearerToken(req.headers.authorization || "");
+    req.authToken = token;
+    req.teacher = null;
+    req.teacherAuthError = null;
 
     if (!token) {
-        return null;
+        if (next) next();
+        return;
     }
 
     try {
-        const user = await authenticateUserFromToken(token);
-        if (!isTeacherUser(user)) {
-            socket.data.teacherAuthError = createAuthError('Teacher access required', 403);
-            return null;
-        }
-        socket.data.teacher = user;
-        return user;
+        req.teacher = await authenticateTeacherFromToken(token);
     } catch (error) {
-        socket.data.teacherAuthError = error;
-        return null;
+        req.teacherAuthError = error;
     }
-}
 
-export function getSocketTeacher(socket) {
-    return socket?.data?.teacher ?? null;
-}
-
-export function emitSocketAuthError(socket) {
-    const error = socket?.data?.teacherAuthError;
-    socket.emit('error', error?.status === 403 ? 'Forbidden' : 'Unauthorized');
+    if (next) next();
 }
 
 export async function requireTeacher(req, res, next) {
@@ -119,7 +219,16 @@ export async function requireTeacher(req, res, next) {
     } catch (err) {
         console.warn(`🔒 Teacher authentication failed: ${err.message}`);
         const status = Number.isInteger(err.status) ? err.status : 401;
-        res.status(status).json({ error: status === 403 ? "Forbidden" : "Unauthorized" });
+        const message = status === 403
+            ? "Forbidden"
+            : status >= 500
+                ? "Teacher access unavailable"
+                : "Unauthorized";
+        res.status(status).json({ error: message });
         return null;
     }
+}
+
+export function __setAuthTestOverrides(overrides) {
+    authTestOverrides = overrides || null;
 }

@@ -1,10 +1,19 @@
 import express from "express";
+import { randomInt } from "crypto";
 import { v4 as uuid } from "uuid";
 import { upload } from "../middleware/upload.js";
-import { requireTeacher } from "../middleware/auth.js";
+import { optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
+import { aiLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseDb } from "../db/db.js";
 import { transcribe } from "../services/elevenlabs.js";
 import { summarise } from "../services/openai.js";
+import {
+    assertJoinableSessionState,
+    buildJoinUrl,
+    createJoinToken,
+    getJoinTokenTtlSeconds,
+    verifyJoinToken
+} from "../services/joinTokens.js";
 import { activeSessions, latestChecklistState } from "../services/state.js";
 import {
     appendTranscriptSegment,
@@ -42,6 +51,8 @@ const router = express.Router();
 const db = createSupabaseDb();
 const SESSION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+router.use(optionalTeacherContext);
+
 function sendJsonDownload(res, filename, payload) {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -65,7 +76,7 @@ function normalizeIntervalMs(value, fallback = 30000) {
 function generateSessionCode() {
     let code = "";
     for (let index = 0; index < 6; index++) {
-        code += SESSION_CODE_ALPHABET[Math.floor(Math.random() * SESSION_CODE_ALPHABET.length)];
+        code += SESSION_CODE_ALPHABET[randomInt(SESSION_CODE_ALPHABET.length)];
     }
     return code;
 }
@@ -115,6 +126,27 @@ async function ensureGroupRecord(sessionId, groupNumber) {
     }
 
     return group;
+}
+
+function resolveAppOrigin(req) {
+    return process.env.APP_PUBLIC_ORIGIN || `${req.protocol}://${req.get("host")}`;
+}
+
+export function validateStudentUploadRequest({ file, joinToken, groupNumber }) {
+    if (!file || !joinToken || !Number.isFinite(groupNumber) || groupNumber <= 0) {
+        throw createHttpError("Missing file, join token, or group number", 400);
+    }
+}
+
+async function resolveJoinableSession(joinToken) {
+    const payload = verifyJoinToken(joinToken);
+    const sessionCode = payload.sessionCode;
+    const session = await db.collection("sessions").findOne({ code: sessionCode });
+    const sessionState = activeSessions.get(sessionCode);
+    return {
+        payload,
+        ...assertJoinableSessionState(sessionCode, sessionState, session)
+    };
 }
 
 function extractTranscriptMetrics(transcription) {
@@ -177,8 +209,22 @@ function filterPrompts(prompts, { search = "", category = "", mode = "" } = {}) 
     });
 }
 
+router.get("/auth/me", async (req, res) => {
+    const teacher = await requireTeacher(req, res);
+    if (!teacher) return;
+
+    res.json({
+        teacher: true,
+        user: {
+            id: teacher.id,
+            email: teacher.email,
+            role: teacher.role || teacher.teacherAccess?.role || "teacher"
+        }
+    });
+});
+
 /* Test transcription API endpoint */
-router.post("/test-transcription", upload.single('audio'), async (req, res) => {
+router.post("/test-transcription", aiLimiter, upload.single('audio'), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -217,7 +263,7 @@ router.post("/test-transcription", upload.single('audio'), async (req, res) => {
 });
 
 /* Test summary API endpoint */
-router.post("/test-summary", express.json(), async (req, res) => {
+router.post("/test-summary", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -283,6 +329,33 @@ router.get("/new-session", async (req, res) => {
     } catch (err) {
         console.error("❌ Failed to create session:", err);
         res.status(err.status || 500).json({ error: err.message || "Failed to create session" });
+    }
+});
+
+router.post("/session/:code/join-token", async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const sessionCode = String(req.params.code || "").trim().toUpperCase();
+        await getOwnedSessionContext(sessionCode, teacher.id);
+
+        const ttlSeconds = getJoinTokenTtlSeconds();
+        const token = createJoinToken({
+            sessionCode,
+            expiresInSeconds: ttlSeconds
+        });
+        const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+        const url = buildJoinUrl(resolveAppOrigin(req), token);
+
+        res.json({
+            token,
+            expiresAt,
+            url
+        });
+    } catch (err) {
+        console.error("❌ Failed to create join token:", err);
+        res.status(err.status || 500).json({ error: err.message || "Failed to create join token" });
     }
 });
 
@@ -700,20 +773,17 @@ router.post("/prompts/:id/use", express.json(), async (req, res) => {
     }
 });
 
-router.post("/transcribe-chunk", upload.single('file'), async (req, res) => {
+router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, res) => {
     try {
         const file = req.file;
-        const sessionCode = String(req.body?.sessionCode || "").trim().toUpperCase();
+        const joinToken = String(req.body?.joinToken || "").trim();
         const groupNumber = Number(req.body?.groupNumber);
 
-        if (!file || !sessionCode || !Number.isFinite(groupNumber) || groupNumber <= 0) {
-            return res.status(400).json({ error: "Missing file, session code, or group number" });
-        }
+        validateStudentUploadRequest({ file, joinToken, groupNumber });
 
-        const session = await db.collection("sessions").findOne({ code: sessionCode });
-        const memory = activeSessions.get(sessionCode);
+        const { sessionCode, sessionRecord: session, sessionState: memory } = await resolveJoinableSession(joinToken);
 
-        if (!session || !(session.active || memory?.active)) {
+        if (!session) {
             return res.status(404).json({ error: "Active session not found" });
         }
 
@@ -956,7 +1026,7 @@ router.post("/transcribe-chunk", upload.single('file'), async (req, res) => {
 });
 
 /* Mindmap transcription endpoint */
-router.post("/transcribe-mindmap-chunk", upload.single('file'), async (req, res) => {
+router.post("/transcribe-mindmap-chunk", aiLimiter, upload.single('file'), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -992,7 +1062,7 @@ router.post("/transcribe-mindmap-chunk", upload.single('file'), async (req, res)
 });
 
 /* Mindmap manual update endpoint */
-router.post("/mindmap/manual-update", express.json(), async (req, res) => {
+router.post("/mindmap/manual-update", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1019,7 +1089,7 @@ router.post("/mindmap/manual-update", express.json(), async (req, res) => {
 });
 
 /* Mindmap examples endpoint */
-router.post("/mindmap/examples", express.json(), async (req, res) => {
+router.post("/mindmap/examples", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1038,7 +1108,7 @@ router.post("/mindmap/examples", express.json(), async (req, res) => {
 });
 
 /* Playground examples endpoint */
-router.post("/generate-examples", express.json(), async (req, res) => {
+router.post("/generate-examples", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1057,7 +1127,7 @@ router.post("/generate-examples", express.json(), async (req, res) => {
 });
 
 /* Playground point endpoint */
-router.post("/generate-point", express.json(), async (req, res) => {
+router.post("/generate-point", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1076,7 +1146,7 @@ router.post("/generate-point", express.json(), async (req, res) => {
 });
 
 /* Contextual point endpoint */
-router.post("/generate-contextual-point", express.json(), async (req, res) => {
+router.post("/generate-contextual-point", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1095,7 +1165,7 @@ router.post("/generate-contextual-point", express.json(), async (req, res) => {
 });
 
 /* Ask question endpoint */
-router.post("/ask-question", express.json(), async (req, res) => {
+router.post("/ask-question", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -1554,7 +1624,7 @@ router.get("/history/sessions/:code/export/segments", async (req, res) => {
 });
 
 /* Test mode detection endpoint */
-router.post("/checkbox/test", express.json(), async (req, res) => {
+router.post("/checkbox/test", aiLimiter, express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;

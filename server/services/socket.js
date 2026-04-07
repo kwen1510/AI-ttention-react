@@ -1,10 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/db.js";
-import {
-    emitSocketAuthError,
-    getSocketTeacher,
-    primeSocketTeacher
-} from "../middleware/auth.js";
+import { authenticateTeacherFromToken } from "../middleware/auth.js";
+import { assertJoinableSessionState, verifyJoinToken } from "./joinTokens.js";
 import { activeSessions, latestChecklistState } from "./state.js";
 import { transcribe, extractMime } from "./elevenlabs.js";
 import { summarise } from "./openai.js";
@@ -18,6 +15,80 @@ import {
 // Auto-summary management
 export const activeSummaryTimers = new Map();
 const processingGroups = new Set();
+
+function createSocketPrincipalError(message, status = 401) {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+}
+
+export async function authenticateSocketPrincipal(auth = {}) {
+    const socketType = auth.type || (auth.joinToken ? "student" : "teacher");
+
+    if (socketType === "student") {
+        const payload = verifyJoinToken(auth.joinToken);
+        return {
+            kind: "student",
+            sessionCode: payload.sessionCode,
+            tokenPayload: payload
+        };
+    }
+
+    const teacherToken = auth.token || auth.accessToken;
+    if (!teacherToken) {
+        throw createSocketPrincipalError("Unauthorized", 401);
+    }
+
+    const teacher = await authenticateTeacherFromToken(teacherToken);
+    return {
+        kind: "teacher",
+        user: teacher
+    };
+}
+
+export function requireTeacherPrincipal(principal) {
+    if (principal?.kind !== "teacher") {
+        throw createSocketPrincipalError("Forbidden", 403);
+    }
+
+    return principal.user;
+}
+
+export function requireStudentPrincipal(principal) {
+    if (principal?.kind !== "student") {
+        throw createSocketPrincipalError("Forbidden", 403);
+    }
+
+    return principal;
+}
+
+export function ensureTeacherOwnsSessionPrincipal(principal, code, sessionState, sessionRecord = null) {
+    const teacher = requireTeacherPrincipal(principal);
+    const normalizedCode = String(code || "").trim().toUpperCase();
+
+    if (!normalizedCode) {
+        throw createSocketPrincipalError("Session not found", 404);
+    }
+
+    if (sessionState?.ownerId === teacher.id) {
+        return { teacher, session: null, sessionState, code: normalizedCode };
+    }
+
+    if (!sessionRecord) {
+        throw createSocketPrincipalError("Session not found", 404);
+    }
+
+    if (sessionRecord.owner_id !== teacher.id) {
+        throw createSocketPrincipalError("Forbidden", 403);
+    }
+
+    return {
+        teacher,
+        session: sessionRecord,
+        sessionState: sessionState || null,
+        code: normalizedCode
+    };
+}
 
 export function startAutoSummary(sessionCode, intervalMs) {
     // Clear any existing timer for this session
@@ -277,320 +348,365 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
     }
 }
 
+function createSocketConnectError(message, status = 401) {
+    const error = new Error(message);
+    error.data = { status };
+    return error;
+}
+
 export function initSocket(io) {
     ioInstance = io;
 
+    io.use(async (socket, next) => {
+        try {
+            socket.data.principal = await authenticateSocketPrincipal(socket.handshake?.auth || {});
+            next();
+        } catch (error) {
+            const status = Number.isInteger(error?.status) ? error.status : 401;
+            next(createSocketConnectError(status === 403 ? "Forbidden" : error.message || "Unauthorized", status));
+        }
+    });
+
     io.on("connection", socket => {
-        const teacherReady = primeSocketTeacher(socket);
         console.log(`🔌 New socket connection: ${socket.id}`);
-        let groupId, localBuf = [], sessionCode, groupNumber;
+        let groupId;
+        let localBuf = [];
+        let sessionCode;
+        let groupNumber;
 
-        async function ensureTeacherOwnsSession(code) {
-            await teacherReady;
+        socket.localBuf = localBuf;
 
-            if (socket.data.teacherAuthError) {
-                emitSocketAuthError(socket);
-                return null;
-            }
-
-            const teacher = getSocketTeacher(socket);
-            if (!teacher) {
-                socket.emit("error", "Unauthorized");
-                return null;
-            }
-
-            const session = code
-                ? await db.collection("sessions").findOne({ code })
-                : null;
-
-            if (session) {
-                if (session.owner_id !== teacher.id) {
-                    socket.emit("error", "Forbidden");
-                    return null;
-                }
-
-                return { teacher, session };
-            }
-
-            const sessionState = activeSessions.get(code);
-            if (sessionState?.ownerId === teacher.id) {
-                return { teacher, session: null, sessionState };
-            }
-
-            socket.emit("error", "Session not found");
-            return null;
+        function ts() {
+            return new Date().toISOString();
         }
 
-        // Live prompt updates from admin: keep latest prompt in memory to avoid DB reads
-        socket.on('prompt_update', async data => {
+        function getTeacherPrincipal() {
+            try {
+                return requireTeacherPrincipal(socket.data?.principal);
+            } catch (error) {
+                socket.emit("error", "Forbidden");
+                return null;
+            }
+        }
+
+        function getStudentPrincipal() {
+            try {
+                return requireStudentPrincipal(socket.data?.principal);
+            } catch (error) {
+                socket.emit("error", "Forbidden");
+                return null;
+            }
+        }
+
+        async function ensureTeacherOwnsSession(code) {
+            const normalizedCode = String(code || "").trim().toUpperCase();
+            if (!normalizedCode) {
+                socket.emit("error", "Session not found");
+                return null;
+            }
+
+            const sessionState = activeSessions.get(normalizedCode);
+            const session = await db.collection("sessions").findOne({ code: normalizedCode });
+            try {
+                return ensureTeacherOwnsSessionPrincipal(socket.data?.principal, normalizedCode, sessionState, session);
+            } catch (error) {
+                socket.emit("error", error.message);
+                return null;
+            }
+        }
+
+        async function resolveStudentJoinContext() {
+            const principal = getStudentPrincipal();
+            if (!principal) {
+                return null;
+            }
+
+            const normalizedCode = principal.sessionCode;
+            let sessionState = activeSessions.get(normalizedCode);
+            let session = null;
+
+            if (!sessionState || sessionState.persisted) {
+                session = await db.collection("sessions").findOne({ code: normalizedCode });
+            }
+
+            try {
+                assertJoinableSessionState(normalizedCode, sessionState, session);
+            } catch (error) {
+                socket.emit("error", error.message);
+                return null;
+            }
+
+            if (!sessionState && session) {
+                sessionState = {
+                    id: session._id,
+                    code: normalizedCode,
+                    ownerId: session.owner_id,
+                    active: Boolean(session.active),
+                    interval: session.interval_ms || 30000,
+                    startTime: session.start_time || null,
+                    created_at: session.created_at || Date.now(),
+                    persisted: true,
+                    mode: session.mode || "summary",
+                    groups: new Map()
+                };
+                activeSessions.set(normalizedCode, sessionState);
+            }
+
+            return {
+                principal,
+                code: normalizedCode,
+                session,
+                sessionState
+            };
+        }
+
+        socket.on("prompt_update", async data => {
             try {
                 const { sessionCode: code, prompt } = data || {};
-                if (!code || typeof prompt !== 'string') return;
+                if (!code || typeof prompt !== "string") return;
                 const access = await ensureTeacherOwnsSession(code);
                 if (!access) return;
-                const mem = activeSessions.get(code);
+                const mem = activeSessions.get(access.code);
                 if (mem) {
-                    activeSessions.set(code, { ...mem, customPrompt: prompt });
+                    activeSessions.set(access.code, { ...mem, customPrompt: prompt });
                 }
-            } catch (e) {
-                console.warn('⚠️ prompt_update handling error:', e.message);
+            } catch (error) {
+                console.warn("⚠️ prompt_update handling error:", error.message);
             }
         });
 
-        // Attach buffer to socket for auto-summary access
-        socket.localBuf = localBuf;
-
-        // Timestamp helper for logs
-        function ts() { return new Date().toISOString(); }
-
-        // Admin joins session room
         socket.on("admin_join", async ({ code }) => {
             try {
                 const access = await ensureTeacherOwnsSession(code);
                 if (!access) return;
-                // console.log(`👨‍🏫 Admin socket ${socket.id} joining session room: ${code}`);
-                socket.join(code);
-                // console.log(`✅ Admin joined session room: ${code}`);
-            } catch (err) {
-                console.error("❌ Error admin joining session room:", err);
+                socket.join(access.code);
+            } catch (error) {
+                console.error("❌ Error admin joining session room:", error);
             }
         });
 
-        socket.on("join", async ({ code, group }) => {
+        socket.on("join", async ({ group }) => {
             try {
-                // console.log(`[${ts()}] 👋 Socket ${socket.id} attempting to join session ${code}, group ${group}`);
-
-                // Check memory only - no database lookup
-                const sessionState = activeSessions.get(code);
-
-                if (!sessionState) {
-                    // console.log(`❌ Session ${code} not found`);
-                    return socket.emit("error", "Session not found");
+                const parsedGroup = Number.parseInt(group, 10);
+                if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) {
+                    socket.emit("error", "Invalid group number");
+                    return;
                 }
 
-                sessionCode = code;
-                groupNumber = group;
+                const joinContext = await resolveStudentJoinContext();
+                if (!joinContext) {
+                    return;
+                }
 
-                // Only create database entries if session has been persisted (i.e., recording started)
-                if (sessionState.persisted) {
-                    // Session exists in database, handle group creation normally
-                    const sess = await db.collection("sessions").findOne({ code: code });
-                    if (!sess) {
-                        // console.log(`❌ Session ${code} not found in database despite being marked as persisted`);
-                        return socket.emit("error", "Session data inconsistent");
+                const { code, session, sessionState } = joinContext;
+                sessionCode = code;
+                groupNumber = parsedGroup;
+
+                if (sessionState?.persisted || session) {
+                    const sessionRecord = session || await db.collection("sessions").findOne({ code });
+                    if (!sessionRecord) {
+                        socket.emit("error", "Session data inconsistent");
+                        return;
                     }
 
-                    const existing = await db.collection("groups").findOne({ session_id: sess._id, number: parseInt(group) });
+                    const existing = await db.collection("groups").findOne({
+                        session_id: sessionRecord._id,
+                        number: parsedGroup
+                    });
                     groupId = existing?._id ?? uuid();
 
                     if (!existing) {
                         await db.collection("groups").insertOne({
                             _id: groupId,
-                            session_id: sess._id,
-                            number: parseInt(group)
+                            session_id: sessionRecord._id,
+                            number: parsedGroup
                         });
-                        // console.log(`📝 Created new group: Session ${code}, Group ${group}, ID: ${groupId}`);
-                    } else {
-                        // console.log(`🔄 Rejoined existing group: Session ${code}, Group ${group}, ID: ${groupId}`);
                     }
                 } else {
-                    // Session not yet persisted, just create a temporary group ID
                     groupId = uuid();
-                    // console.log(`📝 Created temporary group ID for unpersisted session: ${groupId}`);
                 }
 
                 socket.join(code);
-                socket.join(`${code}-${group}`);
+                socket.join(`${code}-${parsedGroup}`);
 
-                // Send different status based on session state
-                if (sessionState.active) {
-                    socket.emit("joined", { code, group, status: "recording", interval: sessionState.interval || 30000, mode: sessionState.mode || "summary" });
-                    // console.log(`✅ Socket ${socket.id} joined ACTIVE session ${code}, group ${group}`);
-                    // Track joined group for reliability retries
-                    const mem = activeSessions.get(code) || {};
-                    if (!mem.groups) mem.groups = new Map();
-                    mem.groups.set(parseInt(group), { joined: true, recording: false, lastAck: Date.now() });
-                    activeSessions.set(code, mem);
-                    // Immediate emit to this group if server is active and not yet recording
-                    io.to(`${code}-${parseInt(group)}`).emit("record_now", sessionState.interval || 30000);
-                } else {
-                    socket.emit("joined", { code, group, status: "waiting", interval: sessionState.interval || 30000, mode: sessionState.mode || "summary" });
-                    // console.log(`✅ Socket ${socket.id} joined INACTIVE session ${code}, group ${group} - waiting for start`);
-                    const mem = activeSessions.get(code) || {};
-                    if (!mem.groups) mem.groups = new Map();
-                    mem.groups.set(parseInt(group), { joined: true, recording: false, lastAck: Date.now() });
-                    activeSessions.set(code, mem);
-                }
-
-                // Notify admin about student joining
-                socket.to(code).emit("student_joined", { group, socketId: socket.id });
-                console.log(`[${ts()}] 📢 Notified admin about student joining group ${group}`);
-
-            } catch (err) {
-                console.error("❌ Error joining session:", err);
-                console.error("Error details:", {
-                    message: err.message,
-                    stack: err.stack,
-                    sessionCode: code,
-                    group: group
+                const mem = activeSessions.get(code) || {
+                    code,
+                    active: true,
+                    interval: sessionState?.interval || 30000,
+                    mode: sessionState?.mode || "summary",
+                    groups: new Map()
+                };
+                if (!mem.groups) mem.groups = new Map();
+                mem.groups.set(parsedGroup, {
+                    joined: true,
+                    recording: false,
+                    lastAck: Date.now()
                 });
-                socket.emit("error", `Failed to join session: ${err.message}`);
+                activeSessions.set(code, mem);
+
+                socket.emit("joined", {
+                    code,
+                    group: parsedGroup,
+                    status: "recording",
+                    interval: mem.interval || 30000,
+                    mode: mem.mode || "summary"
+                });
+
+                io.to(`${code}-${parsedGroup}`).emit("record_now", mem.interval || 30000);
+                socket.to(code).emit("student_joined", { group: parsedGroup, socketId: socket.id });
+                console.log(`[${ts()}] 📢 Notified admin about student joining group ${parsedGroup}`);
+            } catch (error) {
+                console.error("❌ Error joining session:", error);
+                socket.emit("error", `Failed to join session: ${error.message}`);
             }
         });
 
-        socket.on("student:chunk", ({ data, format }) => {
-            // Note: This event is no longer used. Students now upload chunks directly via /api/transcribe-chunk
-            // console.log(`⚠️  Received old-style chunk from ${sessionCode}, group ${groupNumber} - ignoring (use /api/transcribe-chunk instead)`);
+        socket.on("student:chunk", () => {
+            getStudentPrincipal();
         });
 
-        // Handle heartbeat to keep connection alive (especially for background recording)
-        socket.on("heartbeat", ({ session, group }) => {
-            console.log(`[${ts()}] 💓 Heartbeat from session ${session}, group ${group} (socket: ${socket.id})`);
+        socket.on("heartbeat", ({ group }) => {
+            const principal = getStudentPrincipal();
+            if (!principal) return;
+            const parsedGroup = Number.parseInt(group, 10);
+            if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
+
+            console.log(`[${ts()}] 💓 Heartbeat from session ${principal.sessionCode}, group ${parsedGroup} (socket: ${socket.id})`);
             socket.emit("heartbeat_ack");
-            // Mark group alive; if session active, also flag as recording
-            const mem = activeSessions.get(session);
-            if (mem) {
-                if (!mem.groups) mem.groups = new Map();
-                const st = mem.groups.get(parseInt(group)) || {};
-                st.joined = true;
-                st.lastAck = Date.now();
-                if (mem.active) st.recording = true;
-                mem.groups.set(parseInt(group), st);
-                activeSessions.set(session, mem);
-            }
+
+            const mem = activeSessions.get(principal.sessionCode);
+            if (!mem) return;
+
+            if (!mem.groups) mem.groups = new Map();
+            const state = mem.groups.get(parsedGroup) || {};
+            state.joined = true;
+            state.lastAck = Date.now();
+            if (mem.active) state.recording = true;
+            mem.groups.set(parsedGroup, state);
+            activeSessions.set(principal.sessionCode, mem);
         });
 
-        // Explicit client acknowledgement when recording actually starts
-        socket.on('recording_started', ({ session, group, interval }) => {
+        socket.on("recording_started", ({ group }) => {
             try {
-                const mem = activeSessions.get(session);
+                const principal = getStudentPrincipal();
+                if (!principal) return;
+
+                const parsedGroup = Number.parseInt(group, 10);
+                if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
+
+                const mem = activeSessions.get(principal.sessionCode);
                 if (!mem) return;
+
                 if (!mem.groups) mem.groups = new Map();
-                const st = mem.groups.get(parseInt(group)) || {};
-                st.joined = true;
-                st.recording = true;
-                st.lastAck = Date.now();
-                mem.groups.set(parseInt(group), st);
-                activeSessions.set(session, mem);
-                console.log(`✅ recording_started ack from group ${group} (session ${session})`);
-            } catch (e) {
-                console.warn('⚠️ recording_started handler error:', e.message);
+                const state = mem.groups.get(parsedGroup) || {};
+                state.joined = true;
+                state.recording = true;
+                state.lastAck = Date.now();
+                mem.groups.set(parsedGroup, state);
+                activeSessions.set(principal.sessionCode, mem);
+                console.log(`✅ recording_started ack from group ${parsedGroup} (session ${principal.sessionCode})`);
+            } catch (error) {
+                console.warn("⚠️ recording_started handler error:", error.message);
             }
         });
 
-        // Handle admin heartbeat
-        socket.on("admin_heartbeat", async ({ sessionCode }) => {
-            const access = await ensureTeacherOwnsSession(sessionCode);
+        socket.on("admin_heartbeat", async ({ sessionCode: code }) => {
+            const access = await ensureTeacherOwnsSession(code);
             if (!access) return;
-            console.log(`[${ts()}] 💓 Admin heartbeat from session ${sessionCode} (socket: ${socket.id})`);
+            console.log(`[${ts()}] 💓 Admin heartbeat from session ${access.code} (socket: ${socket.id})`);
             socket.emit("admin_heartbeat_ack");
         });
 
-        /* ===== DEV ONLY: Simulate disconnect test (guarded by env) ===== */
-        socket.on('dev_simulate_disconnect', ({ sessionCode: code, target = 'all', group = 1, durationMs = 5000 }) => {
-            if (!process.env.ALLOW_DEV_TEST) {
-                // console.log('🚫 dev_simulate_disconnect ignored (ALLOW_DEV_TEST not set)');
+        socket.on("dev_simulate_disconnect", async ({ sessionCode: code, target = "all", group = 1, durationMs = 5000 }) => {
+            if (process.env.NODE_ENV === "production" || !process.env.ALLOW_DEV_TEST) {
                 return;
             }
+
+            const access = await ensureTeacherOwnsSession(code);
+            if (!access) return;
+
             try {
-                // console.log(`🧪 DEV: simulate disconnect → session ${code}, target=${target}, group=${group}, duration=${durationMs}ms`);
                 const payload = { durationMs: Number(durationMs) || 5000 };
-                if (target === 'all') {
-                    io.to(code).emit('dev_simulate_disconnect', payload);
+                if (target === "all") {
+                    io.to(access.code).emit("dev_simulate_disconnect", payload);
                 } else {
-                    io.to(`${code}-${parseInt(group)}`).emit('dev_simulate_disconnect', payload);
+                    io.to(`${access.code}-${Number.parseInt(group, 10)}`).emit("dev_simulate_disconnect", payload);
                 }
-            } catch (e) {
-                console.warn('⚠️ dev_simulate_disconnect error:', e.message);
+            } catch (error) {
+                console.warn("⚠️ dev_simulate_disconnect error:", error.message);
             }
         });
-        /* ===== END DEV ONLY ===== */
 
-        // Handle upload errors from students
-        socket.on("upload_error", ({ session, group, error, chunkSize, timestamp }) => {
-            // console.log(`❌ Upload error from session ${session}, group ${group}: ${error}`);
+        socket.on("upload_error", ({ group, error, chunkSize, timestamp }) => {
+            const principal = getStudentPrincipal();
+            if (!principal) return;
 
-            // Notify admin about the upload error
-            socket.to(session).emit("upload_error", {
-                group: group,
-                error: error,
-                chunkSize: chunkSize,
-                timestamp: timestamp,
+            const parsedGroup = Number.parseInt(group, 10);
+            if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
+
+            socket.to(principal.sessionCode).emit("upload_error", {
+                group: parsedGroup,
+                error,
+                chunkSize,
+                timestamp,
                 socketId: socket.id
             });
-
-            // Log error for debugging
-            // console.log(`📊 Upload error details: ${chunkSize} bytes, ${error}`);
         });
 
-        // Handle student disconnection
         socket.on("disconnect", () => {
             if (sessionCode && groupNumber) {
                 console.log(`[${ts()}] 🔌 Socket ${socket.id} disconnected from session ${sessionCode}, group ${groupNumber}`);
-
-                // Notify admin about student leaving
                 socket.to(sessionCode).emit("student_left", { group: groupNumber, socketId: socket.id });
 
-                // Clean up activeSessions group tracking to prevent memory leak
                 const sessionState = activeSessions.get(sessionCode);
-                if (sessionState && sessionState.groups) {
-                    sessionState.groups.delete(parseInt(groupNumber));
-                    console.log(`🧹 Cleaned up group ${groupNumber} from activeSessions for session ${sessionCode}`);
-
-                    // If no groups remain and session is not active, consider cleaning up the session
+                if (sessionState?.groups) {
+                    sessionState.groups.delete(Number.parseInt(groupNumber, 10));
                     if (sessionState.groups.size === 0 && !sessionState.active && !sessionState.persisted) {
                         activeSessions.delete(sessionCode);
-                        // console.log(`🧹 Cleaned up empty unpersisted session ${sessionCode} from memory`);
                     }
                 }
 
-                // Remove from processing groups if it was being processed
-                const groupKey = `${sessionCode}-${groupNumber}`;
-                processingGroups.delete(groupKey);
-            } else {
-                // console.log(`🔌 Socket ${socket.id} disconnected (no session/group)`);
+                processingGroups.delete(`${sessionCode}-${groupNumber}`);
             }
 
-            // Clean up socket buffer to prevent memory leaks
             if (socket.localBuf) {
                 socket.localBuf.length = 0;
                 socket.localBuf = null;
             }
-
-            // Socket.IO automatically handles room cleanup when sockets disconnect
         });
 
-        // Debug helper - tell client what rooms they're in
-        socket.on('get_my_rooms', () => {
-            // console.log(`🔍 Socket ${socket.id} requested room info`);
-            // console.log(`🔍 Socket ${socket.id} is in rooms:`, Array.from(socket.rooms));
-            socket.emit('room_info', {
+        socket.on("get_my_rooms", async () => {
+            if (process.env.NODE_ENV === "production" || !process.env.ALLOW_DEV_TEST) {
+                return;
+            }
+
+            const teacher = getTeacherPrincipal();
+            if (!teacher) return;
+
+            socket.emit("room_info", {
                 socketId: socket.id,
+                teacherId: teacher.id,
                 rooms: Array.from(socket.rooms)
             });
         });
 
-        // Handle checklist release to students
-        socket.on('release_checklist', async (data) => {
+        socket.on("release_checklist", async (data) => {
             try {
                 const access = await ensureTeacherOwnsSession(data?.sessionCode);
                 if (!access) return;
-                // console.log(`📤 Teacher releasing checklist to Group ${data.groupNumber} in session ${data.sessionCode}`);
-                const groupNumber = Number(data.groupNumber ?? data.group);
-                if (!Number.isFinite(groupNumber)) {
+
+                const normalizedCode = access.code;
+                const parsedGroupNumber = Number(data.groupNumber ?? data.group);
+                if (!Number.isFinite(parsedGroupNumber) || parsedGroupNumber <= 0) {
                     console.error(`❌ Invalid group number received for release_checklist: ${data.groupNumber ?? data.group}`);
                     return;
                 }
-                const cacheKey = `${data.sessionCode}-${groupNumber}`;
-                const cached = latestChecklistState.get(cacheKey);
-                if (cached) {
-                    // console.log(`🗄️ Using cached checklist_state as merge source (cached ${cached.criteria?.length || 0} items)`);
-                }
 
-                // Get the session from database to get its _id
-                const session = await db.collection("sessions").findOne({ code: data.sessionCode });
+                const cacheKey = `${normalizedCode}-${parsedGroupNumber}`;
+                const cached = latestChecklistState.get(cacheKey);
+                const session = access.session || await db.collection("sessions").findOne({ code: normalizedCode });
                 if (!session) {
-                    console.error(`❌ Session ${data.sessionCode} not found in database`);
+                    console.error(`❌ Session ${normalizedCode} not found in database`);
                     return;
                 }
 
@@ -602,11 +718,11 @@ export function initSocket(io) {
                     scenario: existingCheckboxSession?.scenario ?? data.scenario ?? "",
                     released_groups: {
                         ...(existingCheckboxSession?.released_groups || {}),
-                        [groupNumber]: true
+                        [parsedGroupNumber]: true
                     },
                     release_timestamps: {
                         ...(existingCheckboxSession?.release_timestamps || {}),
-                        [groupNumber]: nowTs
+                        [parsedGroupNumber]: nowTs
                     },
                     updated_at: nowTs
                 };
@@ -617,125 +733,108 @@ export function initSocket(io) {
                     { upsert: true }
                 );
 
-                // console.log(`✅ Release flag set for group ${groupNumber} in session ${data.sessionCode}`);
-
                 const checkboxSession = updatedCheckboxSession;
-
-                // Build authoritative checklist state from DB progress for this group
                 const dbCriteria = await db.collection("checkbox_criteria")
                     .find({ session_id: session._id })
                     .sort({ order_index: 1, created_at: 1 })
                     .toArray();
                 const progressDoc = await db.collection("checkbox_progress").findOne({
                     session_id: session._id,
-                    group_number: groupNumber
+                    group_number: parsedGroupNumber
                 });
                 const progressMap = progressDoc?.progress || {};
 
-                // Fallback: if DB has no criteria yet (race on first start), use teacher-provided payload
                 const incomingCriteria = Array.isArray(data.criteria) ? data.criteria : [];
                 let finalCriteria;
                 if (!dbCriteria || dbCriteria.length === 0) {
-                    console.warn(`⚠️ No DB criteria found for session ${data.sessionCode}. Falling back to teacher payload with ${incomingCriteria.length} items.`);
-                    finalCriteria = incomingCriteria.map((c, idx) => ({
-                        id: Number(c.id ?? idx),
-                        dbId: c.dbId,
-                        description: c.description,
-                        rubric: c.rubric || '',
-                        status: c.status || 'grey',
-                        completed: c.status === 'green' ? true : Boolean(c.completed),
-                        quote: c.quote ?? null
+                    console.warn(`⚠️ No DB criteria found for session ${normalizedCode}. Falling back to teacher payload with ${incomingCriteria.length} items.`);
+                    finalCriteria = incomingCriteria.map((criterion, index) => ({
+                        id: Number(criterion.id ?? index),
+                        dbId: criterion.dbId,
+                        description: criterion.description,
+                        rubric: criterion.rubric || "",
+                        status: criterion.status || "grey",
+                        completed: criterion.status === "green" ? true : Boolean(criterion.completed),
+                        quote: criterion.quote ?? null
                     }));
                 } else {
-                    // Build from DB first
-                    finalCriteria = dbCriteria.map((c, idx) => {
-                        const prog = progressMap[String(c._id)];
+                    finalCriteria = dbCriteria.map((criterion, index) => {
+                        const progress = progressMap[String(criterion._id)];
                         return {
-                            id: idx,
-                            dbId: c._id,
-                            description: c.description,
-                            rubric: c.rubric || '',
-                            status: prog?.status || 'grey',
-                            completed: prog?.completed || (prog?.status === 'green') || false,
-                            quote: prog?.quote || null
+                            id: index,
+                            dbId: criterion._id,
+                            description: criterion.description,
+                            rubric: criterion.rubric || "",
+                            status: progress?.status || "grey",
+                            completed: progress?.completed || (progress?.status === "green") || false,
+                            quote: progress?.quote || null
                         };
                     });
-                    // Merge in teacher payload to avoid initial all-grey if DB progress isn't there yet
+
                     if (incomingCriteria.length > 0) {
-                        const byDbId = new Map(incomingCriteria.filter(x => x.dbId).map(x => [x.dbId, x]));
-                        const byIdx = new Map(incomingCriteria.map(x => [Number(x.id), x]));
-                        finalCriteria = finalCriteria.map(item => {
+                        const byDbId = new Map(incomingCriteria.filter((item) => item.dbId).map((item) => [item.dbId, item]));
+                        const byIdx = new Map(incomingCriteria.map((item) => [Number(item.id), item]));
+                        finalCriteria = finalCriteria.map((item) => {
                             const fromTeacher = (item.dbId && byDbId.get(item.dbId)) || byIdx.get(Number(item.id));
                             if (!fromTeacher) return item;
-                            const teacherStatus = fromTeacher.status || 'grey';
-                            const preferTeacher = (teacherStatus === 'green') || (item.status === 'grey' && teacherStatus !== 'grey');
-                            if (preferTeacher) {
-                                return {
-                                    ...item,
-                                    status: teacherStatus,
-                                    completed: teacherStatus === 'green' ? true : item.completed,
-                                    quote: (fromTeacher.quote && fromTeacher.quote !== 'null') ? fromTeacher.quote : item.quote
-                                };
-                            }
-                            return item;
+                            const teacherStatus = fromTeacher.status || "grey";
+                            const preferTeacher = teacherStatus === "green" || (item.status === "grey" && teacherStatus !== "grey");
+                            if (!preferTeacher) return item;
+                            return {
+                                ...item,
+                                status: teacherStatus,
+                                completed: teacherStatus === "green" ? true : item.completed,
+                                quote: fromTeacher.quote && fromTeacher.quote !== "null" ? fromTeacher.quote : item.quote
+                            };
                         });
                     }
-                    // Merge in cached latest state to avoid blanks on first release
+
                     if (cached && Array.isArray(cached.criteria) && cached.criteria.length > 0) {
-                        const cacheByIdx = new Map(cached.criteria.map(x => [Number(x.id), x]));
-                        finalCriteria = finalCriteria.map(item => {
+                        const cacheByIdx = new Map(cached.criteria.map((item) => [Number(item.id), item]));
+                        finalCriteria = finalCriteria.map((item) => {
                             const fromCache = cacheByIdx.get(Number(item.id));
                             if (!fromCache) return item;
-                            const cacheStatus = fromCache.status || 'grey';
-                            const preferCache = (cacheStatus === 'green') || (item.status === 'grey' && cacheStatus !== 'grey');
-                            if (preferCache) {
-                                return {
-                                    ...item,
-                                    status: cacheStatus,
-                                    completed: cacheStatus === 'green' ? true : item.completed,
-                                    quote: (fromCache.quote && fromCache.quote !== 'null') ? fromCache.quote : item.quote
-                                };
-                            }
-                            return item;
+                            const cacheStatus = fromCache.status || "grey";
+                            const preferCache = cacheStatus === "green" || (item.status === "grey" && cacheStatus !== "grey");
+                            if (!preferCache) return item;
+                            return {
+                                ...item,
+                                status: cacheStatus,
+                                completed: cacheStatus === "green" ? true : item.completed,
+                                quote: fromCache.quote && fromCache.quote !== "null" ? fromCache.quote : item.quote
+                            };
                         });
                     }
                 }
 
-                // Ensure stable ordering by numeric id
                 finalCriteria = (finalCriteria || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
-                if (!finalCriteria || finalCriteria.length === 0) {
-                    // Last resort: if everything failed, use cached criteria entirely
-                    if (cached && Array.isArray(cached.criteria) && cached.criteria.length > 0) {
-                        console.warn('⚠️ DB and teacher payload empty, falling back to cached checklist state entirely');
-                        finalCriteria = cached.criteria.map(c => ({
-                            id: Number(c.id),
-                            dbId: c.dbId,
-                            description: c.description,
-                            rubric: c.rubric || '',
-                            status: c.status || 'grey',
-                            completed: Boolean(c.completed),
-                            quote: c.quote ?? null
-                        }));
-                    }
+                if ((!finalCriteria || finalCriteria.length === 0) && cached && Array.isArray(cached.criteria) && cached.criteria.length > 0) {
+                    console.warn("⚠️ DB and teacher payload empty, falling back to cached checklist state entirely");
+                    finalCriteria = cached.criteria.map((criterion) => ({
+                        id: Number(criterion.id),
+                        dbId: criterion.dbId,
+                        description: criterion.description,
+                        rubric: criterion.rubric || "",
+                        status: criterion.status || "grey",
+                        completed: Boolean(criterion.completed),
+                        quote: criterion.quote ?? null
+                    }));
                 }
 
                 const checklistData = {
-                    sessionCode: data.sessionCode,
-                    groupNumber,
+                    sessionCode: normalizedCode,
+                    groupNumber: parsedGroupNumber,
                     criteria: finalCriteria,
                     scenario: checkboxSession?.scenario || data.scenario || "",
                     timestamp: Date.now(),
                     isReleased: true
                 };
 
-                // Emit to everyone - students will now see it because isReleased is true
-                io.to(data.sessionCode).emit('checklist_state', checklistData);
-                io.to(`${data.sessionCode}-${groupNumber}`).emit('checklist_state', checklistData);
+                io.to(normalizedCode).emit("checklist_state", checklistData);
+                io.to(`${normalizedCode}-${parsedGroupNumber}`).emit("checklist_state", checklistData);
                 latestChecklistState.set(cacheKey, checklistData);
-
-                // console.log(`✅ Checklist released to session ${data.sessionCode} for Group ${groupNumber}`);
             } catch (error) {
-                console.error('❌ Error handling checklist release:', error);
+                console.error("❌ Error handling checklist release:", error);
             }
         });
     });

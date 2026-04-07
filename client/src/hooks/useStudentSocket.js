@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
-export function useStudentSocket() {
+export function useStudentSocket(joinToken) {
     const socketRef = useRef(null);
     const [isConnected, setIsConnected] = useState(false);
     const [sessionInfo, setSessionInfo] = useState({ code: null, group: null, mode: 'summary' });
@@ -14,7 +14,17 @@ export function useStudentSocket() {
 
     // Initialize socket
     useEffect(() => {
-        const socket = io();
+        if (!joinToken) {
+            setIsConnected(false);
+            return undefined;
+        }
+
+        const socket = io({
+            auth: {
+                type: 'student',
+                joinToken
+            }
+        });
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -31,10 +41,16 @@ export function useStudentSocket() {
             setError(msg);
         });
 
+        socket.on('connect_error', (err) => {
+            setIsConnected(false);
+            setError(err.message || 'Unable to connect');
+        });
+
         return () => {
             socket.disconnect();
+            socketRef.current = null;
         };
-    }, []);
+    }, [joinToken]);
 
     // Event handlers
     useEffect(() => {
@@ -122,7 +138,6 @@ export function useStudentSocket() {
         const interval = setInterval(() => {
             if (socketRef.current?.connected) {
                 socketRef.current.emit('heartbeat', {
-                    session: sessionInfo.code,
                     group: sessionInfo.group
                 });
             }
@@ -131,9 +146,9 @@ export function useStudentSocket() {
         return () => clearInterval(interval);
     }, [sessionInfo.code, sessionInfo.group]);
 
-    const joinSession = useCallback((code, group) => {
+    const joinSession = useCallback((group) => {
         if (socketRef.current) {
-            socketRef.current.emit('join', { code, group: parseInt(group) });
+            socketRef.current.emit('join', { group: parseInt(group, 10) });
         }
     }, []);
 

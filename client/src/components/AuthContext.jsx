@@ -6,8 +6,9 @@ const AuthContext = createContext({
   session: null,
   user: null,
   loading: true,
-  allowedDomains: [],
-  allowedEmails: [],
+  isTeacher: false,
+  teacherLoading: true,
+  teacherProfile: null,
   signOut: async () => {},
 });
 
@@ -34,7 +35,10 @@ export function AuthProvider({ children }) {
   const config = useMemo(() => getSupabaseConfig(), []);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [teacherLoading, setTeacherLoading] = useState(true);
+  const [isTeacher, setIsTeacher] = useState(false);
+  const [teacherProfile, setTeacherProfile] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -53,7 +57,7 @@ export function AuthProvider({ children }) {
       } catch (error) {
         console.error('Failed to load Supabase session', error);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) setSessionLoading(false);
       }
     }
 
@@ -72,6 +76,64 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTeacherAccess() {
+      if (!session?.access_token) {
+        if (!isMounted) return;
+        setTeacherProfile(null);
+        setIsTeacher(false);
+        setTeacherLoading(false);
+        return;
+      }
+
+      setTeacherLoading(true);
+
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          }
+        });
+
+        if (!isMounted) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          setIsTeacher(Boolean(data.teacher));
+          setTeacherProfile(data.user ?? null);
+          return;
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          setIsTeacher(false);
+          setTeacherProfile(null);
+          return;
+        }
+
+        console.warn('Unexpected /api/auth/me response:', response.status);
+        setIsTeacher(false);
+        setTeacherProfile(null);
+      } catch (error) {
+        if (!isMounted) return;
+        console.warn('Failed to load teacher access status', error);
+        setIsTeacher(false);
+        setTeacherProfile(null);
+      } finally {
+        if (isMounted) {
+          setTeacherLoading(false);
+        }
+      }
+    }
+
+    loadTeacherAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.access_token]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -109,12 +171,13 @@ export function AuthProvider({ children }) {
       config,
       session,
       user,
-      loading,
-      allowedDomains: config.allowedDomains?.length ? config.allowedDomains : [],
-      allowedEmails: config.allowedEmails?.length ? config.allowedEmails : [],
+      loading: sessionLoading || teacherLoading,
+      isTeacher,
+      teacherLoading,
+      teacherProfile,
       signOut: () => supabase.auth.signOut(),
     }),
-    [config, loading, session, supabase, user]
+    [config, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -12,8 +12,15 @@ export function useAdminSocket() {
 
     // Initialize socket connection
     useEffect(() => {
+        if (!session?.access_token) {
+            return undefined;
+        }
+
         const socket = io({
-            auth: session?.access_token ? { token: session.access_token } : {}
+            auth: {
+                type: 'teacher',
+                accessToken: session.access_token
+            }
         });
         socketRef.current = socket;
 
@@ -38,6 +45,7 @@ export function useAdminSocket() {
 
         return () => {
             socket.disconnect();
+            socketRef.current = null;
         };
     }, [session?.access_token]);
 
