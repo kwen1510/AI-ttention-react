@@ -134,15 +134,20 @@ async function startServer({ exitOnFailure = isDirectRun } = {}) {
     const port = process.env.PORT || 10000;
     const host = process.env.HOST || '0.0.0.0';
 
-    await new Promise((resolve, reject) => {
+    const listeningAddress = await new Promise((resolve, reject) => {
       const handleError = (error) => {
         http.off('listening', handleListening);
         reject(error);
       };
       const handleListening = () => {
         http.off('error', handleError);
-        console.log(`🎯 Server running at http://${host}:${port}`);
-        resolve();
+        const address = http.address();
+        const resolvedPort =
+          address && typeof address === 'object' && 'port' in address
+            ? address.port
+            : port;
+        console.log(`🎯 Server running at http://${host}:${resolvedPort}`);
+        resolve({ host, port: resolvedPort });
       };
 
       http.once('error', handleError);
@@ -150,7 +155,7 @@ async function startServer({ exitOnFailure = isDirectRun } = {}) {
       http.listen(port, host);
     });
 
-    return { host, port };
+    return listeningAddress;
   } catch (error) {
     console.error('❌ Server startup failed:', error);
     if (exitOnFailure) {

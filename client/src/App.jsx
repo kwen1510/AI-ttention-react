@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import CheckboxDashboard from './pages/CheckboxDashboard.jsx';
+import DataExplorer from './pages/DataExplorer.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PromptsPage from './pages/PromptsPage.jsx';
 import StudentView from './pages/StudentView.jsx';
@@ -45,7 +46,7 @@ function App() {
           path="/data"
           element={
             <ProtectedRoute>
-              <Navigate to="/history" replace />
+              <DataExplorer />
             </ProtectedRoute>
           }
         />

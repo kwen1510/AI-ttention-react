@@ -1,7 +1,7 @@
 export function applyBaseTestEnv(port) {
   process.env.NODE_ENV = "test";
   process.env.PORT = String(port);
-  process.env.HOST = "0.0.0.0";
+  process.env.HOST = "127.0.0.1";
   process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
   process.env.APP_ORIGINS = `http://127.0.0.1:${port},http://localhost:${port}`;
   process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
