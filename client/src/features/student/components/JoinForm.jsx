@@ -1,9 +1,23 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GraduationCap, AlertCircle } from 'lucide-react';
 
-export function JoinForm({ onJoin, error, notice = "" }) {
-    const [code, setCode] = useState('');
-    const [group, setGroup] = useState('');
+export function JoinForm({
+    onJoin,
+    error,
+    notice = "",
+    initialCode = "",
+    initialGroup = ""
+}) {
+    const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
+    const [group, setGroup] = useState(() => String(initialGroup || '').trim());
+
+    useEffect(() => {
+        setCode(String(initialCode || '').trim().toUpperCase());
+    }, [initialCode]);
+
+    useEffect(() => {
+        setGroup(String(initialGroup || '').trim());
+    }, [initialGroup]);
 
     const handleSubmit = (e) => {
         e.preventDefault();

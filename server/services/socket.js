@@ -417,8 +417,17 @@ export function initSocket(io) {
             }
 
             const sessionState = activeSessions.get(normalizedCode);
-            const session = await db.collection("sessions").findOne({ code: normalizedCode });
             try {
+                return ensureTeacherOwnsSessionPrincipal(socket.data?.principal, normalizedCode, sessionState, null);
+            } catch (error) {
+                if (error?.status && error.status !== 404) {
+                    socket.emit("error", error.message);
+                    return null;
+                }
+            }
+
+            try {
+                const session = await db.collection("sessions").findOne({ code: normalizedCode });
                 return ensureTeacherOwnsSessionPrincipal(socket.data?.principal, normalizedCode, sessionState, session);
             } catch (error) {
                 socket.emit("error", error.message);
@@ -499,7 +508,7 @@ export function initSocket(io) {
             }
         });
 
-        socket.on("join", async ({ code, group }) => {
+        socket.on("join", async ({ code: requestedCode, group }) => {
             try {
                 const parsedGroup = Number.parseInt(group, 10);
                 if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) {
@@ -507,17 +516,17 @@ export function initSocket(io) {
                     return;
                 }
 
-                const joinContext = await resolveStudentJoinContext(code);
+                const joinContext = await resolveStudentJoinContext(requestedCode);
                 if (!joinContext) {
                     return;
                 }
 
-                const { code, session, sessionState } = joinContext;
-                sessionCode = code;
+                const { code: resolvedCode, session, sessionState } = joinContext;
+                sessionCode = resolvedCode;
                 groupNumber = parsedGroup;
 
                 if (sessionState?.persisted || session) {
-                    const sessionRecord = session || await db.collection("sessions").findOne({ code });
+                    const sessionRecord = session || await db.collection("sessions").findOne({ code: resolvedCode });
                     if (!sessionRecord) {
                         socket.emit("error", "Session data inconsistent");
                         return;
@@ -540,11 +549,11 @@ export function initSocket(io) {
                     groupId = uuid();
                 }
 
-                socket.join(code);
-                socket.join(`${code}-${parsedGroup}`);
+                socket.join(resolvedCode);
+                socket.join(`${resolvedCode}-${parsedGroup}`);
 
-                const mem = activeSessions.get(code) || {
-                    code,
+                const mem = activeSessions.get(resolvedCode) || {
+                    code: resolvedCode,
                     active: Boolean(sessionState?.active),
                     interval: sessionState?.interval || 30000,
                     mode: sessionState?.mode || "summary",
@@ -556,27 +565,27 @@ export function initSocket(io) {
                     recording: false,
                     lastAck: Date.now()
                 });
-                activeSessions.set(code, mem);
+                activeSessions.set(resolvedCode, mem);
 
                 if (mem.active) {
                     socket.emit("joined", {
-                        code,
+                        code: resolvedCode,
                         group: parsedGroup,
                         status: "recording",
                         interval: mem.interval || 30000,
                         mode: mem.mode || "summary"
                     });
-                    io.to(`${code}-${parsedGroup}`).emit("record_now", mem.interval || 30000);
+                    io.to(`${resolvedCode}-${parsedGroup}`).emit("record_now", mem.interval || 30000);
                 } else {
                     socket.emit("joined", {
-                        code,
+                        code: resolvedCode,
                         group: parsedGroup,
                         status: "waiting",
                         interval: mem.interval || 30000,
                         mode: mem.mode || "summary"
                     });
                 }
-                socket.to(code).emit("student_joined", { group: parsedGroup, socketId: socket.id });
+                socket.to(resolvedCode).emit("student_joined", { group: parsedGroup, socketId: socket.id });
                 console.log(`[${ts()}] 📢 Notified admin about student joining group ${parsedGroup}`);
             } catch (error) {
                 console.error("❌ Error joining session:", error);

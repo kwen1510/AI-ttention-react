@@ -12,6 +12,7 @@
     "client:preview": "vite preview",
     "test": "npm run build && npm run test:smoke",
     "test:unit": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:e2e": "NODE_ENV=test node scripts/socket-e2e-test.mjs",
     "test:smoke": "NODE_ENV=test node scripts/smoke-test.mjs",
     "build": "npm run client:build"
   },

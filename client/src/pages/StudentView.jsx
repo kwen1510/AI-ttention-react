@@ -12,6 +12,8 @@ function StudentView() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
+  const initialCode = String(params.get('code') || '').trim().toUpperCase();
+  const initialGroup = String(params.get('group') || '').trim();
   const {
     socket,
     isConnected,
@@ -63,18 +65,18 @@ function StudentView() {
 
   // Auto-join from URL params
   useEffect(() => {
-    const code = params.get('code');
-    const group = params.get('group');
-    if (code && group && !sessionInfo.code) {
-      joinSession(code, group);
+    if (initialCode && initialGroup && !sessionInfo.code) {
+      joinSession(initialCode, initialGroup);
     }
-  }, [joinSession, location.search, sessionInfo.code]);
+  }, [initialCode, initialGroup, joinSession, sessionInfo.code]);
 
   if (!sessionInfo.code) {
     return (
       <JoinForm
         onJoin={joinSession}
         error={socketError}
+        initialCode={initialCode}
+        initialGroup={initialGroup}
         notice={blockedTeacherAccess ? 'Teacher tools require an approved teacher account. Student access is limited to the session join screen.' : ''}
       />
     );
