@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 
 export function useStudentSocket() {
     const socketRef = useRef(null);
+    const joinStateRef = useRef({ code: null, group: null });
     const [isConnected, setIsConnected] = useState(false);
     const [sessionInfo, setSessionInfo] = useState({ code: null, group: null, mode: 'summary' });
     const [transcription, setTranscription] = useState(null);
@@ -12,6 +13,13 @@ export function useStudentSocket() {
     const [error, setError] = useState(null);
     const [recordingState, setRecordingState] = useState({ isRecording: false, interval: null });
 
+    useEffect(() => {
+        joinStateRef.current = {
+            code: sessionInfo.code,
+            group: sessionInfo.group
+        };
+    }, [sessionInfo.code, sessionInfo.group]);
+
     // Initialize socket
     useEffect(() => {
         const socket = io();
@@ -20,6 +28,10 @@ export function useStudentSocket() {
         socket.on('connect', () => {
             setIsConnected(true);
             setError(null);
+            const { code, group } = joinStateRef.current;
+            if (code && group) {
+                socket.emit('join', { code, group });
+            }
         });
 
         socket.on('disconnect', () => {
@@ -138,10 +150,17 @@ export function useStudentSocket() {
     }, [sessionInfo.code, sessionInfo.group]);
 
     const joinSession = useCallback((code, group) => {
-        if (socketRef.current) {
+        const normalizedCode = String(code || '').trim().toUpperCase();
+        const parsedGroup = parseInt(group, 10);
+
+        if (socketRef.current && normalizedCode && Number.isFinite(parsedGroup) && parsedGroup > 0) {
+            joinStateRef.current = {
+                code: normalizedCode,
+                group: parsedGroup
+            };
             socketRef.current.emit('join', {
-                code: String(code || '').trim().toUpperCase(),
-                group: parseInt(group, 10)
+                code: normalizedCode,
+                group: parsedGroup
             });
         }
     }, []);

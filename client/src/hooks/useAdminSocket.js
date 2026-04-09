@@ -5,10 +5,15 @@ import { useAuth } from '../components/AuthContext.jsx';
 export function useAdminSocket() {
     const { session } = useAuth();
     const socketRef = useRef(null);
+    const sessionCodeRef = useRef(null);
     const [isConnected, setIsConnected] = useState(false);
     const [sessionCode, setSessionCode] = useState(null);
     const [groups, setGroups] = useState(new Map());
     const [lastHeartbeat, setLastHeartbeat] = useState(Date.now());
+
+    useEffect(() => {
+        sessionCodeRef.current = sessionCode;
+    }, [sessionCode]);
 
     // Initialize socket connection
     useEffect(() => {
@@ -27,6 +32,9 @@ export function useAdminSocket() {
         socket.on('connect', () => {
             setIsConnected(true);
             console.log('✅ Admin socket connected');
+            if (sessionCodeRef.current) {
+                socket.emit('admin_join', { code: sessionCodeRef.current });
+            }
         });
 
         socket.on('disconnect', () => {
@@ -51,9 +59,10 @@ export function useAdminSocket() {
 
     // Join session
     const joinSession = useCallback((code) => {
-        if (socketRef.current && code) {
-            socketRef.current.emit('admin_join', { code });
-            setSessionCode(code);
+        const normalizedCode = String(code || '').trim().toUpperCase();
+        if (socketRef.current && normalizedCode) {
+            socketRef.current.emit('admin_join', { code: normalizedCode });
+            setSessionCode(normalizedCode);
         }
     }, []);
 
@@ -116,12 +125,54 @@ export function useAdminSocket() {
             console.warn(`Upload error in group ${data.group}:`, data.error);
         };
 
+        const handleStudentJoined = ({ group }) => {
+            setGroups(prev => {
+                const newGroups = new Map(prev);
+                const existing = newGroups.get(group) || {
+                    transcripts: [],
+                    summary: null,
+                    stats: {},
+                    uploadErrors: 0
+                };
+
+                newGroups.set(group, {
+                    ...existing,
+                    isActive: true,
+                    lastUpdate: Date.now()
+                });
+
+                return newGroups;
+            });
+        };
+
+        const handleStudentLeft = ({ group }) => {
+            setGroups(prev => {
+                const newGroups = new Map(prev);
+                const existing = newGroups.get(group);
+                if (!existing) {
+                    return prev;
+                }
+
+                newGroups.set(group, {
+                    ...existing,
+                    isActive: false,
+                    lastUpdate: Date.now()
+                });
+
+                return newGroups;
+            });
+        };
+
         socket.on('admin_update', handleAdminUpdate);
         socket.on('upload_error', handleUploadError);
+        socket.on('student_joined', handleStudentJoined);
+        socket.on('student_left', handleStudentLeft);
 
         return () => {
             socket.off('admin_update', handleAdminUpdate);
             socket.off('upload_error', handleUploadError);
+            socket.off('student_joined', handleStudentJoined);
+            socket.off('student_left', handleStudentLeft);
         };
     }, []);
 
