@@ -47,14 +47,50 @@ function buildAllowedOrigins() {
   return new Set(configured);
 }
 
-function createSocketCorsOriginValidator(allowedOrigins) {
-  return (origin, callback) => {
-    if (!origin || allowedOrigins.has(origin)) {
-      callback(null, true);
-      return;
-    }
+function normalizeHostValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
 
-    callback(new Error("Origin not allowed"));
+function extractOriginHost(origin) {
+  if (!origin) {
+    return null;
+  }
+
+  try {
+    return normalizeHostValue(new URL(origin).host);
+  } catch {
+    return null;
+  }
+}
+
+function extractRequestHosts(headers = {}) {
+  return parseCsvList(headers["x-forwarded-host"], headers.host)
+    .map(normalizeHostValue)
+    .filter(Boolean);
+}
+
+export function isSocketOriginAllowed(origin, allowedOrigins, headers = {}) {
+  if (!origin) {
+    return true;
+  }
+
+  if (allowedOrigins.has(origin)) {
+    return true;
+  }
+
+  const originHost = extractOriginHost(origin);
+  if (!originHost) {
+    return false;
+  }
+
+  const requestHosts = extractRequestHosts(headers);
+  return requestHosts.includes(originHost);
+}
+
+function createSocketAllowRequestValidator(allowedOrigins) {
+  return (req, callback) => {
+    const allowed = isSocketOriginAllowed(req.headers.origin, allowedOrigins, req.headers);
+    callback(null, allowed);
   };
 }
 
@@ -65,9 +101,10 @@ const http = createServer(app);
 const allowedOrigins = buildAllowedOrigins();
 const io = new Server(http, {
   cors: {
-    origin: createSocketCorsOriginValidator(allowedOrigins),
+    origin: true,
     methods: ["GET", "POST"]
-  }
+  },
+  allowRequest: createSocketAllowRequestValidator(allowedOrigins)
 });
 
 // Make io available to routes
