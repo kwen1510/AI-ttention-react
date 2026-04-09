@@ -10,6 +10,12 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AppLayout from './components/AppLayout.jsx';
 
 function App() {
+  const renderTeacherRoute = (element) => (
+    <ProtectedRoute>
+      {element}
+    </ProtectedRoute>
+  );
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -17,52 +23,39 @@ function App() {
       <Route element={<AppLayout />}>
         <Route
           path="/admin"
-          element={
-            <ProtectedRoute>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
+          element={renderTeacherRoute(<AdminDashboard />)}
         />
 
         <Route
           path="/checkbox"
-          element={
-            <ProtectedRoute>
-              <CheckboxDashboard />
-            </ProtectedRoute>
-          }
+          element={renderTeacherRoute(<CheckboxDashboard />)}
         />
 
         <Route
           path="/history"
-          element={
-            <ProtectedRoute>
-              <HistoryPage />
-            </ProtectedRoute>
-          }
+          element={renderTeacherRoute(<HistoryPage />)}
         />
 
         <Route
           path="/data"
-          element={
-            <ProtectedRoute>
-              <DataExplorer />
-            </ProtectedRoute>
-          }
+          element={renderTeacherRoute(<DataExplorer />)}
         />
 
         <Route
           path="/prompts"
-          element={
-            <ProtectedRoute>
-              <PromptsPage />
-            </ProtectedRoute>
-          }
+          element={renderTeacherRoute(<PromptsPage />)}
         />
+
+        <Route path="/staging/admin" element={renderTeacherRoute(<AdminDashboard />)} />
+        <Route path="/staging/checkbox" element={renderTeacherRoute(<CheckboxDashboard />)} />
+        <Route path="/staging/history" element={renderTeacherRoute(<HistoryPage />)} />
+        <Route path="/staging/data" element={renderTeacherRoute(<DataExplorer />)} />
+        <Route path="/staging/prompts" element={renderTeacherRoute(<PromptsPage />)} />
 
         <Route path="/student" element={<StudentView />} />
       </Route>
 
+      <Route path="/staging" element={<Navigate to="/staging/admin" replace />} />
       <Route path="/" element={<Navigate to="/student" replace />} />
       <Route path="*" element={<Navigate to="/student" replace />} />
     </Routes>

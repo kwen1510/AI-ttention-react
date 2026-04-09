@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { useAuth } from '../components/AuthContext.jsx';
 
 export function useCheckboxSocket() {
-    const { session } = useAuth();
+    const { session, isStagingBypass } = useAuth();
     const socketRef = useRef(null);
     const sessionCodeRef = useRef(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -17,15 +17,20 @@ export function useCheckboxSocket() {
 
     // Initialize socket connection
     useEffect(() => {
-        if (!session?.access_token) {
+        if (!isStagingBypass && !session?.access_token) {
             return undefined;
         }
 
         const socket = io({
-            auth: {
-                type: 'teacher',
-                accessToken: session.access_token
-            }
+            auth: isStagingBypass
+                ? {
+                    type: 'teacher',
+                    stagingBypass: true
+                }
+                : {
+                    type: 'teacher',
+                    accessToken: session.access_token
+                }
         });
         socketRef.current = socket;
 
@@ -55,7 +60,7 @@ export function useCheckboxSocket() {
             socket.disconnect();
             socketRef.current = null;
         };
-    }, [session?.access_token]);
+    }, [isStagingBypass, session?.access_token]);
 
     // Join session
     const joinSession = useCallback((code) => {

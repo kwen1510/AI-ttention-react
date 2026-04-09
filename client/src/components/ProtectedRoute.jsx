@@ -4,10 +4,14 @@ import FullScreenLoader from './FullScreenLoader.jsx';
 
 function ProtectedRoute({ children }) {
   const location = useLocation();
-  const { user, loading, isTeacher } = useAuth();
+  const { user, loading, isTeacher, isStagingBypass } = useAuth();
 
   if (loading) {
     return <FullScreenLoader />;
+  }
+
+  if (isStagingBypass) {
+    return children;
   }
 
   if (!user) {

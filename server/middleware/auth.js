@@ -1,6 +1,7 @@
 import { supabase } from "../db/supabaseClient.js";
 
 let authTestOverrides = null;
+const STAGING_BYPASS_HEADER = "x-staging-auth-bypass";
 
 function createAuthError(message, status = 401) {
     const error = new Error(message);
@@ -164,6 +165,49 @@ export function extractBearerToken(authHeader = "") {
     return authHeader.replace("Bearer", "").trim();
 }
 
+export function isStagingAuthBypassEnabled() {
+    return process.env.STAGING_AUTH_BYPASS === "true";
+}
+
+function readHeaderValue(headers, name) {
+    const value = headers?.[name];
+    if (Array.isArray(value)) {
+        return value[0] || "";
+    }
+    return String(value || "");
+}
+
+export function createStagingBypassTeacherPrincipal() {
+    const email = process.env.STAGING_BYPASS_TEACHER_EMAIL || "staging-teacher@example.com";
+    const userId = process.env.STAGING_BYPASS_TEACHER_ID || "staging-teacher";
+
+    return {
+        id: userId,
+        email,
+        role: "teacher",
+        teacherAccess: {
+            user_id: userId,
+            email,
+            role: "teacher",
+            active: true,
+            source: "staging-bypass"
+        }
+    };
+}
+
+export function authenticateStagingBypassRequest(req) {
+    if (!isStagingAuthBypassEnabled()) {
+        return null;
+    }
+
+    const bypassRole = readHeaderValue(req?.headers, STAGING_BYPASS_HEADER).trim().toLowerCase();
+    if (bypassRole !== "teacher") {
+        return null;
+    }
+
+    return createStagingBypassTeacherPrincipal();
+}
+
 export async function authenticateTeacher(req) {
     if (req.teacher) {
         return req.teacher;
@@ -171,6 +215,14 @@ export async function authenticateTeacher(req) {
 
     if (req.teacherAuthError) {
         throw req.teacherAuthError;
+    }
+
+    const bypassTeacher = authenticateStagingBypassRequest(req);
+    if (bypassTeacher) {
+        req.teacher = bypassTeacher;
+        req.authToken = null;
+        req.teacherAuthError = null;
+        return bypassTeacher;
     }
 
     const token = req.authToken || extractBearerToken(req.headers.authorization || "");
@@ -187,6 +239,15 @@ export async function authenticateTeacher(req) {
 
 export async function optionalTeacherContext(req, _res, next) {
     if (req.teacher || req.teacherAuthError) {
+        if (next) next();
+        return;
+    }
+
+    const bypassTeacher = authenticateStagingBypassRequest(req);
+    if (bypassTeacher) {
+        req.authToken = null;
+        req.teacher = bypassTeacher;
+        req.teacherAuthError = null;
         if (next) next();
         return;
     }

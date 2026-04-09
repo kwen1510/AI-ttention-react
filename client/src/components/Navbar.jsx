@@ -9,6 +9,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "./AuthContext.jsx";
+import { buildModePath } from "../lib/stagingBypass.js";
 
 const modeItems = [
   { key: "summary", path: "/admin", label: "Summary", icon: MessageSquare },
@@ -41,7 +42,7 @@ function ModeButton({ item, isActive, onNavigate }) {
   );
 }
 
-function Navbar({ active = "", showModes = true, showSignOut = true }) {
+function Navbar({ active = "", basePath = "", showModes = true, showSignOut = true }) {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const handleModeNavigate = (path) => {
@@ -52,9 +53,10 @@ function Navbar({ active = "", showModes = true, showSignOut = true }) {
     () =>
       modeItems.map((item) => ({
         ...item,
+        path: buildModePath(item.path, basePath),
         isActive: item.key === active,
       })),
-    [active],
+    [active, basePath],
   );
 
   return (

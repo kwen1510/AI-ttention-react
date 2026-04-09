@@ -1,5 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getSupabaseClient, getSupabaseConfig } from '../config/supabaseClient.js';
+import {
+  createStagingBypassHeaders,
+  createStagingBypassTeacherProfile,
+  isStagingBypassPath,
+} from '../lib/stagingBypass.js';
 
 const AuthContext = createContext({
   supabase: null,
@@ -7,6 +13,7 @@ const AuthContext = createContext({
   user: null,
   loading: true,
   isTeacher: false,
+  isStagingBypass: false,
   teacherLoading: true,
   teacherProfile: null,
   signOut: async () => {},
@@ -31,8 +38,10 @@ function needsAuth(input) {
 }
 
 export function AuthProvider({ children }) {
-  const supabase = useMemo(() => getSupabaseClient(), []);
-  const config = useMemo(() => getSupabaseConfig(), []);
+  const location = useLocation();
+  const isStagingBypass = isStagingBypassPath(location.pathname);
+  const supabase = useMemo(() => (isStagingBypass ? null : getSupabaseClient()), [isStagingBypass]);
+  const config = useMemo(() => (isStagingBypass ? null : getSupabaseConfig()), [isStagingBypass]);
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -41,6 +50,17 @@ export function AuthProvider({ children }) {
   const [teacherProfile, setTeacherProfile] = useState(null);
 
   useEffect(() => {
+    if (isStagingBypass) {
+      const teacherProfile = createStagingBypassTeacherProfile();
+      setSession(null);
+      setUser(teacherProfile);
+      setTeacherProfile(teacherProfile);
+      setIsTeacher(true);
+      setSessionLoading(false);
+      setTeacherLoading(false);
+      return undefined;
+    }
+
     let isMounted = true;
 
     async function loadSession() {
@@ -75,9 +95,17 @@ export function AuthProvider({ children }) {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [isStagingBypass, supabase]);
 
   useEffect(() => {
+    if (isStagingBypass) {
+      const teacherProfile = createStagingBypassTeacherProfile();
+      setTeacherProfile(teacherProfile);
+      setIsTeacher(true);
+      setTeacherLoading(false);
+      return undefined;
+    }
+
     let isMounted = true;
 
     async function loadTeacherAccess() {
@@ -133,7 +161,7 @@ export function AuthProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, [session?.access_token]);
+  }, [isStagingBypass, session?.access_token]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -141,20 +169,28 @@ export function AuthProvider({ children }) {
 
     window.fetch = async (input, init = {}) => {
       if (needsAuth(input)) {
-        try {
-          const currentSession = session ?? (await supabase.auth.getSession()).data.session;
-          if (currentSession?.access_token) {
-            const headers = new Headers(
-              init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
-            );
-            headers.set('Authorization', `Bearer ${currentSession.access_token}`);
-            init = { ...init, headers };
-            console.log('✅ Auth token attached to request:', typeof input === 'string' ? input : input?.url);
-          } else {
-            console.warn('⚠️ No session available for authenticated request:', typeof input === 'string' ? input : input?.url);
+        if (isStagingBypass) {
+          const headers = createStagingBypassHeaders(
+            init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined)
+          );
+          init = { ...init, headers };
+          console.log('🧪 Staging bypass attached to request:', typeof input === 'string' ? input : input?.url);
+        } else {
+          try {
+            const currentSession = session ?? (await supabase.auth.getSession()).data.session;
+            if (currentSession?.access_token) {
+              const headers = new Headers(
+                init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
+              );
+              headers.set('Authorization', `Bearer ${currentSession.access_token}`);
+              init = { ...init, headers };
+              console.log('✅ Auth token attached to request:', typeof input === 'string' ? input : input?.url);
+            } else {
+              console.warn('⚠️ No session available for authenticated request:', typeof input === 'string' ? input : input?.url);
+            }
+          } catch (error) {
+            console.warn('Failed to attach Supabase auth header', error);
           }
-        } catch (error) {
-          console.warn('Failed to attach Supabase auth header', error);
         }
       }
       return originalFetch(input, init);
@@ -163,7 +199,7 @@ export function AuthProvider({ children }) {
     return () => {
       window.fetch = originalFetch;
     };
-  }, [session, supabase]);
+  }, [isStagingBypass, session, supabase]);
 
   const value = useMemo(
     () => ({
@@ -171,13 +207,14 @@ export function AuthProvider({ children }) {
       config,
       session,
       user,
-      loading: sessionLoading || teacherLoading,
+      loading: isStagingBypass ? false : sessionLoading || teacherLoading,
       isTeacher,
+      isStagingBypass,
       teacherLoading,
       teacherProfile,
-      signOut: () => supabase.auth.signOut(),
+      signOut: () => (supabase ? supabase.auth.signOut() : Promise.resolve()),
     }),
-    [config, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
+    [config, isStagingBypass, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

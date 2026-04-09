@@ -63,3 +63,22 @@ test("socket principal helpers enforce auth, ownership, and role separation", as
     __setAuthTestOverrides(null);
   }
 });
+
+test("socket principal accepts staging bypass teachers when enabled", async () => {
+  applyBaseTestEnv(10000);
+  process.env.STAGING_AUTH_BYPASS = "true";
+
+  const { authenticateSocketPrincipal } = await import(`../server/services/socket.js?test=staging-socket-${Date.now()}`);
+
+  try {
+    const teacherPrincipal = await authenticateSocketPrincipal({
+      type: "teacher",
+      stagingBypass: true
+    });
+
+    assert.equal(teacherPrincipal.kind, "teacher");
+    assert.equal(teacherPrincipal.user.teacherAccess?.source, "staging-bypass");
+  } finally {
+    delete process.env.STAGING_AUTH_BYPASS;
+  }
+});

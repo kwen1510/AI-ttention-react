@@ -1,6 +1,10 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/db.js";
-import { authenticateTeacherFromToken } from "../middleware/auth.js";
+import {
+    authenticateTeacherFromToken,
+    createStagingBypassTeacherPrincipal,
+    isStagingAuthBypassEnabled
+} from "../middleware/auth.js";
 import { verifyJoinToken } from "./joinTokens.js";
 import { activeSessions, latestChecklistState } from "./state.js";
 import { transcribe, extractMime } from "./elevenlabs.js";
@@ -46,6 +50,13 @@ export async function authenticateSocketPrincipal(auth = {}) {
     }
 
     const teacherToken = auth.token || auth.accessToken;
+    if (auth.stagingBypass && isStagingAuthBypassEnabled()) {
+        return {
+            kind: "teacher",
+            user: createStagingBypassTeacherPrincipal()
+        };
+    }
+
     if (!teacherToken) {
         throw createSocketPrincipalError("Unauthorized", 401);
     }

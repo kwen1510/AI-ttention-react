@@ -63,3 +63,23 @@ test("teacher auth middleware enforces 401, 403, and 200 states", async () => {
     __setAuthTestOverrides(null);
   }
 });
+
+test("teacher auth middleware accepts staging bypass requests when enabled", async () => {
+  applyBaseTestEnv(10000);
+  process.env.STAGING_AUTH_BYPASS = "true";
+
+  const { authenticateTeacher } = await import(`../server/middleware/auth.js?test=staging-auth-${Date.now()}`);
+
+  try {
+    const teacher = await authenticateTeacher({
+      headers: {
+        "x-staging-auth-bypass": "teacher"
+      }
+    });
+
+    assert.equal(teacher.role, "teacher");
+    assert.equal(teacher.teacherAccess?.source, "staging-bypass");
+  } finally {
+    delete process.env.STAGING_AUTH_BYPASS;
+  }
+});
