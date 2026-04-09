@@ -397,8 +397,7 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                         active: true,
                         interval_ms: intervalMs,
                         start_time: persistedSession.start_time || startTime,
-                        end_time: null,
-                        updated_at: startTime
+                        end_time: null
                     }
                 }
             );
@@ -454,8 +453,7 @@ router.post("/session/:code/stop", async (req, res) => {
                     $set: {
                         active: false,
                         end_time: endedAt,
-                        total_duration_seconds: totalDurationSeconds,
-                        updated_at: endedAt
+                        total_duration_seconds: totalDurationSeconds
                     }
                 }
             );
