@@ -1,5 +1,9 @@
 import React from 'react';
 import { Play, Square, QrCode } from 'lucide-react';
+import { Button } from '../../../components/ui/button.jsx';
+import { Field, Input } from '../../../components/ui/field.jsx';
+import { StatusBadge } from '../../../components/ui/badge.jsx';
+import { Toolbar, ToolbarGroup } from '../../../components/ui/toolbar.jsx';
 
 export function SessionHeader({
     sessionCode,
@@ -12,68 +16,51 @@ export function SessionHeader({
     onIntervalChange
 }) {
     return (
-        <div className="control-bar mx-4 sm:mx-6 md:mx-8 my-4">
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 md:gap-4 w-full">
-                {/* Left group */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3 flex-wrap">
-                    <button
+        <div className="page-shell page-shell--fluid pb-0">
+            <Toolbar>
+                <ToolbarGroup className="flex-1">
+                    <Button
                         onClick={onOpenQR}
-                        className="session-code-display flex items-center justify-center gap-3 min-h-touch"
+                        variant="secondary"
+                        size="md"
+                        className="min-h-touch h-auto min-w-[11rem] items-center justify-between px-3 py-2.5"
                     >
-                        <span className="text-xs sm:text-sm text-slate-600 font-medium">Session</span>
-                        <span className="session-code-text">{sessionCode || '-'}</span>
-                    </button>
-
-                    <div className={`status-pill ${isConnected ? 'status-pill--connected' : 'bg-red-100 text-red-700'} min-h-touch`}>
-                        <div className={`status-dot ${isConnected ? 'bg-green-400 animate-ping-slow' : 'bg-red-400'}`} />
-                        <span className="text-xs md:text-sm">
-                            {isConnected ? 'Connected' : 'Disconnected'}
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                            Session
                         </span>
-                    </div>
+                        <span className="session-code-text text-sm font-semibold tracking-[0.18em]">
+                            {sessionCode || '------'}
+                        </span>
+                        <QrCode className="h-4 w-4 text-[var(--primary)]" />
+                    </Button>
 
-                    <div className="interval-control min-h-touch">
-                        <label className="text-xs sm:text-sm font-semibold text-slate-700 whitespace-nowrap">
-                            Interval
-                        </label>
-                        <input
+                    <StatusBadge tone={isConnected ? 'success' : 'danger'} pulse={isConnected}>
+                        {isConnected ? 'Connected' : 'Disconnected'}
+                    </StatusBadge>
+
+                    <Field label="Interval" className="w-full max-w-[8rem]">
+                        <Input
                             type="number"
                             min={10}
                             max={120}
                             value={interval}
                             onChange={(e) => onIntervalChange(Number(e.target.value))}
-                            className="w-16 px-2 py-1 border rounded"
                         />
-                        <span className="text-xs sm:text-sm text-slate-600 font-medium">sec</span>
-                    </div>
-                </div>
+                    </Field>
+                </ToolbarGroup>
 
-                {/* Right group */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
-                    <button
-                        onClick={onStartRecording}
-                        disabled={isRecording}
-                        className={`btn flex items-center justify-center text-sm sm:text-base min-h-touch ${isRecording
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-green-500 hover:bg-green-600 text-white'
-                            }`}
-                    >
-                        <Play className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                        <span>Start Recording</span>
-                    </button>
+                <ToolbarGroup>
+                    <Button onClick={onStartRecording} disabled={isRecording} variant="primary">
+                        <Play className="h-4 w-4" />
+                        <span>Start recording</span>
+                    </Button>
 
-                    <button
-                        onClick={onStopRecording}
-                        disabled={!isRecording}
-                        className={`btn flex items-center justify-center text-sm sm:text-base min-h-touch ${!isRecording
-                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                : 'bg-red-500 hover:bg-red-600 text-white'
-                            }`}
-                    >
-                        <Square className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                        <span>Stop Recording</span>
-                    </button>
-                </div>
-            </div>
+                    <Button onClick={onStopRecording} disabled={!isRecording} variant="danger">
+                        <Square className="h-4 w-4" />
+                        <span>Stop recording</span>
+                    </Button>
+                </ToolbarGroup>
+            </Toolbar>
         </div>
     );
 }

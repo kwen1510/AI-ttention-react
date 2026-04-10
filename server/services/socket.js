@@ -343,6 +343,7 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
                     // Send update to admin console
                     ioInstance.to(sessionCode).emit("admin_update", {
                         group: groupNumber,
+                        isActive: true,
                         latestTranscript: cleanedText,
                         cumulativeTranscript: fullText, // Add full conversation for admin
                         transcriptDuration: duration,
@@ -698,6 +699,43 @@ export function initSocket(io) {
                 error,
                 chunkSize,
                 timestamp,
+                socketId: socket.id
+            });
+        });
+
+        socket.on("upload_status", ({ session, group, phase, pendingUploads = 0, chunkSize = 0, lastUploadedAt = null, lastError = null, timestamp }) => {
+            const principal = getStudentPrincipal();
+            if (!principal) return;
+            const sessionKey = String(principal.sessionCode || session || sessionCode || "").trim().toUpperCase();
+            if (!sessionKey) return;
+
+            const parsedGroup = Number.parseInt(group, 10);
+            if (!Number.isFinite(parsedGroup) || parsedGroup <= 0) return;
+
+            const sessionState = activeSessions.get(sessionKey);
+            if (sessionState?.groups) {
+                const groupState = sessionState.groups.get(parsedGroup) || {};
+                groupState.joined = true;
+                groupState.lastAck = Date.now();
+                groupState.uploadStatus = {
+                    phase: String(phase || "idle"),
+                    pendingUploads: Number(pendingUploads) || 0,
+                    chunkSize: Number(chunkSize) || 0,
+                    lastUploadedAt: lastUploadedAt || null,
+                    lastError: lastError || null
+                };
+                sessionState.groups.set(parsedGroup, groupState);
+                activeSessions.set(sessionKey, sessionState);
+            }
+
+            socket.to(sessionKey).emit("upload_status", {
+                group: parsedGroup,
+                phase: String(phase || "idle"),
+                pendingUploads: Number(pendingUploads) || 0,
+                chunkSize: Number(chunkSize) || 0,
+                lastUploadedAt: lastUploadedAt || null,
+                lastError: lastError || null,
+                timestamp: timestamp || Date.now(),
                 socketId: socket.id
             });
         });

@@ -1,11 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Copy } from 'lucide-react';
+import { Copy, QrCode } from 'lucide-react';
+import { Alert } from '../../../components/ui/alert.jsx';
+import { Button } from '../../../components/ui/button.jsx';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '../../../components/ui/dialog.jsx';
 
 export function QRCodeModal({ isOpen, onClose, sessionCode }) {
     const qrRef = useRef(null);
     const [joinUrl, setJoinUrl] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [copied, setCopied] = useState(false);
     const fallbackJoinUrl = `${window.location.origin}/student?code=${sessionCode}`;
 
     useEffect(() => {
@@ -35,7 +45,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
             } catch (err) {
                 if (!isCancelled) {
                     console.error('Failed to load secure join link:', err);
-                    setError('Secure join link unavailable. Using the session code link instead.');
+                    setError('Direct join link unavailable. Using the standard session code link instead.');
                 }
             } finally {
                 if (!isCancelled) {
@@ -63,44 +73,57 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
         }
     }, [fallbackJoinUrl, isOpen, joinUrl, sessionCode]);
 
-    if (!isOpen) return null;
-
     const copyLink = async () => {
         const url = joinUrl || fallbackJoinUrl;
         await navigator.clipboard.writeText(url);
-        alert('Link copied!');
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-bold">Join Session</h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                        <X className="w-6 h-6" />
-                    </button>
-                </div>
+        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <DialogContent size="sm">
+                <DialogHeader>
+                    <DialogTitle>Student join link</DialogTitle>
+                    <DialogDescription>
+                        Students can open this link and choose their group number. The student page does not require teacher sign-in.
+                    </DialogDescription>
+                </DialogHeader>
 
-                <div className="flex justify-center mb-6">
-                    <div ref={qrRef} />
-                </div>
+                <div className="space-y-4">
+                    <div className="ui-panel ui-panel--subtle ui-panel--pad-lg flex justify-center">
+                        <div ref={qrRef} className="min-h-[200px] min-w-[200px] flex items-center justify-center">
+                            {!joinUrl ? <QrCode className="h-10 w-10 text-[var(--text-muted)]" /> : null}
+                        </div>
+                    </div>
 
-                <div className="mb-4 text-sm text-slate-600">
-                    <p>Students can open this link and choose their group number without teacher sign-in.</p>
-                    {isLoading ? <p className="mt-2 text-xs text-slate-500">Generating secure join link…</p> : null}
-                    {error ? <p className="mt-2 text-xs text-amber-700">{error}</p> : null}
-                </div>
+                    {isLoading ? (
+                        <Alert tone="primary">
+                            <p>Generating student join link...</p>
+                        </Alert>
+                    ) : null}
 
-                <button
-                    onClick={copyLink}
-                    className="w-full p-4 bg-gray-50 rounded-lg flex items-center justify-between hover:bg-gray-100 transition-colors"
-                >
-                    <span className="font-mono text-sm text-gray-600 truncate">
-                        {joinUrl || fallbackJoinUrl}
-                    </span>
-                    <Copy className="w-4 h-4 text-gray-400" />
-                </button>
-            </div>
-        </div>
+                    {error ? (
+                        <Alert tone="warning">
+                            <p>{error}</p>
+                        </Alert>
+                    ) : null}
+
+                    {copied ? (
+                        <Alert tone="success">
+                            <p>Join link copied to clipboard.</p>
+                        </Alert>
+                    ) : null}
+
+                    <div className="modal-copy-block">
+                        <span className="truncate text-sm copy-muted">{joinUrl || fallbackJoinUrl}</span>
+                        <Button onClick={copyLink} variant="secondary" size="sm">
+                            <Copy className="h-4 w-4" />
+                            Copy
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }

@@ -30,6 +30,10 @@ export function getJoinTokenSecret() {
         return process.env.SESSION_JOIN_SECRET;
     }
 
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        return process.env.SUPABASE_SERVICE_ROLE_KEY;
+    }
+
     if (process.env.STAGING_AUTH_BYPASS === "true") {
         return DEV_JOIN_SECRET;
     }
@@ -127,13 +131,20 @@ export function buildJoinUrl(origin, token) {
     return url.toString();
 }
 
-export function assertJoinableSessionState(sessionCode, sessionState, sessionRecord = null) {
+export function assertJoinableSessionState(sessionCode, sessionState, sessionRecord = null, options = {}) {
     const normalizedCode = String(sessionCode || "").trim().toUpperCase();
     if (!normalizedCode) {
         throw createJoinTokenError("Session not found", 404);
     }
 
-    const isActive = Boolean(sessionRecord?.active || sessionState?.active);
+    const now = Number(options?.now || Date.now());
+    const allowUploadGrace = Boolean(options?.allowUploadGrace);
+    const hasUploadGrace =
+        allowUploadGrace &&
+        Number.isFinite(Number(sessionState?.acceptUploadsUntil)) &&
+        Number(sessionState.acceptUploadsUntil) >= now;
+
+    const isActive = Boolean(sessionRecord?.active || sessionState?.active || hasUploadGrace);
     if (!isActive) {
         throw createJoinTokenError("Session not active", 404);
     }

@@ -1,10 +1,43 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronUp, UploadCloud } from 'lucide-react';
+import { Button } from '../../../components/ui/button.jsx';
+import { Badge } from '../../../components/ui/badge.jsx';
+import { EmptyState } from '../../../components/ui/empty-state.jsx';
+import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 
-export function TranscriptionPanel({ transcription }) {
+export function TranscriptionPanel({ transcription, uploadState = null }) {
     const [history, setHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
     const scrollRef = useRef(null);
+
+    const formatClockTime = (timestamp) => {
+        if (!timestamp) return '';
+        return new Date(timestamp).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    };
+
+    const uploadPhase = uploadState?.phase || 'idle';
+    let uploadTone = 'neutral';
+    let uploadLabel = 'Waiting to upload';
+
+    if (uploadPhase === 'uploading') {
+        uploadTone = 'primary';
+        uploadLabel = uploadState?.pendingUploads > 1
+            ? `Uploading ${uploadState.pendingUploads} chunks`
+            : 'Uploading chunk';
+    } else if (uploadPhase === 'finalizing') {
+        uploadTone = 'warning';
+        uploadLabel = 'Finalizing last chunk';
+    } else if (uploadPhase === 'error') {
+        uploadTone = 'danger';
+        uploadLabel = uploadState?.lastError || 'Upload failed';
+    } else if (uploadState?.lastUploadedAt) {
+        uploadTone = 'success';
+        uploadLabel = `Uploaded at ${formatClockTime(uploadState.lastUploadedAt)}`;
+    }
 
     // Update history when new transcription arrives
     useEffect(() => {
@@ -14,56 +47,55 @@ export function TranscriptionPanel({ transcription }) {
     }, [transcription]);
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <MessageSquare className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <h2 className="text-lg font-semibold text-gray-900">Live Transcription</h2>
-                </div>
-                <button
-                    onClick={() => setShowHistory(!showHistory)}
-                    className="flex items-center text-gray-600 hover:text-gray-900 text-sm transition-colors"
-                >
-                    {showHistory ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
-                    {showHistory ? 'Hide History' : 'Show History'}
-                </button>
+        <Panel padding="none" className="flex h-full flex-col overflow-hidden">
+            <div className="p-5">
+                <PanelHeader
+                    icon={MessageSquare}
+                    title="Live transcription"
+                    description="Audio chunks appear here as they are transcribed."
+                    actions={(
+                        <div className="flex items-center gap-2">
+                            <Badge tone={uploadTone} size="sm" icon={UploadCloud}>
+                                {uploadLabel}
+                            </Badge>
+                            <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
+                                {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                <span>{showHistory ? 'Hide history' : 'Show history'}</span>
+                            </Button>
+                        </div>
+                    )}
+                />
             </div>
 
-            <div className="flex-1 p-6 overflow-y-auto" ref={scrollRef}>
+            <div className="flex-1 overflow-y-auto px-5 pb-5" ref={scrollRef}>
                 {!transcription && history.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                        <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                        <p className="text-lg font-medium mb-2">No transcription yet</p>
-                        <p className="text-sm">Audio will be transcribed here when recording starts</p>
-                    </div>
+                    <EmptyState
+                        icon={MessageSquare}
+                        title="No transcription yet"
+                        description="Audio will appear here once recording starts."
+                    />
                 ) : (
                     <div className="space-y-4">
-                        {/* Latest Transcript */}
                         {transcription && (
-                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border-l-4 border-blue-400 animate-fade-in">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-1 rounded uppercase tracking-wide">
-                                        Latest
-                                    </span>
-                                    <span className="text-xs text-gray-500">Just now</span>
+                            <div className="ui-panel ui-panel--subtle ui-panel--pad-md">
+                                <div className="mb-3 flex items-center justify-between gap-2">
+                                    <Badge tone="primary" size="sm">Latest</Badge>
+                                    <span className="text-xs copy-muted">Just now</span>
                                 </div>
-                                <div className="text-gray-800 leading-relaxed">
+                                <div className="copy-strong leading-relaxed">
                                     {transcription.cumulativeText || transcription.text}
                                 </div>
                                 {transcription.text && (
-                                    <div className="text-xs text-gray-500 border-t border-blue-100 pt-2 mt-2">
+                                    <div className="mt-3 border-t border-[var(--border)] pt-3 text-xs copy-muted">
                                         <span className="font-medium">Chunk:</span> "{transcription.text}"
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        {/* History */}
                         {showHistory && history.map((item, index) => (
-                            <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-100 opacity-75">
-                                <div className="text-gray-700 text-sm">
+                            <div key={index} className="surface-list__item text-sm">
+                                <div className="copy-strong">
                                     {item.cumulativeText || item.text}
                                 </div>
                             </div>
@@ -71,6 +103,6 @@ export function TranscriptionPanel({ transcription }) {
                     </div>
                 )}
             </div>
-        </div>
+        </Panel>
     );
 }

@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, ScrollText, UploadCloud } from 'lucide-react';
+import { Button } from '../../../components/ui/button.jsx';
+import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
+import { StatusBadge, Badge } from '../../../components/ui/badge.jsx';
 
 export function GroupCard({ groupNumber, data }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -12,84 +15,122 @@ export function GroupCard({ groupNumber, data }) {
         ));
     };
 
-    return (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-xl">
-            {/* Header */}
-            <div className="bg-white text-black p-6 border-b border-slate-100">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                            <span className="text-lg font-bold">{groupNumber}</span>
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-semibold">Group {groupNumber}</h3>
-                            <p className="text-gray-500 text-sm">
-                                {data.transcripts.length} segments
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        {data.isActive ? (
-                            <>
-                                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                                <span className="text-sm font-medium">Active</span>
-                            </>
-                        ) : (
-                            <>
-                                <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
-                                <span className="text-sm">Waiting</span>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </div>
+    const formatClockTime = (timestamp) => {
+        if (!timestamp) return '';
+        return new Date(timestamp).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    };
 
-            {/* Body */}
-            <div className="p-6">
-                {/* Summary */}
-                <div className="mb-6">
-                    <h4 className="font-semibold text-gray-900 mb-2">Live Summary</h4>
+    const uploadStatus = data.uploadStatus || null;
+    let statusTone = data.isActive ? 'success' : 'neutral';
+    let statusLabel = data.isActive ? 'Connected' : 'Waiting';
+    let uploadTone = 'neutral';
+    let uploadLabel = 'Awaiting first upload';
+
+    if (uploadStatus?.phase === 'uploading') {
+        statusTone = 'primary';
+        statusLabel = 'Uploading';
+        uploadTone = 'primary';
+        uploadLabel = uploadStatus.pendingUploads > 1
+            ? `${uploadStatus.pendingUploads} chunks in flight`
+            : 'Chunk upload in progress';
+    } else if (uploadStatus?.phase === 'finalizing') {
+        statusTone = 'warning';
+        statusLabel = 'Finalizing';
+        uploadTone = 'warning';
+        uploadLabel = 'Waiting for the final chunk to finish';
+    } else if (uploadStatus?.phase === 'error') {
+        statusTone = 'danger';
+        statusLabel = 'Upload issue';
+        uploadTone = 'danger';
+        uploadLabel = uploadStatus.lastError || 'Chunk upload failed';
+    } else if (uploadStatus?.lastUploadedAt) {
+        uploadTone = 'success';
+        uploadLabel = `Last upload ${formatClockTime(uploadStatus.lastUploadedAt)}`;
+    }
+
+    return (
+        <Panel padding="lg" className="h-full">
+            <PanelHeader
+                icon={MessageSquare}
+                title={`Group ${groupNumber}`}
+                description={`${data.transcripts.length} transcript segments`}
+                actions={(
+                    <StatusBadge tone={statusTone} pulse={statusTone !== 'neutral'}>
+                        {statusLabel}
+                    </StatusBadge>
+                )}
+            >
+                <Badge tone="neutral">{groupNumber}</Badge>
+            </PanelHeader>
+
+            <div className="mt-6 space-y-6">
+                <section className="surface-list">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <UploadCloud className="h-4 w-4 text-[var(--primary)]" />
+                            <h4 className="text-sm font-semibold text-[var(--text)]">Upload status</h4>
+                        </div>
+                        <Badge tone={uploadTone} size="sm">{uploadLabel}</Badge>
+                    </div>
+                    {data.uploadErrors ? (
+                        <div className="surface-list__item text-sm text-[var(--text)]">
+                            {data.uploadErrors} upload issue{data.uploadErrors === 1 ? '' : 's'} reported for this group.
+                        </div>
+                    ) : null}
+                </section>
+
+                <section className="surface-list">
+                    <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-[var(--accent)]" />
+                        <h4 className="text-sm font-semibold text-[var(--text)]">Live summary</h4>
+                    </div>
                     {data.summary ? (
-                        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border-l-4 border-purple-400 text-sm text-gray-800">
+                        <div className="surface-list__item space-y-2 text-sm text-[var(--text)]">
                             {formatSummary(data.summary.text)}
                         </div>
                     ) : (
-                        <div className="bg-gray-50 rounded-lg p-4 text-center text-gray-500 text-sm">
-                            No summary available yet
-                        </div>
+                        <div className="surface-list__item text-sm">No summary available yet.</div>
                     )}
-                </div>
+                </section>
 
-                {/* Transcripts */}
-                <div>
-                    <button
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="flex items-center text-gray-600 hover:text-gray-900 mb-4 text-sm font-medium"
-                    >
-                        {isExpanded ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                        {isExpanded ? 'Show Less' : 'Show Full Transcript'}
-                    </button>
+                <section className="surface-list">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <ScrollText className="h-4 w-4 text-[var(--primary)]" />
+                            <h4 className="text-sm font-semibold text-[var(--text)]">Transcript</h4>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            <span>{isExpanded ? 'Hide transcript' : 'Show transcript'}</span>
+                        </Button>
+                    </div>
 
-                    {isExpanded && (
-                        <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {isExpanded ? (
+                        <div className="max-h-60 space-y-3 overflow-y-auto">
                             {data.cumulativeTranscript ? (
-                                <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-400 text-sm text-gray-800">
+                                <div className="surface-list__item text-sm text-[var(--text)] whitespace-pre-wrap">
                                     {data.cumulativeTranscript}
                                 </div>
                             ) : (
                                 data.transcripts.slice().reverse().map((t, i) => (
-                                    <div key={i} className="bg-gray-50 rounded p-3 text-sm">
-                                        <p className="text-gray-800">{t.text}</p>
-                                        <div className="text-xs text-gray-500 mt-1">
+                                    <div key={i} className="surface-list__item text-sm">
+                                        <p className="copy-strong">{t.text}</p>
+                                        <div className="mt-2 text-xs copy-muted">
                                             {new Date(t.timestamp).toLocaleTimeString()}
                                         </div>
                                     </div>
                                 ))
                             )}
                         </div>
+                    ) : (
+                        <div className="surface-list__item text-sm">Expand to review the transcript history.</div>
                     )}
-                </div>
+                </section>
             </div>
-        </div>
+        </Panel>
     );
 }

@@ -6,6 +6,7 @@ import { SessionHeader } from '../features/admin/components/SessionHeader';
 import { CriteriaManager } from '../features/checkbox/components/CriteriaManager';
 import { CheckboxGroupGrid } from '../features/checkbox/components/CheckboxGroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
+import { SectionHeader } from '../components/ui/panel.jsx';
 
 function CheckboxDashboard() {
   const [searchParams] = useSearchParams();
@@ -156,7 +157,7 @@ function CheckboxDashboard() {
   };
 
   return (
-    <div className="checkbox-dashboard-wrapper min-h-screen bg-gray-50 pb-20">
+    <div className="checkbox-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
         isConnected={isConnected}
@@ -168,7 +169,13 @@ function CheckboxDashboard() {
         onIntervalChange={setInterval}
       />
 
-      <main className="page-shell page-shell--fluid stack max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <main className="page-shell page-shell--fluid stack">
+        <SectionHeader
+          eyebrow="Teacher workspace"
+          title="Live checklist session"
+          description="Define the scenario, release criteria to student groups, and watch checklist evidence update in real time."
+        />
+
         <CriteriaManager
           scenario={scenario}
           onScenarioChange={setScenario}

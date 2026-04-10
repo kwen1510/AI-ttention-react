@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -10,22 +9,32 @@ import {
   FileText,
   MessageSquare,
   RefreshCw,
-  Users,
-  X,
 } from "lucide-react";
+import { Alert } from "@/components/ui/alert.jsx";
+import { Badge, StatusBadge } from "@/components/ui/badge.jsx";
+import { Button } from "@/components/ui/button.jsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.jsx";
+import { EmptyState } from "@/components/ui/empty-state.jsx";
+import { Field, Select } from "@/components/ui/field.jsx";
+import { Panel, SectionHeader } from "@/components/ui/panel.jsx";
+import { getChecklistTone } from "@/lib/statusTone.js";
 
 const MODE_META = {
   summary: {
     label: "Summary",
     icon: MessageSquare,
-    badge:
-      "bg-gradient-to-br from-blue-400/20 to-indigo-500/20 text-blue-700 border border-blue-300/30",
+    tone: "primary",
   },
   checkbox: {
     label: "Checkbox",
     icon: CheckSquare,
-    badge:
-      "bg-gradient-to-br from-emerald-400/20 to-teal-500/20 text-emerald-700 border border-emerald-300/30",
+    tone: "success",
   },
 };
 
@@ -43,12 +52,8 @@ function formatDuration(durationMs) {
   const totalMinutes = Math.floor(durationMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours) {
-    return `${hours}h ${minutes}m`;
-  }
-  if (totalMinutes === 0) {
-    return "<1m";
-  }
+  if (hours) return `${hours}h ${minutes}m`;
+  if (totalMinutes === 0) return "<1m";
   return `${totalMinutes}m`;
 }
 
@@ -71,71 +76,49 @@ function downloadBlob(blob, filename) {
 }
 
 function getModeMeta(mode) {
-  return (
-    MODE_META[mode] ?? {
-      label: "Unknown",
-      icon: Database,
-      badge:
-        "bg-gradient-to-br from-slate-400/20 to-gray-500/20 text-slate-700 border border-slate-300/30",
-    }
-  );
+  return MODE_META[mode] ?? {
+    label: "Unknown",
+    icon: Database,
+    tone: "neutral",
+  };
 }
 
 function ModeBadge({ mode }) {
   const meta = getModeMeta(mode);
-  const Icon = meta.icon;
-
   return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold backdrop-blur-sm ${meta.badge}`}
-    >
-      <Icon className="w-3.5 h-3.5 mr-1" />
+    <Badge tone={meta.tone} size="sm" icon={meta.icon}>
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 
-function StatusBadge({ active }) {
+function CompletionBadge({ active }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-        active
-          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-          : "bg-slate-100 text-slate-700 border border-slate-200"
-      }`}
-    >
+    <StatusBadge tone={active ? "success" : "neutral"} pulse={active}>
       {active ? "Live" : "Complete"}
-    </span>
+    </StatusBadge>
   );
 }
 
 function ReleaseBadge({ released }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-        released
-          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-          : "bg-slate-100 text-slate-700 border border-slate-200"
-      }`}
-    >
-      {released ? "Released" : "Not Released"}
-    </span>
-  );
+  return <Badge tone={released ? "success" : "neutral"}>{released ? "Released" : "Not released"}</Badge>;
 }
 
 function CheckboxPreview({ data }) {
   if (!data) return null;
 
   return (
-    <div className="mt-4 rounded-lg border border-emerald-200/50 bg-gradient-to-br from-emerald-50/60 to-teal-50/60 p-4 text-sm text-emerald-900">
-      <p className="font-semibold text-emerald-700">Checklist Progress</p>
-      <p className="mt-1">
-        Completion: {data.completionRate ?? 0}% ({data.completedCriteria ?? 0}/
-        {data.totalCriteria ?? 0})
+    <div className="ui-panel ui-panel--subtle ui-panel--pad-md mt-4 space-y-2 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-semibold text-[var(--text)]">Checklist progress</h4>
+        <Badge tone="success" size="sm">
+          {data.completionRate ?? 0}%
+        </Badge>
+      </div>
+      <p>
+        {data.completedCriteria ?? 0}/{data.totalCriteria ?? 0} criteria completed
       </p>
-      {data.scenario ? (
-        <p className="mt-1 text-emerald-800/80">Scenario: {truncate(data.scenario, 120)}</p>
-      ) : null}
+      {data.scenario ? <p>Scenario: {truncate(data.scenario, 120)}</p> : null}
     </div>
   );
 }
@@ -145,90 +128,70 @@ function SessionCard({ session, onSelect }) {
   const Icon = meta.icon;
 
   return (
-    <div className="glass-panel overflow-hidden transition-all duration-300 hover:shadow-2xl group">
-      <div className="p-6">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-300/30 bg-gradient-to-br from-cyan-400/20 to-blue-500/20 backdrop-blur-sm transition-transform group-hover:scale-110">
-              <Icon className="h-5 w-5 text-cyan-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold gradient-text">Session {session.code}</h3>
-              <div className="mt-1 flex items-center space-x-2 text-xs text-slate-600">
-                <ModeBadge mode={session.mode} />
-                <span>{formatDate(session.created_at)}</span>
-              </div>
+    <Panel padding="lg" className="h-full">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="ui-panel-heading__icon">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-[var(--text)]">Session {session.code}</h3>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs copy-muted">
+              <ModeBadge mode={session.mode} />
+              <span>{formatDate(session.created_at)}</span>
             </div>
           </div>
-          <div className="text-right">
-            <StatusBadge active={session.active} />
-            <div className="mt-1 text-xs text-slate-500">{formatDuration(session.duration)}</div>
-          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 text-sm text-slate-700">
-          <div className="flex items-center space-x-2">
-            <Users className="h-4 w-4 text-cyan-500" />
-            <span className="font-medium">{session.totalStudents || 0} groups</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Database className="h-4 w-4 text-blue-500" />
-            <span className="font-medium">{session.totalTranscripts || 0} segments</span>
-          </div>
-          <div className="col-span-2 flex items-center space-x-2">
-            <Clock3 className="h-4 w-4 text-violet-500" />
-            <span className="text-xs">
-              Last update {formatDate(session.updated_at || session.end_time)}
-            </span>
-          </div>
+        <div className="text-right">
+          <CompletionBadge active={session.active} />
+          <div className="mt-1 text-xs copy-muted">{formatDuration(session.duration)}</div>
         </div>
-
-        {session.mode === "checkbox" ? <CheckboxPreview data={session.modeSpecificData} /> : null}
-
-        <button
-          type="button"
-          className="btn btn-primary mt-6 w-full justify-center text-sm"
-          onClick={() => onSelect(session)}
-        >
-          Open history
-        </button>
       </div>
-    </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+        <div className="ui-metric">
+          <span className="ui-metric__label">Groups</span>
+          <span className="ui-metric__value">{session.totalStudents || 0}</span>
+        </div>
+        <div className="ui-metric">
+          <span className="ui-metric__label">Segments</span>
+          <span className="ui-metric__value">{session.totalTranscripts || 0}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 text-sm copy-muted">
+        <Clock3 className="h-4 w-4" />
+        <span>Last update {formatDate(session.updated_at || session.end_time)}</span>
+      </div>
+
+      {session.mode === "checkbox" ? <CheckboxPreview data={session.modeSpecificData} /> : null}
+
+      <Button type="button" variant="primary" className="mt-6 w-full" onClick={() => onSelect(session)}>
+        Open history
+      </Button>
+    </Panel>
   );
 }
 
 function MetricCard({ label, value }) {
   return (
-    <div className="rounded-xl border border-white/40 bg-white/50 p-4 backdrop-blur-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-base font-bold text-slate-900">{value}</p>
+    <div className="ui-metric">
+      <span className="ui-metric__label">{label}</span>
+      <span className="ui-metric__value">{value}</span>
     </div>
   );
 }
 
 function CriterionStatus({ status }) {
-  const tone =
-    status === "green"
-      ? "bg-emerald-100 text-emerald-700"
-      : status === "yellow"
-        ? "bg-amber-100 text-amber-700"
-        : status === "red"
-          ? "bg-rose-100 text-rose-700"
-          : "bg-slate-100 text-slate-600";
-
-  return (
-    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${tone}`}>
-      {status || "grey"}
-    </span>
-  );
+  return <Badge tone={getChecklistTone(status)} size="sm">{status || "pending"}</Badge>;
 }
 
 function GroupHistoryPanel({ sessionMode, group }) {
   if (!group) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white/30 p-8 text-center text-sm text-slate-500">
+      <Panel tone="subtle" padding="lg" className="text-center text-sm">
         Select a group to inspect its history.
-      </div>
+      </Panel>
     );
   }
 
@@ -240,62 +203,55 @@ function GroupHistoryPanel({ sessionMode, group }) {
         <MetricCard label="Segments" value={stats.total_segments ?? group.segments?.length ?? 0} />
         <MetricCard label="Words" value={stats.total_words ?? 0} />
         <MetricCard
-          label="Audio Duration"
+          label="Audio duration"
           value={stats.total_duration ? `${Math.round(stats.total_duration)}s` : "—"}
         />
       </div>
 
-      <section className="glass-panel p-5">
+      <Panel padding="lg">
         <div className="mb-3 flex items-center gap-2">
-          <FileText className="h-4 w-4 text-slate-500" />
-          <h4 className="text-base font-semibold gradient-text">Full Transcript</h4>
+          <FileText className="h-4 w-4 text-[var(--primary)]" />
+          <h4 className="text-base font-semibold text-[var(--text)]">Full transcript</h4>
         </div>
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white/60 p-4 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
+        <div className="ui-code-block max-h-72 overflow-y-auto text-sm leading-6">
           {group.fullTranscript || "No transcript recorded yet."}
         </div>
-      </section>
+      </Panel>
 
       {sessionMode === "summary" ? (
-        <section className="glass-panel p-5">
+        <Panel padding="lg">
           <div className="mb-3 flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-emerald-600" />
-            <h4 className="text-base font-semibold gradient-text">Latest Summary</h4>
+            <MessageSquare className="h-4 w-4 text-[var(--accent)]" />
+            <h4 className="text-base font-semibold text-[var(--text)]">Latest summary</h4>
           </div>
-          <div className="rounded-lg border border-emerald-200/60 bg-gradient-to-br from-emerald-50/70 to-teal-50/70 p-4 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
+          <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)] whitespace-pre-wrap">
             {group.latestSummary || "No summary stored for this group yet."}
           </div>
-        </section>
+        </Panel>
       ) : null}
 
       {group.modeSpecificData?.criteria?.length ? (
-        <section className="glass-panel p-5">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <Panel padding="lg">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h4 className="text-base font-semibold gradient-text">Checklist State</h4>
+              <h4 className="text-base font-semibold text-[var(--text)]">Checklist state</h4>
               {group.modeSpecificData?.scenario ? (
-                <p className="mt-1 text-sm text-slate-600">
-                  {group.modeSpecificData.scenario}
-                </p>
+                <p className="mt-1 text-sm">{group.modeSpecificData.scenario}</p>
               ) : null}
             </div>
             <ReleaseBadge released={Boolean(group.modeSpecificData.isReleased)} />
           </div>
           <div className="space-y-3">
             {group.modeSpecificData.criteria.map((criterion) => (
-              <div
-                key={criterion.id}
-                className="rounded-lg border border-slate-200 bg-white/60 p-4"
-              >
+              <div key={criterion.id} className="surface-list__item">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{criterion.description}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[var(--text)]">{criterion.description}</p>
                     {criterion.rubric ? (
-                      <p className="mt-1 text-sm text-slate-600 whitespace-pre-wrap">
-                        {criterion.rubric}
-                      </p>
+                      <p className="mt-1 text-sm whitespace-pre-wrap">{criterion.rubric}</p>
                     ) : null}
                     {criterion.quote ? (
-                      <p className="mt-2 rounded-md bg-slate-50 p-3 text-xs text-slate-700 whitespace-pre-wrap">
+                      <p className="ui-panel ui-panel--subtle ui-panel--pad-sm mt-3 text-xs whitespace-pre-wrap text-[var(--text)]">
                         {criterion.quote}
                       </p>
                     ) : null}
@@ -305,39 +261,34 @@ function GroupHistoryPanel({ sessionMode, group }) {
               </div>
             ))}
           </div>
-        </section>
+        </Panel>
       ) : null}
 
       {group.summaryTimeline?.length ? (
-        <section className="glass-panel p-5">
+        <Panel padding="lg">
           <div className="mb-3 flex items-center gap-2">
-            <Clock3 className="h-4 w-4 text-blue-500" />
-            <h4 className="text-base font-semibold gradient-text">Summary Timeline</h4>
+            <Clock3 className="h-4 w-4 text-[var(--primary)]" />
+            <h4 className="text-base font-semibold text-[var(--text)]">Summary timeline</h4>
           </div>
           <div className="space-y-4">
             {group.summaryTimeline.map((entry, index) => (
-              <div
-                key={`${entry.segment_cursor}-${entry.created_at || index}`}
-                className="rounded-lg border border-blue-200/50 bg-gradient-to-br from-blue-50/70 to-indigo-50/70 p-4"
-              >
+              <div key={`${entry.segment_cursor}-${entry.created_at || index}`} className="surface-list__item">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-900">
-                    Summary point {index + 1}
-                  </p>
-                  <p className="text-xs text-slate-500">{formatDate(entry.created_at)}</p>
+                  <p className="text-sm font-semibold text-[var(--text)]">Summary point {index + 1}</p>
+                  <p className="text-xs copy-muted">{formatDate(entry.created_at)}</p>
                 </div>
-                <p className="text-xs font-medium uppercase tracking-wide text-blue-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
                   Up to segment {entry.segment_cursor}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
+                <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-[var(--text)]">
                   {entry.summary_text}
                 </p>
                 {entry.latest_segment?.text ? (
-                  <div className="mt-3 rounded-md border border-white/50 bg-white/70 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Latest Segment At That Point
+                  <div className="ui-panel ui-panel--subtle ui-panel--pad-sm mt-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
+                      Latest segment at that point
                     </p>
-                    <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+                    <p className="mt-1 text-sm whitespace-pre-wrap text-[var(--text)]">
                       {entry.latest_segment.text}
                     </p>
                   </div>
@@ -345,34 +296,31 @@ function GroupHistoryPanel({ sessionMode, group }) {
               </div>
             ))}
           </div>
-        </section>
+        </Panel>
       ) : sessionMode === "summary" ? (
-        <section className="glass-panel p-5 text-sm text-slate-600">
-          Summary snapshots have not been stored for this session yet. Older sessions will show the
-          latest summary without a timeline.
-        </section>
+        <Panel tone="subtle" padding="lg">
+          <p className="text-sm">
+            Summary snapshots have not been stored for this session yet. Older sessions show the latest
+            available summary without a timeline.
+          </p>
+        </Panel>
       ) : null}
 
-      <section className="glass-panel p-5">
+      <Panel padding="lg">
         <div className="mb-3 flex items-center gap-2">
-          <Database className="h-4 w-4 text-slate-500" />
-          <h4 className="text-base font-semibold gradient-text">Transcript Segments</h4>
+          <Database className="h-4 w-4 text-[var(--primary)]" />
+          <h4 className="text-base font-semibold text-[var(--text)]">Transcript segments</h4>
         </div>
         {group.segments?.length ? (
           <div className="max-h-96 space-y-3 overflow-y-auto">
             {group.segments.map((segment, index) => (
-              <div
-                key={segment.id || `${group.groupNumber}-${index}`}
-                className="rounded-lg border border-slate-200 bg-white/60 p-4"
-              >
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <div key={segment.id || `${group.groupNumber}-${index}`} className="surface-list__item">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs copy-muted">
                   <span>Segment {segment.segment_number ?? index + 1}</span>
                   <span>{formatDate(segment.created_at)}</span>
                 </div>
-                <p className="text-sm leading-6 text-slate-800 whitespace-pre-wrap">
-                  {segment.text}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                <p className="text-sm leading-6 whitespace-pre-wrap text-[var(--text)]">{segment.text}</p>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs copy-muted">
                   <span>{segment.word_count || 0} words</span>
                   <span>
                     {segment.duration_seconds
@@ -384,9 +332,9 @@ function GroupHistoryPanel({ sessionMode, group }) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-slate-600">No transcript segments stored for this group.</p>
+          <p className="text-sm">No transcript segments stored for this group.</p>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }
@@ -402,7 +350,9 @@ function SessionModal({ selectedSession, onClose }) {
   const session = detail?.session || selectedSession;
   const groups = detail?.groups || [];
   const activeGroup =
-    groups.find((group) => Number(group.groupNumber) === Number(activeGroupNumber)) || groups[0] || null;
+    groups.find((group) => Number(group.groupNumber) === Number(activeGroupNumber)) ||
+    groups[0] ||
+    null;
 
   useEffect(() => {
     if (!sessionCode) return undefined;
@@ -462,100 +412,89 @@ function SessionModal({ selectedSession, onClose }) {
   if (!selectedSession) return null;
 
   return (
-    <div
-      className="qr-modal-backdrop z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="qr-modal-content flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="border-b border-white/20 p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-slate-500">{formatDate(session?.created_at)}</p>
-              <h3 className="text-2xl font-semibold gradient-text">Session {session?.code}</h3>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="btn btn-muted"
-                disabled={downloading === "combined"}
-                onClick={() => handleDownload("combined")}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                {downloading === "combined" ? "Preparing…" : "Download Combined JSON"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={downloading === "segments"}
-                onClick={() => handleDownload("segments")}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                {downloading === "segments" ? "Preparing…" : "Download Segments JSON"}
-              </button>
-              <button
-                type="button"
-                className="rounded-full p-2 transition-colors hover:bg-white/40"
-                onClick={onClose}
-              >
-                <X className="h-5 w-5 text-slate-600" />
-              </button>
-            </div>
+    <Dialog open={Boolean(selectedSession)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent size="xl">
+        <DialogHeader>
+          <DialogTitle>Session {session?.code}</DialogTitle>
+          <DialogDescription>{formatDate(session?.created_at)}</DialogDescription>
+        </DialogHeader>
+
+        <div className="cluster justify-between">
+          <div className="cluster">
+            <ModeBadge mode={session?.mode} />
+            <CompletionBadge active={session?.active} />
+          </div>
+          <div className="cluster">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={downloading === "combined"}
+              onClick={() => handleDownload("combined")}
+            >
+              <Download className="h-4 w-4" />
+              {downloading === "combined" ? "Preparing…" : "Combined JSON"}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={downloading === "segments"}
+              onClick={() => handleDownload("segments")}
+            >
+              <Download className="h-4 w-4" />
+              {downloading === "segments" ? "Preparing…" : "Segments JSON"}
+            </Button>
           </div>
         </div>
 
-        <div className="overflow-y-auto p-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <MetricCard label="Mode" value={getModeMeta(session?.mode).label} />
-            <MetricCard label="Groups" value={session?.totalStudents || 0} />
-            <MetricCard label="Segments" value={session?.totalTranscripts || 0} />
-            <MetricCard label="Duration" value={formatDuration(session?.duration)} />
-          </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <MetricCard label="Mode" value={getModeMeta(session?.mode).label} />
+          <MetricCard label="Groups" value={session?.totalStudents || 0} />
+          <MetricCard label="Segments" value={session?.totalTranscripts || 0} />
+          <MetricCard label="Duration" value={formatDuration(session?.duration)} />
+        </div>
 
-          {session?.modeSpecificData ? (
-            <div className="mt-4">
-              <CheckboxPreview data={session.modeSpecificData} />
-            </div>
-          ) : null}
+        {session?.modeSpecificData ? <CheckboxPreview data={session.modeSpecificData} /> : null}
 
-          {error ? (
-            <div className="mt-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              {error}
-            </div>
-          ) : null}
+        {error ? (
+          <Alert tone="danger" title="Unable to load session history">
+            <p>{error}</p>
+          </Alert>
+        ) : null}
 
-          {loading ? (
-            <div className="py-16 text-center">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-cyan-500 border-t-transparent" />
-              <p className="text-sm text-slate-600">Loading session history…</p>
+        {loading ? (
+          <Panel padding="lg" className="flex min-h-[16rem] items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--surface-muted)] border-t-[var(--primary)]" />
+              <p className="text-sm">Loading session history…</p>
             </div>
-          ) : (
-            <div className="mt-6">
-              <div className="mb-4 flex flex-wrap gap-2">
+          </Panel>
+        ) : (
+          <div className="content-split content-split--history">
+            <Panel padding="lg" className="h-fit">
+              <h4 className="mb-3 text-sm font-semibold text-[var(--text)]">Groups</h4>
+              <div className="surface-list">
                 {groups.map((group) => (
-                  <button
+                  <Button
                     key={group._id || group.groupNumber}
                     type="button"
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                      Number(activeGroupNumber) === Number(group.groupNumber)
-                        ? "bg-slate-900 text-white"
-                        : "bg-white/70 text-slate-700 hover:bg-white"
-                    }`}
+                    variant={Number(activeGroupNumber) === Number(group.groupNumber) ? "primary" : "secondary"}
+                    size="sm"
+                    className="justify-start"
                     onClick={() => setActiveGroupNumber(group.groupNumber)}
                   >
                     Group {group.groupNumber}
-                  </button>
+                  </Button>
                 ))}
               </div>
+            </Panel>
 
-              <GroupHistoryPanel sessionMode={session?.mode} group={activeGroup} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+            <GroupHistoryPanel sessionMode={session?.mode} group={activeGroup} />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -625,97 +564,76 @@ export default function DataExplorerView() {
   const canGoNext = pagination.total > 0 && offset + sessions.length < pagination.total;
 
   return (
-    <main className="page-shell stack">
-      <div className="glass-panel mx-4 my-4 sm:mx-6 md:mx-8">
-        <div className="flex flex-wrap items-end justify-between gap-4 p-6">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Teacher History
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold gradient-text">Session History</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Review completed or live sessions, inspect transcripts and summary snapshots, and
-              export combined or segment-level JSON for follow-up analysis.
-            </p>
-          </div>
+    <div className="stack">
+      <SectionHeader
+        eyebrow="Teacher workspace"
+        title="Session history"
+        description="Review completed or live sessions, inspect transcripts and summary snapshots, and export JSON for follow-up analysis."
+        actions={(
+          <Button type="button" variant="secondary" size="sm" onClick={handleRetry}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        )}
+      />
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-700">
-                Filter by Mode
-              </label>
-              <select
-                value={modeFilter}
-                onChange={(event) => {
-                  setModeFilter(event.target.value);
-                  setOffset(0);
-                }}
-                className="premium-input px-3 py-2"
-              >
-                <option value="">All Modes</option>
-                <option value="summary">Summary</option>
-                <option value="checkbox">Checkbox</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-700">
-                Results per page
-              </label>
-              <select
-                value={limit}
-                onChange={(event) => {
-                  setLimit(Number(event.target.value));
-                  setOffset(0);
-                }}
-                className="premium-input px-3 py-2"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
-
-            <button
-              type="button"
-              className="btn btn-primary glow"
-              onClick={handleRetry}
+      <Panel padding="lg" tone="subtle">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[14rem_12rem_auto]">
+          <Field label="Mode">
+            <Select
+              value={modeFilter}
+              onChange={(event) => {
+                setModeFilter(event.target.value);
+                setOffset(0);
+              }}
             >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh History
-            </button>
+              <option value="">All modes</option>
+              <option value="summary">Summary</option>
+              <option value="checkbox">Checkbox</option>
+            </Select>
+          </Field>
+
+          <Field label="Results per page">
+            <Select
+              value={limit}
+              onChange={(event) => {
+                setLimit(Number(event.target.value));
+                setOffset(0);
+              }}
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </Select>
+          </Field>
+
+          <div className="flex items-end">
+            <p className="text-sm">{paginationInfo}</p>
           </div>
         </div>
-      </div>
+      </Panel>
 
       {loading ? (
-        <div className="py-16 text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-cyan-500 border-t-transparent" />
-          <p className="font-medium text-slate-600">Loading session history...</p>
-        </div>
+        <Panel padding="lg" className="flex min-h-[18rem] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--surface-muted)] border-t-[var(--primary)]" />
+            <p className="text-sm">Loading session history…</p>
+          </div>
+        </Panel>
       ) : null}
 
       {error && !loading ? (
-        <div className="py-16 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-300/30 bg-gradient-to-br from-red-400/20 to-rose-500/20">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-          </div>
-          <p className="mb-2 text-lg font-semibold text-red-600">Failed to load history</p>
-          <p className="mb-4 text-sm text-slate-600">{error}</p>
-          <button type="button" className="btn btn-primary glow" onClick={handleRetry}>
-            Try Again
-          </button>
-        </div>
+        <Alert tone="danger" title="Failed to load history">
+          <p>{error}</p>
+        </Alert>
       ) : null}
 
       {!loading && !error && sessions.length === 0 ? (
-        <div className="py-16 text-center">
-          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 border-white/40 bg-gradient-to-br from-slate-400/20 to-gray-500/20">
-            <Database className="h-12 w-12 text-slate-400" />
-          </div>
-          <h3 className="mb-2 text-lg font-semibold gradient-text">No Sessions Found</h3>
-          <p className="text-slate-600">No teacher-owned sessions match your current filters.</p>
-        </div>
+        <EmptyState
+          icon={Database}
+          title="No sessions found"
+          description="No teacher-owned sessions match your current filters."
+        />
       ) : null}
 
       {!loading && !error && sessions.length > 0 ? (
@@ -730,27 +648,29 @@ export default function DataExplorerView() {
             ))}
           </div>
 
-          <div className="mx-4 mt-8 flex flex-col items-center justify-between gap-4 sm:mx-6 sm:flex-row md:mx-8">
-            <div className="premium-chip text-sm font-medium">{paginationInfo}</div>
-            <div className="flex space-x-2">
-              <button
+          <div className="ui-toolbar">
+            <div className="text-sm">{paginationInfo}</div>
+            <div className="cluster">
+              <Button
                 type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => setOffset(Math.max(0, offset - limit))}
                 disabled={!canGoPrev}
-                className="btn btn-muted flex items-center disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <ChevronLeft className="mr-1 h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" />
                 Previous
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="primary"
+                size="sm"
                 onClick={() => setOffset(offset + limit)}
                 disabled={!canGoNext}
-                className="btn btn-primary flex items-center disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </button>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </>
@@ -759,6 +679,6 @@ export default function DataExplorerView() {
       {selectedSession ? (
         <SessionModal selectedSession={selectedSession} onClose={() => setSelectedSession(null)} />
       ) : null}
-    </main>
+    </div>
   );
 }

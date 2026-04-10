@@ -70,6 +70,20 @@ export function parseJsonFromText(text) {
 
 export async function summarise(text, customPrompt) {
     try {
+        if (process.env.MOCK_AI_SERVICES === "true" && process.env.ALLOW_DEV_TEST === "true") {
+            const sentences = String(text || "")
+                .split(/[.!?]/)
+                .map((part) => part.trim())
+                .filter(Boolean)
+                .slice(-6);
+
+            if (sentences.length === 0) {
+                return "Summarization unavailable";
+            }
+
+            return sentences.map((sentence) => `- ${sentence}`).join("\n");
+        }
+
         const basePrompt = customPrompt || "Summarise the following classroom discussion in ≤6 clear bullet points:";
         const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
         if (!apiKey) {

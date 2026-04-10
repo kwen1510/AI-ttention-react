@@ -3,6 +3,11 @@ import { useAuth } from "../components/AuthContext.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getSupabaseClient } from "../config/supabaseClient";
 import { sanitizeRedirect } from "../lib/sanitizeRedirect.js";
+import { Alert } from "../components/ui/alert.jsx";
+import { Button } from "../components/ui/button.jsx";
+import { Field, Input } from "../components/ui/field.jsx";
+import { Badge } from "../components/ui/badge.jsx";
+import { Panel } from "../components/ui/panel.jsx";
 
 function LoginPage() {
   const { user, loading, isTeacher } = useAuth();
@@ -85,117 +90,82 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen text-black font-sans relative">
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-24 -left-24 w-[36rem] h-[36rem] rounded-full bg-emerald-200 blur-3xl opacity-60" />
-        <div className="absolute -bottom-32 -right-16 w-[32rem] h-[32rem] rounded-full bg-sky-200 blur-3xl opacity-70" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.75),_transparent_60%),radial-gradient(ellipse_at_bottom,_rgba(255,255,255,0.6),_transparent_60%)]" />
-      </div>
-
-      <div
-        className="brand-mini"
-        style={{
-          position: "fixed",
-          top: "12px",
-          left: "16px",
-          fontFamily: "'Plus Jakarta Sans', sans-serif",
-          fontWeight: 700,
-          fontSize: "0.9rem",
-          color: "#0f172a",
-          opacity: 0.9,
-        }}
-      >
-        AI(ttention)
-      </div>
-
-      <div className="mx-auto max-w-lg px-4 sm:px-6 md:px-8 pt-16 sm:pt-20 pb-12 sm:pb-16">
-        <div className="text-center mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
-            Teacher Sign In
-          </h1>
+    <div className="page-shell flex min-h-screen items-center justify-center py-12">
+      <Panel padding="lg" className="w-full max-w-lg">
+        <div className="mb-8 text-center">
+          <p className="eyebrow">Teacher sign in</p>
+          <h1 className="mt-2 text-3xl font-semibold">AI(ttention)</h1>
+          <p className="mt-3">Use the one-time code sent to your approved teacher email.</p>
+          <div className="mt-4 flex justify-center">
+            <Badge tone="neutral">{step === "email" ? "Step 1 of 2" : "Step 2 of 2"}</Badge>
+          </div>
         </div>
-
-        <div className="relative rounded-2xl border border-white/50 bg-white/70 backdrop-blur-xl shadow-glow p-4 sm:p-6 md:p-8">
-          <div className="absolute -inset-px rounded-2xl pointer-events-none shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]" />
 
           {step === "email" ? (
             <form onSubmit={handleSendOtp}>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-slate-800 mb-2"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="teacher@school.edu"
-                autoComplete="email"
-                required
-                className="w-full rounded-lg border border-slate-300/80 bg-white/80 backdrop-blur px-4 py-3 text-sm sm:text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-300 min-h-touch"
-              />
+              <Field label="Email" htmlFor="email">
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teacher@school.edu"
+                  autoComplete="email"
+                  required
+                />
+              </Field>
 
-              <button
-                type="submit"
-                className="btn btn-primary glow w-full mt-4 justify-center text-sm sm:text-base min-h-touch"
-              >
-                Send OTP
-              </button>
+              <Button type="submit" variant="primary" size="lg" className="mt-4 w-full">
+                Send code
+              </Button>
             </form>
           ) : (
             <form onSubmit={handleVerifyOtp}>
-              <label
-                htmlFor="otp"
-                className="block text-sm font-medium text-slate-800 mb-2"
-              >
-                Enter OTP Code
-              </label>
-              <input
-                id="otp"
-                type="text"
-                inputMode="numeric"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                autoComplete="one-time-code"
-                placeholder="6-digit code"
-                required
-                className="w-full rounded-lg border border-slate-300/80 bg-white/80 backdrop-blur px-4 py-3 text-sm sm:text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-300 min-h-touch"
-              />
+              <Field label="Enter code" htmlFor="otp" hint="Check your inbox for the latest one-time code.">
+                <Input
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code"
+                  required
+                />
+              </Field>
 
-              <button
-                type="submit"
-                className="btn btn-primary glow w-full mt-4 justify-center text-sm sm:text-base min-h-touch"
-              >
-                Verify & Sign In
-              </button>
+              <Button type="submit" variant="primary" size="lg" className="mt-4 w-full">
+                Verify and sign in
+              </Button>
 
-              <button
+              <Button
                 type="button"
                 onClick={handleSendOtp}
                 disabled={cooldown > 0}
-                className="btn btn-muted w-full mt-2 justify-center"
+                variant="secondary"
+                size="lg"
+                className="mt-2 w-full"
               >
                 {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend OTP"}
-              </button>
+              </Button>
             </form>
           )}
 
           {status.message && (
-            <div
-              className={`text-sm mt-4 p-2 rounded ${status.type === "error"
-                ? "text-rose-700 bg-rose-50"
-                : status.type === "success"
-                  ? "text-emerald-700 bg-emerald-50"
-                  : "text-slate-700 bg-slate-50"
-                }`}
+            <Alert
+              className="mt-4"
+              tone={
+                status.type === "error"
+                  ? "danger"
+                  : status.type === "success"
+                    ? "success"
+                    : "primary"
+              }
             >
-              {status.message}
-            </div>
+              <p>{status.message}</p>
+            </Alert>
           )}
-        </div>
-      </div>
+      </Panel>
     </div>
   );
 }

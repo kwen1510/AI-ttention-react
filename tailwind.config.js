@@ -3,58 +3,47 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
-      // Enhanced responsive breakpoints for better tablet support
       screens: {
-        'xs': '475px',    // Large phones
-        'sm': '640px',    // Small tablets / Large phones (landscape)
-        'md': '768px',    // iPad portrait - ENHANCED for tablet optimization
-        'lg': '1024px',   // iPad landscape / Small laptops
-        'xl': '1280px',   // Desktop
-        '2xl': '1536px',  // Large desktop
+        xs: '475px',
+        sm: '640px',
+        md: '768px',
+        lg: '1024px',
+        xl: '1280px',
+        '2xl': '1536px',
       },
       colors: {
-        'ai-primary': {
-          start: '#22d3ee',
-          mid: '#60a5fa',
-          end: '#0ea5e9',
-        },
-        'ai-accent': {
-          start: '#7C3AED',
-          end: '#6366F1',
-        },
-        'ai-danger': {
-          start: '#f87171',
-          end: '#ef4444',
-        },
-        'ai-text': '#0f172a',
-        'ai-text-muted': '#475569',
+        canvas: '#f4f5f7',
+        surface: '#ffffff',
+        muted: '#edf1f4',
+        line: '#d7dde5',
+        ink: '#16181d',
+        subtext: '#626b77',
+        primary: '#1e7a6d',
+        accent: '#8e5a78',
+        success: '#2f7d57',
+        warning: '#b98524',
+        danger: '#b94c5d',
       },
       borderRadius: {
-        'ai-lg': '20px',
-        'ai-md': '16px',
-        'ai-sm': '12px',
+        ai: '8px',
       },
       fontFamily: {
         display: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
       },
-      backdropBlur: {
-        'ai': '18px',
-      },
       boxShadow: {
-        'soft': '0 18px 40px rgba(15, 23, 42, 0.12)',
-        'strong': '0 32px 60px rgba(15, 23, 42, 0.18)',
+        soft: '0 1px 2px rgba(22, 24, 29, 0.06)',
+        medium: '0 10px 30px rgba(22, 24, 29, 0.06)',
+        strong: '0 24px 50px rgba(22, 24, 29, 0.08)',
       },
-      // Responsive spacing utilities
       spacing: {
         'safe-x': 'clamp(1rem, 4vw, 2rem)',
         'safe-y': 'clamp(1.5rem, 5vh, 3rem)',
       },
-      // Max-width constraints to prevent bleeding
       maxWidth: {
-        'container': '1400px',  // Ultra-wide constraint
-        'content': '1200px',    // Main content width
-        'narrow': '800px',      // Forms, articles
+        container: '1400px',
+        content: '1200px',
+        narrow: '800px',
       },
       minHeight: {
         'touch': '44px',

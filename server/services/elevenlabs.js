@@ -2,6 +2,28 @@ import fetch from "node-fetch";
 import FormData from "form-data";
 import { ELEVENLABS_KEY } from "../config/env.js";
 
+let mockChunkCounter = 0;
+
+function isMockAiServicesEnabled() {
+    return process.env.MOCK_AI_SERVICES === "true" && process.env.ALLOW_DEV_TEST === "true";
+}
+
+function createMockTranscription(text) {
+    const words = String(text || "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word, index) => ({
+            word,
+            start: index * 0.42,
+            end: (index + 1) * 0.42
+        }));
+
+    return {
+        text,
+        words
+    };
+}
+
 export function extractMime(mime) {
     if (!mime) return 'audio/webm';
     return mime.split(';')[0].trim().toLowerCase();
@@ -9,6 +31,13 @@ export function extractMime(mime) {
 
 export async function transcribe(buf, format = 'audio/webm') {
     try {
+        if (isMockAiServicesEnabled()) {
+            mockChunkCounter += 1;
+            return createMockTranscription(
+                `Mock transcript chunk ${mockChunkCounter}. Testing one two three. Summary updates should continue while recording.`
+            );
+        }
+
         // Additional validation
         if (!buf || buf.length === 0) {
             return { text: "No audio data available", words: [] };

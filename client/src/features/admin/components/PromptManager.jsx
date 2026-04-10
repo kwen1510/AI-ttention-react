@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { FileText, ChevronDown, RefreshCw, Plus, Search, FlaskConical, Check } from 'lucide-react';
+import { FileText, ChevronDown, FlaskConical, Check } from 'lucide-react';
+import { Alert } from '../../../components/ui/alert.jsx';
+import { Button } from '../../../components/ui/button.jsx';
+import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
+import { Textarea } from '../../../components/ui/field.jsx';
 
 export function PromptManager({
     currentPrompt,
@@ -14,72 +18,54 @@ export function PromptManager({
     const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 mb-8">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full px-6 py-4 text-left hover:bg-gray-50 transition-colors duration-200"
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-sky-100 rounded-lg flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-sky-700" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-semibold text-gray-900">AI Summarization Prompts</h3>
-                            <p className="text-sm text-gray-600">Manage and customize AI prompts</p>
-                        </div>
-                    </div>
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <Panel padding="none">
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-6 text-left">
+                <div className="flex items-center justify-between gap-3">
+                    <PanelHeader
+                        className="w-full border-b-0 p-0"
+                        icon={FileText}
+                        title="Summary prompt"
+                        description="Adjust the live summarization instruction without changing session behavior."
+                    />
+                    <ChevronDown className={`h-5 w-5 text-[var(--text-muted)] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
             </button>
 
             {isOpen && (
-                <div className="border-t border-gray-200 p-6">
+                <div className="border-t border-[var(--border)] p-6">
                     <div className="space-y-4">
-                        <textarea
+                        <Textarea
                             value={currentPrompt}
                             onChange={(e) => onPromptChange(e.target.value)}
                             rows={4}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                            className="font-mono text-sm"
                             placeholder="Enter your custom prompt..."
                         />
 
-                        <div className="flex items-center justify-between">
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => onTest(currentPrompt)}
-                                    className="btn btn-muted text-xs px-4 py-2 flex items-center gap-2 bg-gray-100 hover:bg-gray-200 rounded"
-                                >
-                                    <FlaskConical className="w-3.5 h-3.5" />
+                        <div className="cluster justify-between">
+                            <div className="cluster">
+                                <Button onClick={() => onTest(currentPrompt)} variant="secondary" size="sm">
+                                    <FlaskConical className="h-3.5 w-3.5" />
                                     Test
-                                </button>
-                                <button
-                                    onClick={() => onSave(currentPrompt)}
-                                    className="btn btn-accent text-xs px-4 py-2 flex items-center gap-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded"
-                                >
-                                    <Check className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button onClick={() => onSave(currentPrompt)} variant="primary" size="sm">
+                                    <Check className="h-3.5 w-3.5" />
                                     Apply
-                                </button>
-                                <button
-                                    onClick={onReset}
-                                    className="text-xs text-gray-500 hover:text-gray-700 px-4 py-2"
-                                >
+                                </Button>
+                                <Button onClick={onReset} variant="ghost" size="sm">
                                     Reset Default
-                                </button>
+                                </Button>
                             </div>
                         </div>
 
                         {feedback && (
-                            <div className={`p-4 rounded-lg border ${feedback.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-                                    feedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-                                        'bg-blue-50 border-blue-200 text-blue-800'
-                                }`}>
-                                {feedback.message}
-                            </div>
+                            <Alert tone={feedback.type === 'error' ? 'danger' : feedback.type === 'success' ? 'success' : 'primary'}>
+                                <p>{feedback.message}</p>
+                            </Alert>
                         )}
                     </div>
                 </div>
             )}
-        </div>
+        </Panel>
     );
 }

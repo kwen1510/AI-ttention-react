@@ -26,11 +26,11 @@ function AppLayout() {
   const showSignOut = Boolean(user) && !isStudentRoute && !isStagingRoute;
 
   return (
-    <div className="min-h-screen flex flex-col bg-transparent">
+    <div className="app-shell flex min-h-screen flex-col">
       {!isStudentRoute && (
         <Navbar active={active} basePath={basePath} showModes={showModes} showSignOut={showSignOut} />
       )}
-      <main className="flex-1 w-full overflow-x-hidden">
+      <main className="app-main flex-1 overflow-x-hidden">
         <Outlet />
       </main>
     </div>

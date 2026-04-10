@@ -174,7 +174,7 @@ export function useStudentSocket(joinToken = '') {
                 code: normalizedCode || null,
                 group: parsedGroup
             };
-            socketRef.current.emit(token
+            socketRef.current.emit('join', token
                 ? {
                     code: normalizedCode || undefined,
                     group: parsedGroup

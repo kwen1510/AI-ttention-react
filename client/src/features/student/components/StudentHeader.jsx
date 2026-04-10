@@ -1,5 +1,7 @@
 import React from 'react';
-import { GraduationCap } from 'lucide-react';
+import { GraduationCap, TimerReset } from 'lucide-react';
+import { Panel } from '../../../components/ui/panel.jsx';
+import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
 
 export function StudentHeader({
     sessionCode,
@@ -7,7 +9,8 @@ export function StudentHeader({
     isConnected,
     isRecording,
     isPageVisible,
-    elapsedTime
+    elapsedTime,
+    uploadState = null
 }) {
     // Format elapsed time
     const formatTime = (seconds) => {
@@ -16,43 +19,65 @@ export function StudentHeader({
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    const formatClockTime = (timestamp) => {
+        if (!timestamp) return '';
+        return new Date(timestamp).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    };
+
+    const uploadPhase = uploadState?.phase || 'idle';
+    let uploadTone = 'neutral';
+    let uploadLabel = 'Awaiting first upload';
+
+    if (uploadPhase === 'uploading') {
+        uploadTone = 'primary';
+        uploadLabel = uploadState?.pendingUploads > 1
+            ? `Uploading ${uploadState.pendingUploads} chunks`
+            : 'Uploading chunk';
+    } else if (uploadPhase === 'finalizing') {
+        uploadTone = 'warning';
+        uploadLabel = 'Finalizing last chunk';
+    } else if (uploadPhase === 'error') {
+        uploadTone = 'danger';
+        uploadLabel = uploadState?.lastError || 'Upload failed';
+    } else if (uploadState?.lastUploadedAt) {
+        uploadTone = 'success';
+        uploadLabel = `Last upload ${formatClockTime(uploadState.lastUploadedAt)}`;
+    }
+
     return (
-        <div className="surface surface--padded surface--static flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <Panel padding="lg" className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-sm">
-                    <GraduationCap className="w-5 h-5 text-slate-700" />
+                <div className="ui-panel-heading__icon">
+                    <GraduationCap className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                    <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-3">
-                        AI(ttention)
-                        <span className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-ping-slow' : 'bg-red-400'}`} />
-                            <span className={`text-xs font-medium ${isConnected ? 'text-slate-700' : 'text-red-500'}`}>
-                                {isConnected ? 'Connected' : 'Disconnected'}
-                            </span>
-                        </span>
-                    </h2>
-                    <p className="text-sm text-slate-600">
-                        Session <span className="font-mono font-bold">{sessionCode || '-'}</span> •
-                        Group <span className="font-bold">{groupNumber || '-'}</span> •
-                        Elapsed <span className="font-mono font-bold">{formatTime(elapsedTime)}</span>
+                    <h2 className="text-lg font-semibold text-[var(--text)]">AI(ttention)</h2>
+                    <p className="text-sm copy-muted">
+                        Session <span className="copy-strong session-code-text text-xs tracking-[0.16em]">{sessionCode || '-'}</span>
+                        {' '}• Group <span className="copy-strong">{groupNumber || '-'}</span>
                     </p>
                 </div>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-                <div className={`flex items-center gap-2 px-4 py-2 rounded-full transition-colors ${isRecording
-                        ? (isPageVisible ? 'bg-red-100 text-red-800' : 'bg-sky-100 text-sky-800 animate-pulse')
-                        : 'bg-sky-100 text-sky-700'
-                    }`}>
-                    <span className={`w-2 h-2 rounded-full ${isRecording ? (isPageVisible ? 'bg-red-400' : 'bg-sky-400') : 'bg-sky-400'}`} />
-                    <span className="text-sm font-medium">
-                        {isRecording
-                            ? (isPageVisible ? 'Recording...' : 'Recording (Background)')
-                            : 'Waiting...'}
-                    </span>
-                </div>
+                <StatusBadge tone={isConnected ? 'success' : 'danger'} pulse={isConnected}>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                </StatusBadge>
+                <Badge
+                    tone={isRecording ? (isPageVisible ? 'danger' : 'warning') : 'neutral'}
+                    icon={TimerReset}
+                >
+                    {isRecording
+                        ? (isPageVisible ? 'Recording live' : 'Recording in background')
+                        : 'Waiting for teacher'}
+                </Badge>
+                <Badge tone={uploadTone}>{uploadLabel}</Badge>
+                <Badge tone="primary">{formatTime(elapsedTime)}</Badge>
             </div>
-        </div>
+        </Panel>
     );
 }

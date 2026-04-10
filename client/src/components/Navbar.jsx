@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "./AuthContext.jsx";
 import { buildModePath } from "../lib/stagingBypass.js";
+import { Button } from "./ui/button.jsx";
 
 const modeItems = [
   { key: "summary", path: "/admin", label: "Summary", icon: MessageSquare },
@@ -20,9 +21,6 @@ const modeItems = [
 
 function ModeButton({ item, isActive, onNavigate }) {
   const Icon = item.icon;
-  const baseClass =
-    "mode-btn flex-shrink-0 px-2 sm:px-3 md:px-4 py-2 rounded text-xs sm:text-sm font-medium transition-colors flex items-center justify-center min-h-touch min-w-touch";
-  const className = `${baseClass} ${isActive ? "bg-slate-100 text-black" : "text-black hover:bg-slate-100"}`;
 
   const handleClick = (e) => {
     e.preventDefault();
@@ -30,15 +28,17 @@ function ModeButton({ item, isActive, onNavigate }) {
   };
 
   return (
-    <button
+    <Button
       type="button"
+      size="sm"
+      variant={isActive ? "primary" : "ghost"}
       onClick={handleClick}
       aria-current={isActive ? "page" : undefined}
-      className={className}
+      className={isActive ? "app-nav__item app-nav__item--active" : "app-nav__item"}
     >
       <Icon className="w-4 h-4 mr-1 sm:mr-2" />
       <span className="truncate whitespace-nowrap">{item.label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -60,59 +60,40 @@ function Navbar({ active = "", basePath = "", showModes = true, showSignOut = tr
   );
 
   return (
-    <header className="gradient-bg text-black shadow-xl w-full">
-      <div className="max-w-container mx-auto px-4 sm:px-6 md:px-8 py-3 sm:py-4">
-        <div className="flex items-center justify-between gap-2 md:gap-4">
-          <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-4 min-w-0 flex-shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl flex items-center justify-center backdrop-blur-sm border border-slate-200">
-              <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6 text-slate-700" />
-            </div>
-            <div className="min-w-0">
-              <h1
-                className="truncate text-xl sm:text-2xl md:text-3xl"
-                style={{
-                  fontFamily:
-                    "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif",
-                  fontWeight: 700,
-                  letterSpacing: "-0.02em",
-                }}
-              >
-                AI(ttention)
-              </h1>
-            </div>
+    <header className="app-navbar">
+      <div className="app-navbar__inner">
+        <div className="app-navbar__brand min-w-0">
+          <div className="app-navbar__brand-mark">
+            <GraduationCap className="h-5 w-5" />
           </div>
+          <div className="min-w-0">
+            <div className="app-navbar__brand-title truncate">AI(ttention)</div>
+            <div className="app-navbar__brand-subtitle">Teacher workspace</div>
+          </div>
+        </div>
 
-          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1 justify-end">
-            {showModes && (
-              <div className="flex items-center gap-2 md:gap-3 min-w-0">
-                <span className="text-xs md:text-sm text-black/80 hidden md:inline flex-shrink-0">
-                  Modes:
-                </span>
-                <div className="flex bg-white rounded-lg p-1 gap-1 border border-slate-200 shadow-sm overflow-x-auto scrollbar-hide max-w-[calc(100vw-250px)] sm:max-w-none">
-                  {modes.map((item) => (
-                    <ModeButton
-                      key={item.key}
-                      item={item}
-                      isActive={item.isActive}
-                      onNavigate={handleModeNavigate}
-                    />
-                  ))}
-                </div>
+        <div className="cluster flex-1 justify-end">
+          {showModes && (
+            <div className="cluster min-w-0 flex-1 justify-end">
+              <div className="app-nav scrollbar-hide overflow-x-auto">
+                {modes.map((item) => (
+                  <ModeButton
+                    key={item.key}
+                    item={item}
+                    isActive={item.isActive}
+                    onNavigate={handleModeNavigate}
+                  />
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {showSignOut && (
-              <button
-                type="button"
-                onClick={() => signOut()}
-                className="flex-shrink-0 bg-white hover:bg-slate-50 text-black px-2 sm:px-3 md:px-4 py-2 rounded-lg transition-colors flex items-center text-xs sm:text-sm border border-slate-200 shadow-sm min-h-touch"
-              >
-                <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Sign out</span>
-                <span className="sm:hidden">Exit</span>
-              </button>
-            )}
-          </div>
+          {showSignOut && (
+            <Button type="button" variant="secondary" size="sm" onClick={() => signOut()}>
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </Button>
+          )}
         </div>
       </div>
     </header>

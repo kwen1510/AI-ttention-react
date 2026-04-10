@@ -1,9 +1,9 @@
 function FullScreenLoader() {
   return (
-    <div className="w-full h-full flex items-center justify-center py-24">
-      <div className="flex flex-col items-center gap-3 text-slate-600">
+    <div className="page-shell flex min-h-[50vh] items-center justify-center py-24">
+      <div className="ui-panel ui-panel--pad-lg flex min-w-[16rem] flex-col items-center gap-3 text-center">
         <svg
-          className="w-10 h-10 animate-spin text-slate-500"
+          className="h-10 w-10 animate-spin text-[var(--primary)]"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
@@ -22,7 +22,7 @@ function FullScreenLoader() {
             d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
           />
         </svg>
-        <p className="text-sm">Loading dashboard…</p>
+        <p className="text-sm copy-muted">Loading dashboard…</p>
       </div>
     </div>
   );

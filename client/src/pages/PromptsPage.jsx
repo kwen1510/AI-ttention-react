@@ -4,8 +4,12 @@ import { usePrompts } from '../hooks/usePrompts';
 import { PromptsList } from '../features/prompts/components/PromptsList';
 import { PromptModal } from '../features/prompts/components/PromptModal';
 import { PromptViewModal } from '../features/prompts/components/PromptViewModal';
-import { Plus, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { buildModePath, getStagingBasePath } from '../lib/stagingBypass.js';
+import { Alert } from '../components/ui/alert.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { Field, Input, Select } from '../components/ui/field.jsx';
+import { Panel, SectionHeader } from '../components/ui/panel.jsx';
 
 function PromptsPage() {
   const location = useLocation();
@@ -120,133 +124,107 @@ function PromptsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Prompt Library</h1>
-              <p className="text-sm text-gray-500">Discover and share AI prompts for your classroom</p>
+    <div className="min-h-screen pb-20">
+      <main className="page-shell page-shell--fluid stack">
+        <SectionHeader
+          eyebrow="Teacher workspace"
+          title="Prompt library"
+          description="Create reusable summary and checklist prompts, refine them, and launch them directly into a session."
+          actions={(
+            <div className="cluster">
+              <Button onClick={refresh} variant="secondary" size="sm">
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </Button>
+              <Button onClick={openCreate} variant="primary">
+                <Plus className="h-4 w-4" />
+                Create Prompt
+              </Button>
             </div>
-            <button
-              onClick={openCreate}
-              className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Prompt
-            </button>
-          </div>
+          )}
+        />
 
-          {/* Filters */}
-          <div className="mt-6 flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
+        <Panel padding="lg" tone="subtle">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_14rem_12rem]">
+            <Field label="Search">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Input
+                  type="text"
+                  placeholder="Search prompts..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  className="pl-10"
+                />
               </div>
-              <input
-                type="text"
-                placeholder="Search prompts..."
-                value={filters.search}
-                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              />
-            </div>
-            <div className="flex gap-4">
-              <select
+            </Field>
+            <Field label="Category">
+              <Select
                 value={filters.category}
                 onChange={(e) => setFilters(prev => ({ ...prev, category: e.target.value }))}
-                className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
               >
-                <option value="">All Categories</option>
+                <option value="">All categories</option>
                 {availableCategories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
-              </select>
-              <select
+              </Select>
+            </Field>
+            <Field label="Mode">
+              <Select
                 value={filters.mode}
                 onChange={(e) => setFilters(prev => ({ ...prev, mode: e.target.value }))}
-                className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
               >
-                <option value="">All Modes</option>
+                <option value="">All modes</option>
                 <option value="summary">Summary</option>
                 <option value="checkbox">Checkbox</option>
-              </select>
-            </div>
+              </Select>
+            </Field>
           </div>
-        </div>
-      </div>
+        </Panel>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
+          <Alert tone="danger" title="Unable to load prompts">
+            <p>{error}</p>
+          </Alert>
         )}
 
         {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
+          <Panel padding="lg" className="flex h-64 items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-[var(--surface-muted)] border-t-[var(--primary)]" />
+              <p className="text-sm">Loading prompt library…</p>
+            </div>
+          </Panel>
         ) : (
           <>
             <PromptsList prompts={prompts} onView={openView} />
 
-            {/* Pagination */}
             {pagination.total > 0 && (
-              <div className="mt-8 flex items-center justify-between border-t border-gray-200 pt-4">
-                <div className="flex-1 flex justify-between sm:hidden">
-                  <button
+              <div className="ui-toolbar">
+                <div className="text-sm copy-muted">
+                  Showing <span className="copy-strong">{pagination.offset + 1}</span> to{' '}
+                  <span className="copy-strong">{Math.min(pagination.offset + pagination.limit, pagination.total)}</span> of{' '}
+                  <span className="copy-strong">{pagination.total}</span> prompts
+                </div>
+                <div className="cluster">
+                  <Button
                     onClick={() => handlePageChange('prev')}
                     disabled={pagination.offset === 0}
-                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    variant="secondary"
+                    size="sm"
                   >
+                    <ChevronLeft className="h-4 w-4" />
                     Previous
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => handlePageChange('next')}
                     disabled={!pagination.hasMore}
-                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    variant="primary"
+                    size="sm"
                   >
                     Next
-                  </button>
-                </div>
-                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm text-gray-700">
-                      Showing <span className="font-medium">{pagination.offset + 1}</span> to <span className="font-medium">{Math.min(pagination.offset + pagination.limit, pagination.total)}</span> of <span className="font-medium">{pagination.total}</span> results
-                    </p>
-                  </div>
-                  <div>
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                      <button
-                        onClick={() => handlePageChange('prev')}
-                        disabled={pagination.offset === 0}
-                        className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <span className="sr-only">Previous</span>
-                        <ChevronLeft className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => handlePageChange('next')}
-                        disabled={!pagination.hasMore}
-                        className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        <span className="sr-only">Next</span>
-                        <ChevronRight className="h-5 w-5" />
-                      </button>
-                    </nav>
-                  </div>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             )}
@@ -254,7 +232,6 @@ function PromptsPage() {
         )}
       </main>
 
-      {/* Modals */}
       <PromptModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}

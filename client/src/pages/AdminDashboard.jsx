@@ -6,6 +6,7 @@ import { SessionHeader } from '../features/admin/components/SessionHeader';
 import { PromptManager } from '../features/admin/components/PromptManager';
 import { GroupGrid } from '../features/admin/components/GroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
+import { SectionHeader } from '../components/ui/panel.jsx';
 
 function AdminDashboard() {
   const [searchParams] = useSearchParams();
@@ -114,7 +115,7 @@ function AdminDashboard() {
   };
 
   return (
-    <div className="admin-dashboard-wrapper min-h-screen bg-gray-50 pb-20">
+    <div className="admin-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
         isConnected={isConnected}
@@ -126,7 +127,13 @@ function AdminDashboard() {
         onIntervalChange={setInterval}
       />
 
-      <main className="page-shell page-shell--fluid stack max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <main className="page-shell page-shell--fluid stack">
+        <SectionHeader
+          eyebrow="Teacher workspace"
+          title="Live summary session"
+          description="Monitor group participation, review transcript flow, and refine the running summary prompt in one place."
+        />
+
         <PromptManager
           currentPrompt={currentPrompt}
           onPromptChange={setCurrentPrompt}

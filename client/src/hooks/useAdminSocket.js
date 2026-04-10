@@ -85,7 +85,9 @@ export function useAdminSocket() {
                     transcripts: [],
                     summary: null,
                     stats: {},
-                    uploadErrors: 0
+                    uploadErrors: 0,
+                    uploadStatus: null,
+                    isActive: true
                 };
 
                 // Update transcripts
@@ -107,7 +109,7 @@ export function useAdminSocket() {
                     cumulativeTranscript: data.cumulativeTranscript || existing.cumulativeTranscript,
                     summary: data.summary ? { text: data.summary, timestamp: Date.now() } : existing.summary,
                     stats: data.stats || existing.stats,
-                    isActive: data.isActive,
+                    isActive: typeof data.isActive === 'boolean' ? data.isActive : existing.isActive,
                     lastUpdate: Date.now()
                 });
 
@@ -137,11 +139,42 @@ export function useAdminSocket() {
                     transcripts: [],
                     summary: null,
                     stats: {},
-                    uploadErrors: 0
+                    uploadErrors: 0,
+                    uploadStatus: null
                 };
 
                 newGroups.set(group, {
                     ...existing,
+                    isActive: true,
+                    lastUpdate: Date.now()
+                });
+
+                return newGroups;
+            });
+        };
+
+        const handleUploadStatus = (data) => {
+            setGroups(prev => {
+                const newGroups = new Map(prev);
+                const existing = newGroups.get(data.group) || {
+                    transcripts: [],
+                    summary: null,
+                    stats: {},
+                    uploadErrors: 0,
+                    uploadStatus: null,
+                    isActive: true
+                };
+
+                newGroups.set(data.group, {
+                    ...existing,
+                    uploadStatus: {
+                        phase: data.phase || 'idle',
+                        pendingUploads: Number(data.pendingUploads || 0),
+                        chunkSize: Number(data.chunkSize || 0),
+                        lastUploadedAt: data.lastUploadedAt || existing.uploadStatus?.lastUploadedAt || null,
+                        lastError: data.lastError || null,
+                        timestamp: data.timestamp || Date.now()
+                    },
                     isActive: true,
                     lastUpdate: Date.now()
                 });
@@ -170,12 +203,14 @@ export function useAdminSocket() {
 
         socket.on('admin_update', handleAdminUpdate);
         socket.on('upload_error', handleUploadError);
+        socket.on('upload_status', handleUploadStatus);
         socket.on('student_joined', handleStudentJoined);
         socket.on('student_left', handleStudentLeft);
 
         return () => {
             socket.off('admin_update', handleAdminUpdate);
             socket.off('upload_error', handleUploadError);
+            socket.off('upload_status', handleUploadStatus);
             socket.off('student_joined', handleStudentJoined);
             socket.off('student_left', handleStudentLeft);
         };

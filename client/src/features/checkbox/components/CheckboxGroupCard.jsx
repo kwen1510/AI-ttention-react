@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { CheckCircle, Circle, ChevronDown, ChevronUp, Send, Check } from 'lucide-react';
+import { CheckCircle, Circle, ChevronDown, ChevronUp, Send, Check, ClipboardList } from 'lucide-react';
+import { Button } from '../../../components/ui/button.jsx';
+import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
+import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
+import { getChecklistTone } from '../../../lib/statusTone.js';
 
 export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -9,132 +13,104 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
     const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
     return (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-xl">
-            {/* Header */}
-            <div className="p-4 sm:p-6 bg-gray-100 text-black border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center font-bold text-lg border border-gray-300">
-                            {groupNumber}
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-bold">Group {groupNumber}</h3>
-                            <p className="text-sm opacity-90">{completedCount}/{totalCount} criteria completed</p>
-                        </div>
-                    </div>
-                    <button
+        <Panel padding="lg" className="h-full">
+            <PanelHeader
+                icon={ClipboardList}
+                title={`Group ${groupNumber}`}
+                description={`${completedCount}/${totalCount} criteria completed`}
+                actions={(
+                    <Button
                         onClick={() => onRelease(groupNumber)}
-                        className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 ${data.isReleased
-                                ? 'bg-green-500 hover:bg-green-600 text-white border border-green-600'
-                                : 'bg-white hover:bg-slate-50 text-black border border-slate-200'
-                            }`}
+                        size="sm"
+                        variant={data.isReleased ? 'secondary' : 'primary'}
                     >
-                        {data.isReleased ? <Check className="w-3 h-3" /> : <Send className="w-3 h-3" />}
-                        <span>{data.isReleased ? 'Checklist Released' : 'Release Checklist'}</span>
-                    </button>
+                        {data.isReleased ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                        <span>{data.isReleased ? 'Released' : 'Release checklist'}</span>
+                    </Button>
+                )}
+            >
+                <div className="cluster mt-2">
+                    <Badge tone="neutral">{groupNumber}</Badge>
+                    <StatusBadge tone={data.isReleased ? 'success' : 'warning'}>
+                        {data.isReleased ? 'Visible to students' : 'Not released'}
+                    </StatusBadge>
                 </div>
-                <div className="mt-3">
-                    <div className="flex items-center justify-between text-sm mb-2">
-                        <span>Progress</span>
-                        <span>{completionRate}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                            className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${completionRate}%` }}
-                        ></div>
-                    </div>
-                </div>
-            </div>
+            </PanelHeader>
 
-            {/* Checkbox List */}
-            <div className="p-6">
+            <div className="mt-6 space-y-6">
+                <section>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="copy-muted">Progress</span>
+                        <span className="copy-strong">{completionRate}%</span>
+                    </div>
+                    <div className="ui-progress">
+                        <div className="ui-progress__fill" style={{ width: `${completionRate}%` }} />
+                    </div>
+                </section>
+
                 <div className="space-y-3">
                     {data.checkboxes.map((checkbox) => {
-                        let bgColor = 'bg-gray-50';
-                        let borderColor = 'border-gray-200';
-                        let checkColor = 'text-gray-400';
-                        let textColor = 'text-gray-700';
-
-                        if (checkbox.status === 'green') {
-                            bgColor = 'bg-green-50';
-                            borderColor = 'border-green-200';
-                            checkColor = 'text-green-600';
-                            textColor = 'text-green-800';
-                        } else if (checkbox.status === 'red') {
-                            bgColor = 'bg-red-50';
-                            borderColor = 'border-red-200';
-                            checkColor = 'text-red-600';
-                            textColor = 'text-red-800';
-                        }
-
+                        const tone = getChecklistTone(checkbox.status);
                         return (
-                            <div key={checkbox.id} className={`flex items-start space-x-3 p-3 ${bgColor} ${borderColor} border rounded-lg`}>
-                                <div className="flex-shrink-0 mt-1">
-                                    {checkbox.completed ?
-                                        <CheckCircle className={`w-5 h-5 ${checkColor}`} /> :
-                                        <Circle className={`w-5 h-5 ${checkColor}`} />
-                                    }
+                            <div key={checkbox.id} className="surface-list__item flex items-start gap-3">
+                                <div className="mt-0.5 flex-shrink-0">
+                                    {checkbox.completed ? (
+                                        <CheckCircle className="h-5 w-5 text-[var(--success)]" />
+                                    ) : (
+                                        <Circle className="h-5 w-5 text-[var(--text-muted)]" />
+                                    )}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className={`text-sm font-medium ${textColor} mb-1`}>
-                                        {checkbox.description}
+                                <div className="min-w-0 flex-1 space-y-2">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <p className="text-sm font-medium text-[var(--text)]">
+                                            {checkbox.description}
+                                        </p>
+                                        <Badge tone={tone} size="sm">
+                                            {checkbox.status || 'pending'}
+                                        </Badge>
                                     </div>
-                                    <div className="text-xs text-gray-600 italic mb-2">
-                                        Rubric: {checkbox.rubric}
-                                    </div>
-                                    {checkbox.quote && (
-                                        <div className={`text-xs ${textColor} bg-white bg-opacity-50 rounded px-2 py-1 border-l-2 ${checkbox.status === 'green' ? 'border-green-400' :
-                                                checkbox.status === 'red' ? 'border-red-400' : 'border-gray-400'
-                                            }`}>
+                                    <p className="text-xs copy-muted">Rubric: {checkbox.rubric}</p>
+                                    {checkbox.quote ? (
+                                        <div className="ui-panel ui-panel--subtle ui-panel--pad-sm text-xs text-[var(--text)]">
                                             "{checkbox.quote}"
                                         </div>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         );
                     })}
                 </div>
 
-                {/* Transcripts */}
                 {data.transcripts.length > 0 && (
-                    <div className="mt-6 pt-4 border-t border-gray-100">
-                        <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-medium text-gray-700">Discussion Transcripts ({data.transcripts.length})</h4>
-                            <button
-                                onClick={() => setIsExpanded(!isExpanded)}
-                                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors flex items-center"
-                            >
-                                {isExpanded ? <ChevronUp className="w-3 h-3 mr-1" /> : <ChevronDown className="w-3 h-3 mr-1" />}
-                                {isExpanded ? 'Show Less' : 'Show All'}
-                            </button>
+                    <section className="surface-list">
+                        <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-[var(--text)]">
+                                Discussion transcript ({data.transcripts.length})
+                            </h4>
+                            <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
+                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                <span>{isExpanded ? 'Show less' : 'Show full transcript'}</span>
+                            </Button>
                         </div>
 
-                        {/* Latest Transcript */}
-                        <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-blue-700">Latest</span>
-                                <span className="text-xs text-blue-600">Segment {data.transcripts.length}</span>
+                        <div className="surface-list__item text-sm">
+                            <div className="mb-2 flex items-center justify-between">
+                                <Badge tone="primary" size="sm">Latest</Badge>
+                                <span className="text-xs copy-muted">Segment {data.transcripts.length}</span>
                             </div>
-                            <div className="text-gray-800 whitespace-pre-wrap break-words">
+                            <div className="copy-strong whitespace-pre-wrap break-words">
                                 {data.transcripts[data.transcripts.length - 1].text}
                             </div>
                         </div>
 
-                        {/* All Transcripts */}
-                        {isExpanded && (
-                            <div className="text-sm bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-medium text-gray-600">Full Transcript</span>
-                                </div>
-                                <div className="text-gray-800 whitespace-pre-wrap break-words">
-                                    {data.transcripts.map(t => t.text).join(' ')}
-                                </div>
+                        {isExpanded ? (
+                            <div className="surface-list__item text-sm copy-strong whitespace-pre-wrap break-words">
+                                {data.transcripts.map(t => t.text).join(' ')}
                             </div>
-                        )}
-                    </div>
+                        ) : null}
+                    </section>
                 )}
             </div>
-        </div>
+        </Panel>
     );
 }

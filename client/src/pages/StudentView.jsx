@@ -8,6 +8,7 @@ import { TranscriptionPanel } from '../features/student/components/Transcription
 import { SummaryPanel } from '../features/student/components/SummaryPanel';
 import { ChecklistPanel } from '../features/student/components/ChecklistPanel';
 import { extractSessionCodeFromJoinToken } from '../lib/joinToken.js';
+import { Alert } from '../components/ui/alert.jsx';
 
 function StudentView() {
   const location = useLocation();
@@ -36,10 +37,12 @@ function StudentView() {
     isRecording,
     startRecording,
     stopRecording,
-    isPageVisible
+    isPageVisible,
+    uploadState
   } = useAudioRecorder(
     sessionInfo.code,
     sessionInfo.group,
+    socket,
     setUploadError,
     joinToken
   );
@@ -47,6 +50,7 @@ function StudentView() {
   // Handle recording state from socket
   useEffect(() => {
     if (recordingState.isRecording && !isRecording) {
+      setUploadError(null);
       startRecording(recordingState.interval);
     } else if (!recordingState.isRecording && isRecording) {
       stopRecording();
@@ -87,8 +91,8 @@ function StudentView() {
   }
 
   return (
-    <div className="student-view-wrapper min-h-screen bg-gray-50 pb-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="student-view-wrapper min-h-screen pb-20">
+      <div className="page-shell page-shell--fluid space-y-6 py-6">
         <StudentHeader
           sessionCode={sessionInfo.code}
           groupNumber={sessionInfo.group}
@@ -96,33 +100,21 @@ function StudentView() {
           isRecording={isRecording}
           isPageVisible={isPageVisible}
           elapsedTime={elapsedTime}
+          uploadState={uploadState}
         />
 
         {uploadError && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg shadow-sm">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">
-                  Upload Error: {uploadError}
-                </p>
-              </div>
-            </div>
-          </div>
+          <Alert tone="danger" title="Upload error">
+            <p>{uploadError}</p>
+          </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-200px)]">
-          {/* Left Column: Transcription */}
-          <div className="h-full">
-            <TranscriptionPanel transcription={transcription} />
+        <div className="grid min-h-[calc(100vh-15rem)] grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="min-h-[24rem]">
+            <TranscriptionPanel transcription={transcription} uploadState={uploadState} />
           </div>
 
-          {/* Right Column: Summary or Checklist */}
-          <div className="h-full">
+          <div className="min-h-[24rem]">
             {sessionInfo.mode === 'checkbox' ? (
               <ChecklistPanel
                 checklist={checklist}

@@ -50,6 +50,7 @@ import {
 const router = express.Router();
 const db = createSupabaseDb();
 const SESSION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const FINAL_UPLOAD_GRACE_MS = 15_000;
 
 router.use(optionalTeacherContext);
 
@@ -139,14 +140,14 @@ export function validateStudentUploadRequest({ file, joinToken, sessionCode, gro
     }
 }
 
-async function resolveJoinableSession(joinToken) {
+async function resolveJoinableSession(joinToken, options = {}) {
     const payload = verifyJoinToken(joinToken);
     const sessionCode = payload.sessionCode;
     const session = await db.collection("sessions").findOne({ code: sessionCode });
     const sessionState = activeSessions.get(sessionCode);
     return {
         payload,
-        ...assertJoinableSessionState(sessionCode, sessionState, session)
+        ...assertJoinableSessionState(sessionCode, sessionState, session, options)
     };
 }
 
@@ -416,7 +417,9 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             persisted: true,
             mode: requestedMode,
             groups: memory?.groups || new Map(),
-            checkbox: memory?.checkbox
+            checkbox: memory?.checkbox,
+            acceptUploadsUntil: null,
+            stopRequestedAt: null
         });
 
         const io = req.app.get("io");
@@ -442,6 +445,7 @@ router.post("/session/:code/stop", async (req, res) => {
         const { code } = req.params;
         const { session, memory } = await getOwnedSessionContext(code, teacher.id);
         const endedAt = Date.now();
+        const acceptUploadsUntil = endedAt + FINAL_UPLOAD_GRACE_MS;
 
         if (session) {
             const startTime = Number(session.start_time || memory?.startTime || endedAt);
@@ -464,7 +468,24 @@ router.post("/session/:code/stop", async (req, res) => {
         if (memory) {
             activeSessions.set(code, {
                 ...memory,
-                active: false
+                active: false,
+                acceptUploadsUntil,
+                stopRequestedAt: endedAt
+            });
+        } else if (session) {
+            activeSessions.set(code, {
+                id: session._id,
+                code,
+                ownerId: teacher.id,
+                active: false,
+                interval: session.interval_ms || 30000,
+                startTime: session.start_time || null,
+                created_at: session.created_at || endedAt,
+                persisted: true,
+                mode: session.mode || "summary",
+                groups: new Map(),
+                acceptUploadsUntil,
+                stopRequestedAt: endedAt
             });
         }
 
@@ -788,7 +809,9 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
 
         if (joinToken) {
             try {
-                const resolved = await resolveJoinableSession(joinToken);
+                const resolved = await resolveJoinableSession(joinToken, {
+                    allowUploadGrace: true
+                });
                 session = resolved.sessionRecord;
                 memory = resolved.sessionState;
                 resolvedSessionCode = resolved.sessionCode;
@@ -814,7 +837,13 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
                 return res.status(404).json({ error: "Active session not found" });
             }
 
-            if (!(session?.active || memory?.active)) {
+            const canAcceptUpload = Boolean(
+                session?.active ||
+                memory?.active ||
+                (Number.isFinite(Number(memory?.acceptUploadsUntil)) && Number(memory.acceptUploadsUntil) >= Date.now())
+            );
+
+            if (!canAcceptUpload) {
                 return res.json({
                     success: true,
                     skipped: true,
@@ -1036,6 +1065,7 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
         });
         io?.to(resolvedSessionCode).emit("admin_update", {
             group: groupNumber,
+            isActive: true,
             latestTranscript: text,
             cumulativeTranscript: fullText,
             transcriptDuration: duration,
