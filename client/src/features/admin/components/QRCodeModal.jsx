@@ -13,6 +13,7 @@ import {
 export function QRCodeModal({ isOpen, onClose, sessionCode }) {
     const qrRef = useRef(null);
     const [joinUrl, setJoinUrl] = useState('');
+    const [qrUrl, setQrUrl] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
@@ -25,6 +26,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
 
         let isCancelled = false;
         setJoinUrl(fallbackJoinUrl);
+        setQrUrl(fallbackJoinUrl);
         setError('');
         setIsLoading(true);
 
@@ -41,11 +43,13 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                 const data = await response.json();
                 if (!isCancelled && data?.url) {
                     setJoinUrl(data.url);
+                    setQrUrl(fallbackJoinUrl);
                 }
             } catch (err) {
                 if (!isCancelled) {
-                    console.error('Failed to load secure join link:', err);
+                    console.error('Failed to load direct join link:', err);
                     setError('Direct join link unavailable. Using the standard session code link instead.');
+                    setQrUrl(fallbackJoinUrl);
                 }
             } finally {
                 if (!isCancelled) {
@@ -62,16 +66,27 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
     }, [fallbackJoinUrl, isOpen, sessionCode]);
 
     useEffect(() => {
-        const targetUrl = joinUrl || fallbackJoinUrl;
+        const targetUrl = qrUrl || fallbackJoinUrl;
         if (isOpen && sessionCode && targetUrl && window.QRCode && qrRef.current) {
             qrRef.current.innerHTML = '';
-            new window.QRCode(qrRef.current, {
-                text: targetUrl,
-                width: 200,
-                height: 200
-            });
+            try {
+                new window.QRCode(qrRef.current, {
+                    text: targetUrl,
+                    width: 200,
+                    height: 200,
+                    correctLevel: window.QRCode.CorrectLevel?.L
+                });
+            } catch (err) {
+                console.error('Failed to render join QR code:', err);
+                if (targetUrl !== fallbackJoinUrl) {
+                    setQrUrl(fallbackJoinUrl);
+                    setError('QR code switched to the compact session-code link for reliability.');
+                } else {
+                    setError('Unable to render the QR code. Use the copy button instead.');
+                }
+            }
         }
-    }, [fallbackJoinUrl, isOpen, joinUrl, sessionCode]);
+    }, [fallbackJoinUrl, isOpen, qrUrl, sessionCode]);
 
     const copyLink = async () => {
         const url = joinUrl || fallbackJoinUrl;
@@ -86,7 +101,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                 <DialogHeader>
                     <DialogTitle>Student join link</DialogTitle>
                     <DialogDescription>
-                        Students can open this link and choose their group number. The student page does not require teacher sign-in.
+                        Scan the QR code for the compact session link, or copy the direct join link below. Students can choose their group number without teacher sign-in.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -122,6 +137,12 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                             Copy
                         </Button>
                     </div>
+
+                    {joinUrl && joinUrl !== fallbackJoinUrl ? (
+                        <p className="text-xs copy-muted">
+                            The QR code uses the shorter session-code link for reliable scanning. The copied link opens the direct join flow.
+                        </p>
+                    ) : null}
                 </div>
             </DialogContent>
         </Dialog>
