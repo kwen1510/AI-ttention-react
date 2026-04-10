@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
+import { createAppSocket } from '../lib/socketClient.js';
 
 export function useStudentSocket(joinToken = '') {
     const socketRef = useRef(null);
@@ -29,13 +29,13 @@ export function useStudentSocket(joinToken = '') {
     useEffect(() => {
         const token = String(joinToken || '').trim();
         const socket = token
-            ? io({
+            ? createAppSocket({
                 auth: {
                     type: 'student',
                     joinToken: token
                 }
             })
-            : io();
+            : createAppSocket();
         socketRef.current = socket;
 
         socket.on('connect', () => {

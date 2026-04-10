@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
 import { useAuth } from '../components/AuthContext.jsx';
+import { createAppSocket } from '../lib/socketClient.js';
 
 export function useAdminSocket() {
     const { session, isStagingBypass } = useAuth();
@@ -21,7 +21,7 @@ export function useAdminSocket() {
             return undefined;
         }
 
-        const socket = io({
+        const socket = createAppSocket({
             auth: isStagingBypass
                 ? {
                     type: 'teacher',
