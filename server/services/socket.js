@@ -53,7 +53,7 @@ export async function authenticateSocketPrincipal(auth = {}) {
     if (auth.stagingBypass && isStagingAuthBypassEnabled()) {
         return {
             kind: "teacher",
-            user: createStagingBypassTeacherPrincipal()
+            user: await createStagingBypassTeacherPrincipal()
         };
     }
 

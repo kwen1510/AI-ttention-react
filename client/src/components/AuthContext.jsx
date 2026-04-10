@@ -23,6 +23,7 @@ function needsAuth(input) {
   if (!input) return false;
   const resolveUrl = (value) => {
     if (typeof value === 'string') return value;
+    if (typeof URL !== 'undefined' && value instanceof URL) return value.toString();
     if (typeof Request !== 'undefined' && value instanceof Request) return value.url;
     return null;
   };
@@ -48,6 +49,7 @@ export function AuthProvider({ children }) {
   const [teacherLoading, setTeacherLoading] = useState(true);
   const [isTeacher, setIsTeacher] = useState(false);
   const [teacherProfile, setTeacherProfile] = useState(null);
+  const [fetchReady, setFetchReady] = useState(typeof window === 'undefined');
 
   useEffect(() => {
     if (isStagingBypass) {
@@ -166,6 +168,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const originalFetch = window.fetch.bind(window);
+    setFetchReady(false);
 
     window.fetch = async (input, init = {}) => {
       if (needsAuth(input)) {
@@ -196,8 +199,11 @@ export function AuthProvider({ children }) {
       return originalFetch(input, init);
     };
 
+    setFetchReady(true);
+
     return () => {
       window.fetch = originalFetch;
+      setFetchReady(false);
     };
   }, [isStagingBypass, session, supabase]);
 
@@ -207,14 +213,14 @@ export function AuthProvider({ children }) {
       config,
       session,
       user,
-      loading: isStagingBypass ? false : sessionLoading || teacherLoading,
+      loading: sessionLoading || teacherLoading || !fetchReady,
       isTeacher,
       isStagingBypass,
       teacherLoading,
       teacherProfile,
       signOut: () => (supabase ? supabase.auth.signOut() : Promise.resolve()),
     }),
-    [config, isStagingBypass, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
+    [config, fetchReady, isStagingBypass, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

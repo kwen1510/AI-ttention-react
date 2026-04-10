@@ -36,16 +36,32 @@ function CheckboxDashboard() {
 
   // Initialize session
   useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+
     const initSession = async () => {
       try {
-        const res = await fetch('/api/new-session?mode=checkbox');
+        const res = await fetch('/api/new-session?mode=checkbox', {
+          signal: controller.signal
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to create session (${res.status})`);
+        }
         const data = await res.json();
         joinSession(data.code);
       } catch (err) {
+        if (disposed || controller.signal.aborted || err?.name === 'AbortError' || err?.message === 'Failed to fetch') {
+          return;
+        }
         console.error('Failed to create session:', err);
       }
     };
     initSession();
+
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
   }, [joinSession]);
 
   useEffect(() => {

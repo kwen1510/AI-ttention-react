@@ -30,6 +30,10 @@ export function getJoinTokenSecret() {
         return process.env.SESSION_JOIN_SECRET;
     }
 
+    if (process.env.STAGING_AUTH_BYPASS === "true") {
+        return DEV_JOIN_SECRET;
+    }
+
     if (process.env.NODE_ENV === "production") {
         throw createJoinTokenError("SESSION_JOIN_SECRET is not configured", 500);
     }

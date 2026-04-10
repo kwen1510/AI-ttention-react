@@ -1,6 +1,7 @@
 import { supabase } from "../db/supabaseClient.js";
 
 let authTestOverrides = null;
+let stagingBypassTeacherPromise = null;
 const STAGING_BYPASS_HEADER = "x-staging-auth-bypass";
 
 function createAuthError(message, status = 401) {
@@ -177,17 +178,109 @@ function readHeaderValue(headers, name) {
     return String(value || "");
 }
 
-export function createStagingBypassTeacherPrincipal() {
+async function findAuthUserByEmail(email) {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+        return null;
+    }
+
+    let page = 1;
+    while (page <= 10) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) {
+            throw error;
+        }
+
+        const match = data?.users?.find((user) => String(user.email || "").trim().toLowerCase() === normalizedEmail);
+        if (match) {
+            return match;
+        }
+
+        if (!data?.nextPage || page >= Number(data.lastPage || 0)) {
+            break;
+        }
+
+        page = data.nextPage;
+    }
+
+    return null;
+}
+
+async function resolveStagingBypassTeacherIdentity() {
     const email = process.env.STAGING_BYPASS_TEACHER_EMAIL || "staging-teacher@example.com";
-    const userId = process.env.STAGING_BYPASS_TEACHER_ID || "staging-teacher";
+    const configuredUserId = String(process.env.STAGING_BYPASS_TEACHER_ID || "").trim();
+
+    if (process.env.NODE_ENV === "test" || authTestOverrides) {
+        return {
+            id: configuredUserId || "00000000-0000-4000-8000-000000000001",
+            email
+        };
+    }
+
+    if (configuredUserId) {
+        return {
+            id: configuredUserId,
+            email
+        };
+    }
+
+    if (!stagingBypassTeacherPromise) {
+        stagingBypassTeacherPromise = (async () => {
+            const existingUser = await findAuthUserByEmail(email);
+            if (existingUser?.id) {
+                return {
+                    id: existingUser.id,
+                    email: existingUser.email || email
+                };
+            }
+
+            const { data, error } = await supabase.auth.admin.createUser({
+                email,
+                email_confirm: true,
+                user_metadata: {
+                    stagingBypass: true
+                },
+                app_metadata: {
+                    role: "teacher",
+                    stagingBypass: true
+                }
+            });
+
+            if (error) {
+                const existingAfterError = await findAuthUserByEmail(email);
+                if (existingAfterError?.id) {
+                    return {
+                        id: existingAfterError.id,
+                        email: existingAfterError.email || email
+                    };
+                }
+
+                throw error;
+            }
+
+            return {
+                id: data.user.id,
+                email: data.user.email || email
+            };
+        })().catch((error) => {
+            stagingBypassTeacherPromise = null;
+            throw error;
+        });
+    }
+
+    return stagingBypassTeacherPromise;
+}
+
+export async function createStagingBypassTeacherPrincipal() {
+    const identity = await resolveStagingBypassTeacherIdentity();
 
     return {
-        id: userId,
-        email,
+        id: identity.id,
+        email: identity.email,
         role: "teacher",
         teacherAccess: {
-            user_id: userId,
-            email,
+            user_id: identity.id,
+            email: identity.email,
             role: "teacher",
             active: true,
             source: "staging-bypass"
@@ -195,7 +288,7 @@ export function createStagingBypassTeacherPrincipal() {
     };
 }
 
-export function authenticateStagingBypassRequest(req) {
+export async function authenticateStagingBypassRequest(req) {
     if (!isStagingAuthBypassEnabled()) {
         return null;
     }
@@ -217,7 +310,7 @@ export async function authenticateTeacher(req) {
         throw req.teacherAuthError;
     }
 
-    const bypassTeacher = authenticateStagingBypassRequest(req);
+    const bypassTeacher = await authenticateStagingBypassRequest(req);
     if (bypassTeacher) {
         req.teacher = bypassTeacher;
         req.authToken = null;
@@ -243,7 +336,7 @@ export async function optionalTeacherContext(req, _res, next) {
         return;
     }
 
-    const bypassTeacher = authenticateStagingBypassRequest(req);
+    const bypassTeacher = await authenticateStagingBypassRequest(req);
     if (bypassTeacher) {
         req.authToken = null;
         req.teacher = bypassTeacher;

@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePrompts } from '../hooks/usePrompts';
 import { PromptsList } from '../features/prompts/components/PromptsList';
 import { PromptModal } from '../features/prompts/components/PromptModal';
 import { PromptViewModal } from '../features/prompts/components/PromptViewModal';
 import { Plus, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { buildModePath, getStagingBasePath } from '../lib/stagingBypass.js';
 
 function PromptsPage() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const basePath = getStagingBasePath(location.pathname);
   const {
     prompts,
     loading,
@@ -53,10 +56,10 @@ function PromptsPage() {
     }
   };
 
-  const handleClone = async (prompt) => {
-    const authorName = prompt('Enter your name for the cloned prompt:', 'Anonymous Teacher');
+  const handleClone = async (promptRecord) => {
+    const authorName = window.prompt('Enter your name for the cloned prompt:', 'Anonymous Teacher');
     if (authorName) {
-      const success = await clonePrompt(prompt._id, authorName);
+      const success = await clonePrompt(promptRecord._id, authorName);
       if (success) {
         setIsViewModalOpen(false);
         setSelectedPrompt(null);
@@ -91,9 +94,9 @@ function PromptsPage() {
         if (criteria.length > 0) params.set('criteria', criteria.join('\n'));
         if (prompt.strictness) params.set('strictness', prompt.strictness);
 
-        navigate(`/checkbox?${params.toString()}`);
+        navigate(`${buildModePath('/checkbox', basePath)}?${params.toString()}`);
       } else {
-        navigate(`/admin?prompt=${encodeURIComponent(prompt.content)}`);
+        navigate(`${buildModePath('/admin', basePath)}?prompt=${encodeURIComponent(prompt.content)}`);
       }
     }
   };

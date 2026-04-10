@@ -6,10 +6,12 @@ export function JoinForm({
     error,
     notice = "",
     initialCode = "",
-    initialGroup = ""
+    initialGroup = "",
+    initialToken = ""
 }) {
     const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
     const [group, setGroup] = useState(() => String(initialGroup || '').trim());
+    const hasJoinToken = Boolean(String(initialToken || '').trim());
 
     useEffect(() => {
         setCode(String(initialCode || '').trim().toUpperCase());
@@ -21,7 +23,7 @@ export function JoinForm({
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (code && group) {
+        if ((code || hasJoinToken) && group) {
             onJoin(code, group);
         }
     };
@@ -38,21 +40,32 @@ export function JoinForm({
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    <div>
-                        <label htmlFor="sessionCode" className="block text-sm font-medium text-gray-700 mb-2">
-                            Session Code
-                        </label>
-                        <input
-                            type="text"
-                            id="sessionCode"
-                            value={code}
-                            onChange={(e) => setCode(e.target.value.toUpperCase())}
-                            placeholder="Enter 6-digit code"
-                            maxLength={6}
-                            className="w-full px-4 py-3 text-center text-xl font-mono tracking-widest border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all uppercase bg-gray-50"
-                            required
-                        />
-                    </div>
+                    {hasJoinToken ? (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+                            <p className="text-sm font-semibold text-blue-900">Secure session link loaded</p>
+                            <p className="mt-1 text-sm text-blue-700">
+                                {code
+                                    ? `You are joining session ${code}. Select your group number to continue.`
+                                    : 'Select your group number to continue.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div>
+                            <label htmlFor="sessionCode" className="block text-sm font-medium text-gray-700 mb-2">
+                                Session Code
+                            </label>
+                            <input
+                                type="text"
+                                id="sessionCode"
+                                value={code}
+                                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                                placeholder="Enter 6-digit code"
+                                maxLength={6}
+                                className="w-full px-4 py-3 text-center text-xl font-mono tracking-widest border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all uppercase bg-gray-50"
+                                required={!hasJoinToken}
+                            />
+                        </div>
+                    )}
 
                     <div>
                         <label htmlFor="groupNumber" className="block text-sm font-medium text-gray-700 mb-2">

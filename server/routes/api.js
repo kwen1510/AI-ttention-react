@@ -445,7 +445,9 @@ router.post("/session/:code/stop", async (req, res) => {
 
         if (session) {
             const startTime = Number(session.start_time || memory?.startTime || endedAt);
-            const totalDurationSeconds = startTime ? Math.max(0, (endedAt - startTime) / 1000) : null;
+            const totalDurationSeconds = startTime
+                ? Math.max(0, Math.round((endedAt - startTime) / 1000))
+                : null;
 
             await db.collection("sessions").updateOne(
                 { _id: session._id },
@@ -503,6 +505,7 @@ router.post("/session/:code/prompt", express.json(), async (req, res) => {
                 _id: newId,
                 owner_id: teacher.id,
                 code: code,
+                mode: mem.mode || "summary",
                 interval_ms: mem.interval || 30000,
                 created_at: mem.created_at || Date.now(),
                 active: mem.active || false,
@@ -629,7 +632,6 @@ router.post("/prompts", express.json(), async (req, res) => {
         const now = Date.now();
         const payload = {
             _id: uuid(),
-            owner_id: teacher.id,
             title: String(req.body?.title || "").trim(),
             description: String(req.body?.description || "").trim(),
             content: String(req.body?.content || "").trim(),
@@ -724,7 +726,6 @@ router.post("/prompts/:id/clone", express.json(), async (req, res) => {
         const cloned = {
             ...source,
             _id: uuid(),
-            owner_id: teacher.id,
             title: `${source.title} (Copy)`,
             authorName: String(req.body?.authorName || teacher.email || "Anonymous Teacher").trim(),
             created_at: now,
@@ -786,20 +787,39 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
         let resolvedSessionCode;
 
         if (joinToken) {
-            const resolved = await resolveJoinableSession(joinToken);
-            session = resolved.sessionRecord;
-            memory = resolved.sessionState;
-            resolvedSessionCode = resolved.sessionCode;
-            if (!session) {
-                return res.status(404).json({ error: "Active session not found" });
+            try {
+                const resolved = await resolveJoinableSession(joinToken);
+                session = resolved.sessionRecord;
+                memory = resolved.sessionState;
+                resolvedSessionCode = resolved.sessionCode;
+                if (!session) {
+                    return res.status(404).json({ error: "Active session not found" });
+                }
+            } catch (error) {
+                if (error?.status === 404 && /session not active/i.test(error.message || "")) {
+                    return res.json({
+                        success: true,
+                        skipped: true,
+                        reason: "Session not active"
+                    });
+                }
+                throw error;
             }
         } else {
             session = await db.collection("sessions").findOne({ code: sessionCode });
             memory = activeSessions.get(sessionCode);
             resolvedSessionCode = sessionCode;
 
-            if (!session || !(session.active || memory?.active)) {
+            if (!session && !memory) {
                 return res.status(404).json({ error: "Active session not found" });
+            }
+
+            if (!(session?.active || memory?.active)) {
+                return res.json({
+                    success: true,
+                    skipped: true,
+                    reason: "Session not active"
+                });
             }
         }
 
@@ -1205,16 +1225,20 @@ router.post("/cleanup/:sessionCode", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
         const { sessionCode } = req.params;
-        // Ensure teacher owns the session before cleaning
-        const session = await db.collection("sessions").findOne({ code: sessionCode });
-        if (!session) return res.status(404).json({ error: "Session not found" });
-        if (session.owner_id !== teacher.id) return res.status(403).json({ error: "Forbidden" });
+        const { session } = await getOwnedSessionContext(sessionCode, teacher.id);
+
+        if (!session) {
+            return res.json({
+                success: true,
+                message: `No persisted session data found for ${sessionCode}`
+            });
+        }
 
         await cleanupOldSessionData(sessionCode);
         res.json({ success: true, message: `Session ${sessionCode} cleaned up` });
     } catch (err) {
         console.error(`❌ Cleanup API error:`, err);
-        res.status(500).json({ error: "Cleanup failed" });
+        res.status(err.status || 500).json({ error: err.message || "Cleanup failed" });
     }
 });
 

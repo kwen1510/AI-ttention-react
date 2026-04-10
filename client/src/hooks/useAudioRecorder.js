@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-export function useAudioRecorder(sessionCode, groupNumber, onUploadError) {
+export function useAudioRecorder(sessionCode, groupNumber, onUploadError, joinToken = '') {
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef(null);
     const streamRef = useRef(null);
@@ -28,11 +28,16 @@ export function useAudioRecorder(sessionCode, groupNumber, onUploadError) {
     }, []);
 
     const uploadChunk = async (blob) => {
-        if (!sessionCode || !groupNumber) return;
+        if ((!sessionCode && !joinToken) || !groupNumber) return;
 
         const formData = new FormData();
         formData.append('file', blob, `chunk_${Date.now()}.webm`);
-        formData.append('sessionCode', sessionCode);
+        if (sessionCode) {
+            formData.append('sessionCode', sessionCode);
+        }
+        if (joinToken) {
+            formData.append('joinToken', joinToken);
+        }
         formData.append('groupNumber', groupNumber);
 
         try {

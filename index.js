@@ -125,6 +125,10 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+
 // API Routes
 app.use('/api', apiLimiter, apiRouter);
 

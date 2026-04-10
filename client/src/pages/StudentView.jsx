@@ -7,12 +7,14 @@ import { JoinForm } from '../features/student/components/JoinForm';
 import { TranscriptionPanel } from '../features/student/components/TranscriptionPanel';
 import { SummaryPanel } from '../features/student/components/SummaryPanel';
 import { ChecklistPanel } from '../features/student/components/ChecklistPanel';
+import { extractSessionCodeFromJoinToken } from '../lib/joinToken.js';
 
 function StudentView() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
-  const initialCode = String(params.get('code') || '').trim().toUpperCase();
+  const joinToken = String(params.get('token') || '').trim();
+  const initialCode = extractSessionCodeFromJoinToken(joinToken) || String(params.get('code') || '').trim().toUpperCase();
   const initialGroup = String(params.get('group') || '').trim();
   const {
     socket,
@@ -25,7 +27,7 @@ function StudentView() {
     error: socketError,
     recordingState,
     joinSession
-  } = useStudentSocket();
+  } = useStudentSocket(joinToken);
 
   const [uploadError, setUploadError] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -38,7 +40,8 @@ function StudentView() {
   } = useAudioRecorder(
     sessionInfo.code,
     sessionInfo.group,
-    setUploadError
+    setUploadError,
+    joinToken
   );
 
   // Handle recording state from socket
@@ -65,10 +68,10 @@ function StudentView() {
 
   // Auto-join from URL params
   useEffect(() => {
-    if (initialCode && initialGroup && !sessionInfo.code) {
+    if ((initialCode || joinToken) && initialGroup && !sessionInfo.code) {
       joinSession(initialCode, initialGroup);
     }
-  }, [initialCode, initialGroup, joinSession, sessionInfo.code]);
+  }, [initialCode, initialGroup, joinSession, joinToken, sessionInfo.code]);
 
   if (!sessionInfo.code) {
     return (
@@ -77,6 +80,7 @@ function StudentView() {
         error={socketError}
         initialCode={initialCode}
         initialGroup={initialGroup}
+        initialToken={joinToken}
         notice={blockedTeacherAccess ? 'Teacher tools require an approved teacher account. Student access is limited to the session join screen.' : ''}
       />
     );
