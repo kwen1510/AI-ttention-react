@@ -41,7 +41,7 @@ export function SessionHeader({
                     <Field label="Interval" className="w-full max-w-[8rem]">
                         <Input
                             type="number"
-                            min={10}
+                            min={5}
                             max={120}
                             value={interval}
                             onChange={(e) => onIntervalChange(Number(e.target.value))}

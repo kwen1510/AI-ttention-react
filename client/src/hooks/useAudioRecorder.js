@@ -298,7 +298,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 }));
             };
 
-            recorder.start(Math.max(10_000, Number(intervalMs) || 30_000));
+            recorder.start(Math.max(5_000, Number(intervalMs) || 30_000));
         } catch (error) {
             console.error('Failed to start recording:', error);
             publishUploadState({

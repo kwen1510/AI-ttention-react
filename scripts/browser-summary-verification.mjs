@@ -13,6 +13,7 @@ process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST = "false";
 process.env.MOCK_AI_SERVICES = "true";
 
 const { http, startServer } = await import("../index.js");
+const TEST_INTERVAL_SECONDS = 5;
 
 function getBaseUrl() {
   const address = http.address();
@@ -140,7 +141,7 @@ try {
   const sessionCode = await waitForSessionCode(teacherPage);
   assert.match(sessionCode, /^[A-Z0-9]{6}$/);
 
-  await teacherPage.locator('input[type="number"]').first().fill("10");
+  await teacherPage.locator('input[type="number"]').first().fill(String(TEST_INTERVAL_SECONDS));
 
   const joinTokenResponse = teacherPage.waitForResponse((response) =>
     response.request().method() === "POST" &&
@@ -149,7 +150,7 @@ try {
   await openStudentJoinModal(teacherPage);
   const joinTokenPayload = await (await expectOkResponse(joinTokenResponse, "join token creation")).json();
   assert.match(joinTokenPayload.url, /\/student\?token=/);
-  await teacherPage.getByText("The student page does not require teacher sign-in.", { exact: false }).waitFor();
+  await teacherPage.getByText(/Scan the QR code for the compact session link/i).waitFor({ timeout: 20_000 });
   await closeDialog(teacherPage);
 
   const studentPage = await context.newPage();
