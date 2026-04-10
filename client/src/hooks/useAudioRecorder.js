@@ -15,6 +15,10 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
     const mediaRecorderRef = useRef(null);
     const streamRef = useRef(null);
     const wakeLockRef = useRef(null);
+    const cycleStopTimerRef = useRef(null);
+    const cycleRestartTimerRef = useRef(null);
+    const intervalMsRef = useRef(30_000);
+    const startRecordingCycleRef = useRef(null);
     const sessionRef = useRef({
         sessionCode,
         groupNumber,
@@ -120,6 +124,18 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         mediaRecorderRef.current = null;
     }, []);
 
+    const clearCycleTimers = useCallback(() => {
+        if (cycleStopTimerRef.current) {
+            clearTimeout(cycleStopTimerRef.current);
+            cycleStopTimerRef.current = null;
+        }
+
+        if (cycleRestartTimerRef.current) {
+            clearTimeout(cycleRestartTimerRef.current);
+            cycleRestartTimerRef.current = null;
+        }
+    }, []);
+
     const uploadChunk = useCallback(async (blob) => {
         const {
             sessionCode: currentSessionCode,
@@ -216,6 +232,110 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         }
     }, [onUploadError, publishUploadState]);
 
+    useEffect(() => {
+        startRecordingCycleRef.current = () => {
+            if (!streamRef.current || !isRecordingRef.current) {
+                return;
+            }
+
+            try {
+                const options = { mimeType: 'audio/webm;codecs=opus' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options.mimeType = 'audio/webm';
+                }
+
+                const recorder = new MediaRecorder(streamRef.current, options);
+                mediaRecorderRef.current = recorder;
+
+                recorder.onstart = () => {
+                    const {
+                        sessionCode: currentSessionCode,
+                        groupNumber: currentGroupNumber,
+                        socket: currentSocket
+                    } = sessionRef.current;
+
+                    if (currentSocket?.connected && currentGroupNumber) {
+                        currentSocket.emit('recording_started', {
+                            session: currentSessionCode || undefined,
+                            group: Number(currentGroupNumber)
+                        });
+                    }
+                };
+
+                recorder.ondataavailable = (event) => {
+                    if (event.data?.size > 0) {
+                        void uploadChunk(event.data);
+                    }
+                };
+
+                recorder.onerror = (event) => {
+                    const message = event?.error?.message || 'Recording failed';
+                    console.error('Recorder error:', event?.error || event);
+                    clearCycleTimers();
+                    stopRequestedRef.current = true;
+                    isRecordingRef.current = false;
+                    cleanupStream();
+                    setIsRecording(false);
+                    publishUploadState((previous) => ({
+                        ...previous,
+                        phase: 'error',
+                        lastError: message
+                    }));
+                    if (onUploadError) {
+                        onUploadError(message);
+                    }
+                };
+
+                recorder.onstop = () => {
+                    mediaRecorderRef.current = null;
+                    if (cycleStopTimerRef.current) {
+                        clearTimeout(cycleStopTimerRef.current);
+                        cycleStopTimerRef.current = null;
+                    }
+
+                    const shouldContinue = isRecordingRef.current && !stopRequestedRef.current && Boolean(streamRef.current);
+                    if (shouldContinue) {
+                        cycleRestartTimerRef.current = setTimeout(() => {
+                            cycleRestartTimerRef.current = null;
+                            startRecordingCycleRef.current?.();
+                        }, 40);
+                        return;
+                    }
+
+                    cleanupStream();
+                    setIsRecording(false);
+                    publishUploadState((previous) => ({
+                        ...previous,
+                        phase: pendingUploadsRef.current > 0 ? 'finalizing' : 'idle',
+                        pendingUploads: pendingUploadsRef.current
+                    }));
+                };
+
+                recorder.start();
+                cycleStopTimerRef.current = setTimeout(() => {
+                    if (recorder.state === 'recording') {
+                        recorder.stop();
+                    }
+                }, intervalMsRef.current);
+            } catch (error) {
+                console.error('Failed to start recording cycle:', error);
+                clearCycleTimers();
+                stopRequestedRef.current = true;
+                isRecordingRef.current = false;
+                cleanupStream();
+                setIsRecording(false);
+                publishUploadState({
+                    ...INITIAL_UPLOAD_STATE,
+                    phase: 'error',
+                    lastError: error.message
+                });
+                if (onUploadError) {
+                    onUploadError(error.message);
+                }
+            }
+        };
+    }, [clearCycleTimers, cleanupStream, onUploadError, publishUploadState, uploadChunk]);
+
     const startRecording = useCallback(async (intervalMs) => {
         if (isRecordingRef.current || mediaRecorderRef.current) {
             return;
@@ -234,14 +354,9 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 }
             });
 
-            const options = { mimeType: 'audio/webm;codecs=opus' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'audio/webm';
-            }
-
-            const recorder = new MediaRecorder(stream, options);
+            clearCycleTimers();
+            intervalMsRef.current = Math.max(5_000, Number(intervalMs) || 30_000);
             streamRef.current = stream;
-            mediaRecorderRef.current = recorder;
             isRecordingRef.current = true;
             stopRequestedRef.current = false;
             pendingUploadsRef.current = 0;
@@ -252,53 +367,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 phase: 'recording'
             });
 
-            recorder.onstart = () => {
-                const {
-                    sessionCode: currentSessionCode,
-                    groupNumber: currentGroupNumber,
-                    socket: currentSocket
-                } = sessionRef.current;
-
-                if (currentSocket?.connected && currentGroupNumber) {
-                    currentSocket.emit('recording_started', {
-                        session: currentSessionCode || undefined,
-                        group: Number(currentGroupNumber)
-                    });
-                }
-            };
-
-            recorder.ondataavailable = (event) => {
-                if (event.data?.size > 0) {
-                    void uploadChunk(event.data);
-                }
-            };
-
-            recorder.onerror = (event) => {
-                const message = event?.error?.message || 'Recording failed';
-                console.error('Recorder error:', event?.error || event);
-                publishUploadState((previous) => ({
-                    ...previous,
-                    phase: 'error',
-                    lastError: message
-                }));
-                if (onUploadError) {
-                    onUploadError(message);
-                }
-            };
-
-            recorder.onstop = () => {
-                isRecordingRef.current = false;
-                setIsRecording(false);
-                cleanupStream();
-
-                publishUploadState((previous) => ({
-                    ...previous,
-                    phase: pendingUploadsRef.current > 0 ? 'finalizing' : 'idle',
-                    pendingUploads: pendingUploadsRef.current
-                }));
-            };
-
-            recorder.start(Math.max(5_000, Number(intervalMs) || 30_000));
+            startRecordingCycleRef.current?.();
         } catch (error) {
             console.error('Failed to start recording:', error);
             publishUploadState({
@@ -310,11 +379,12 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 onUploadError(error.message);
             }
         }
-    }, [cleanupStream, onUploadError, publishUploadState, uploadChunk]);
+    }, [clearCycleTimers, onUploadError, publishUploadState]);
 
     const stopRecording = useCallback(() => {
         stopRequestedRef.current = true;
         isRecordingRef.current = false;
+        clearCycleTimers();
 
         publishUploadState((previous) => ({
             ...previous,
@@ -334,11 +404,13 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             phase: pendingUploadsRef.current > 0 ? 'finalizing' : 'idle',
             pendingUploads: pendingUploadsRef.current
         }));
-    }, [cleanupStream, publishUploadState]);
+    }, [clearCycleTimers, cleanupStream, publishUploadState]);
 
     useEffect(() => {
         return () => {
             stopRequestedRef.current = true;
+            isRecordingRef.current = false;
+            clearCycleTimers();
             const recorder = mediaRecorderRef.current;
             if (recorder && recorder.state !== 'inactive') {
                 recorder.stop();
@@ -346,7 +418,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 cleanupStream();
             }
         };
-    }, [cleanupStream]);
+    }, [clearCycleTimers, cleanupStream]);
 
     return {
         isRecording,
