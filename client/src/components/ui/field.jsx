@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function Field({ label, htmlFor, hint, error, className, children }) {
@@ -28,8 +29,18 @@ const Textarea = React.forwardRef(({ className, ...props }, ref) => (
 
 Textarea.displayName = "Textarea";
 
-const Select = React.forwardRef(({ className, ...props }, ref) => (
-  <select ref={ref} className={cn("ui-select", className)} {...props} />
+const Select = React.forwardRef(({ className, disabled, ...props }, ref) => (
+  <div className={cn("ui-select", disabled && "ui-select--disabled", className)}>
+    <select
+      ref={ref}
+      disabled={disabled}
+      className="ui-select__control"
+      {...props}
+    />
+    <span className="ui-select__indicator" aria-hidden="true">
+      <ChevronsUpDown className="h-3.5 w-3.5" />
+    </span>
+  </div>
 ));
 
 Select.displayName = "Select";
