@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getSupabaseClient, getSupabaseConfig } from '../config/supabaseClient.js';
 import {
@@ -50,6 +50,7 @@ export function AuthProvider({ children }) {
   const [isTeacher, setIsTeacher] = useState(false);
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [fetchReady, setFetchReady] = useState(typeof window === 'undefined');
+  const accessTokenRef = useRef(null);
 
   useEffect(() => {
     if (isStagingBypass) {
@@ -71,6 +72,7 @@ export function AuthProvider({ children }) {
         if (!isMounted) return;
         setSession(data.session ?? null);
         setUser(data.session?.user ?? null);
+        accessTokenRef.current = data.session?.access_token ?? null;
         if (data.session) {
           console.log('✅ Supabase session loaded:', data.session.user?.email);
         } else {
@@ -89,16 +91,23 @@ export function AuthProvider({ children }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) return;
+      const previousAccessToken = accessTokenRef.current;
+      const nextAccessToken = nextSession?.access_token ?? null;
+      accessTokenRef.current = nextAccessToken;
+
       setSession(nextSession ?? null);
       setUser(nextSession?.user ?? null);
-      if (nextSession?.access_token) {
-        setTeacherLoading(true);
+
+      if (!nextAccessToken) {
+        setIsTeacher(false);
+        setTeacherProfile(null);
+        setTeacherLoading(false);
         return;
       }
 
-      setIsTeacher(false);
-      setTeacherProfile(null);
-      setTeacherLoading(false);
+      if (nextAccessToken !== previousAccessToken) {
+        setTeacherLoading(true);
+      }
     });
 
     return () => {

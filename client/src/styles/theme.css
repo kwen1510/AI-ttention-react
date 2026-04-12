@@ -407,17 +407,19 @@ select:focus {
   padding-inline: 0.75rem;
   text-align: center;
   text-transform: uppercase;
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Courier New', monospace;
-  font-size: clamp(1.1rem, 4vw, 1.45rem);
+  font-family: var(--font-display);
+  font-size: clamp(1.08rem, 3.5vw, 1.35rem);
   font-weight: 600;
-  letter-spacing: clamp(0.08em, 0.8vw, 0.16em);
-  font-variant-numeric: tabular-nums;
+  letter-spacing: clamp(0.05em, 0.5vw, 0.12em);
+  line-height: 1.2;
 }
 
 .student-join-code-input::placeholder {
   color: var(--text-muted);
-  letter-spacing: 0.06em;
-  font-size: 0.92em;
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+  font-size: 0.9em;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -735,6 +737,10 @@ select:focus {
 
 .ui-dialog__content[data-size='sm'] {
   max-width: 32rem;
+}
+
+.student-access-modal {
+  padding: 1.25rem;
 }
 
 .ui-dialog__content[data-size='md'] {

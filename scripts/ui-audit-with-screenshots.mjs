@@ -201,7 +201,8 @@ try {
   await takeScreenshot(mobileStudentJoinPage, "00-mobile-student-join.png", { fullPage: true });
 
   await teacherPage.locator("button:has(.session-code-text)").click();
-  await teacherPage.getByText(/No tokenized join link is required/i).waitFor({ timeout: 20_000 });
+  await teacherPage.getByRole("heading", { name: /Student access/i }).waitFor({ timeout: 20_000 });
+  await teacherPage.getByText(/Scan this QR code or enter the session code/i).waitFor({ timeout: 20_000 });
   await assertDialogFitsViewport(teacherPage, "QR modal");
   await takeScreenshot(teacherPage, "02-qr-modal.png");
   await closeDialog(teacherPage);

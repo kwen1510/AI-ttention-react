@@ -6,7 +6,7 @@ import { optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
 import { aiLimiter, aiUploadLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseDb } from "../db/db.js";
 import { isIgnorableTranscriptionText, transcribe } from "../services/elevenlabs.js";
-import { summarise } from "../services/openai.js";
+import { cleanTranscriptChunk, summarise } from "../services/openai.js";
 import {
     assertJoinableSessionState,
     buildJoinUrl,
@@ -17,8 +17,10 @@ import {
 import { activeSessions, latestChecklistState } from "../services/state.js";
 import {
     appendTranscriptSegment,
+    countTranscriptWords,
     createSummaryUpdateFields,
     createTranscriptRecord,
+    getTranscriptBundle,
     persistSummarySnapshot
 } from "../services/transcript.js";
 import {
@@ -893,18 +895,25 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
         const sessionMode = session.mode || memory?.mode || "summary";
         const group = await ensureGroupRecord(session._id, groupNumber);
         const transcription = await transcribe(file.buffer, file.mimetype);
-        const { text, wordCount, duration } = extractTranscriptMetrics(transcription);
+        const { text, duration } = extractTranscriptMetrics(transcription);
 
         if (!text || isIgnorableTranscriptionText(text)) {
             return res.json({ success: true, skipped: true });
         }
+
+        const existingTranscriptBundle = await getTranscriptBundle(session._id, group._id);
+        const cleanedText = await cleanTranscriptChunk(text, {
+            previousSegments: existingTranscriptBundle.segments
+        });
+        const finalTranscriptText = cleanedText || text;
+        const wordCount = countTranscriptWords(finalTranscriptText);
 
         const now = Date.now();
         const transcriptRecord = createTranscriptRecord({
             id: uuid(),
             sessionId: session._id,
             groupId: group._id,
-            text,
+            text: finalTranscriptText,
             wordCount,
             durationSeconds: duration,
             createdAt: now,
@@ -933,9 +942,9 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             }
 
             if (criteriaRecords.length === 0) {
-                io?.to(sessionCode).emit("checkbox_update", {
+                io?.to(resolvedSessionCode).emit("checkbox_update", {
                     group: groupNumber,
-                    latestTranscript: text,
+                    latestTranscript: finalTranscriptText,
                     checkboxes: [],
                     stats: {
                         totalSegments: stats.total_segments,
@@ -950,7 +959,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 return res.json({
                     success: true,
                     mode: sessionMode,
-                    transcript: text,
+                    transcript: finalTranscriptText,
                     skipped: true,
                     reason: "No checkbox criteria configured yet"
                 });
@@ -967,7 +976,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             }));
 
             const result = await processCheckboxTranscript(
-                text,
+                finalTranscriptText,
                 aiCriteria,
                 checkboxSession?.scenario || memory?.checkbox?.scenario || "",
                 strictness,
@@ -978,7 +987,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 _id: uuid(),
                 session_id: session._id,
                 type: "checkbox_analysis",
-                content: text,
+                content: finalTranscriptText,
                 ai_response: result,
                 created_at: now
             });
@@ -1037,7 +1046,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
 
             io?.to(resolvedSessionCode).emit("checkbox_update", {
                 group: groupNumber,
-                latestTranscript: text,
+                latestTranscript: finalTranscriptText,
                 checkboxUpdates: progressUpdates,
                 checkboxes,
                 stats: {
@@ -1056,7 +1065,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             return res.json({
                 success: true,
                 mode: sessionMode,
-                transcript: text,
+                transcript: finalTranscriptText,
                 matches: result.matches.length
             });
         }
@@ -1084,7 +1093,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
 
         io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("transcription_and_summary", {
             transcription: {
-                text,
+                text: finalTranscriptText,
                 words: transcription.words,
                 duration,
                 wordCount
@@ -1095,7 +1104,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
         io?.to(resolvedSessionCode).emit("admin_update", {
             group: groupNumber,
             isActive: true,
-            latestTranscript: text,
+            latestTranscript: finalTranscriptText,
             cumulativeTranscript: fullText,
             transcriptDuration: duration,
             transcriptWordCount: wordCount,
@@ -1111,7 +1120,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
         res.json({
             success: true,
             mode: sessionMode,
-            transcript: text,
+            transcript: finalTranscriptText,
             summary
         });
     } catch (err) {

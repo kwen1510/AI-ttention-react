@@ -95,7 +95,8 @@ async function waitForSessionCode(page) {
 
 async function openStudentJoinModal(page) {
   await page.locator("button:has(.session-code-text)").click();
-  await page.getByText(/No tokenized join link is required/i).waitFor({ timeout: 20_000 });
+  await page.getByRole("heading", { name: /Student access/i }).waitFor({ timeout: 20_000 });
+  await page.getByText(/Scan this QR code or enter the session code/i).waitFor({ timeout: 20_000 });
 }
 
 async function closeDialog(page) {

@@ -50,15 +50,16 @@ export function useCheckboxSocket() {
 
         socket.on('connect', () => {
             setIsConnected(true);
+            setLastHeartbeat(Date.now());
             console.log('✅ Checkbox socket connected');
             if (sessionCodeRef.current) {
                 socket.emit('admin_join', { code: sessionCodeRef.current });
             }
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', (reason) => {
             setIsConnected(false);
-            console.log('🔴 Checkbox socket disconnected');
+            console.log('🔴 Checkbox socket disconnected:', reason);
         });
 
         socket.on('connect_error', (error) => {
@@ -232,8 +233,20 @@ export function useCheckboxSocket() {
         }, 10000);
 
         const checkInterval = setInterval(() => {
-            if (Date.now() - lastHeartbeat > 25000) {
+            const socket = socketRef.current;
+            const isSocketConnected = Boolean(socket?.connected);
+            const heartbeatStale = Date.now() - lastHeartbeat > 25000;
+
+            if (!isSocketConnected) {
                 setIsConnected(false);
+                socket?.connect();
+                return;
+            }
+
+            if (heartbeatStale) {
+                setIsConnected(false);
+                socket.emit('admin_join', { code: sessionCode });
+                socket.emit('admin_heartbeat', { sessionCode });
             } else {
                 setIsConnected(true);
             }

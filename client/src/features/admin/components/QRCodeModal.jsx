@@ -67,32 +67,32 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent size="sm">
+            <DialogContent size="sm" className="student-access-modal">
                 <DialogHeader>
                     <DialogTitle>Student access</DialogTitle>
                     <DialogDescription>
-                        Students can scan this code or open the student page and enter the session code manually. No tokenized join link is required.
+                        Scan this QR code or enter the session code on the student page.
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4">
-                    <div className="ui-panel ui-panel--subtle ui-panel--pad-lg text-center">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                <div className="space-y-3">
+                    <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-center">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
                             Session code
                         </p>
-                        <p className="mt-2 text-3xl font-semibold tracking-[0.22em] text-[var(--text)]">
+                        <p className="mt-1 text-[2rem] font-semibold leading-none tracking-[0.18em] text-[var(--text)] sm:text-[2.15rem]">
                             {sessionCode || '------'}
                         </p>
                     </div>
 
                     <div className="flex justify-center">
-                        <div className="ui-panel ui-panel--subtle ui-panel--pad-lg inline-flex w-fit">
-                            <div className="flex h-[200px] w-[200px] items-center justify-center">
+                        <div className="ui-panel ui-panel--subtle ui-panel--pad-md inline-flex w-fit">
+                            <div className="flex h-[176px] w-[176px] items-center justify-center sm:h-[184px] sm:w-[184px]">
                                 {qrImageUrl ? (
                                     <img
                                         src={qrImageUrl}
                                         alt="Student session QR code"
-                                        className="block h-[200px] w-[200px] rounded-md"
+                                        className="block h-[176px] w-[176px] rounded-md sm:h-[184px] sm:w-[184px]"
                                     />
                                 ) : (
                                     <QrCode className="h-10 w-10 text-[var(--text-muted)]" />
@@ -121,7 +121,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                         </Button>
                     </div>
 
-                    <p className="text-xs copy-muted">Manual entry still works on any device using the session code shown above.</p>
+                    <p className="text-[11px] leading-5 copy-muted">Manual entry still works on any device using the session code shown above.</p>
                 </div>
             </DialogContent>
         </Dialog>

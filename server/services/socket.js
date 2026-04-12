@@ -8,11 +8,13 @@ import {
 import { verifyJoinToken } from "./joinTokens.js";
 import { activeSessions, latestChecklistState } from "./state.js";
 import { transcribe, extractMime, isIgnorableTranscriptionText } from "./elevenlabs.js";
-import { summarise } from "./openai.js";
+import { cleanTranscriptChunk, summarise } from "./openai.js";
 import {
+    countTranscriptWords,
     createTranscriptRecord,
     appendTranscriptSegment,
     createSummaryUpdateFields,
+    getTranscriptBundle,
     persistSummarySnapshot
 } from "./transcript.js";
 
@@ -271,18 +273,21 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
                 const group = await db.collection("groups").findOne({ session_id: session._id, number: parseInt(groupNumber) });
 
                 if (group) {
+                    const existingTranscriptBundle = await getTranscriptBundle(session._id, group._id);
+                    cleanedText = await cleanTranscriptChunk(transcription.text, {
+                        previousSegments: existingTranscriptBundle.segments
+                    });
+
                     // Save the transcription segment
                     const now = Date.now();
                     const transcriptId = uuid();
 
                     // Calculate word count and duration with fallbacks
-                    const wordCount = transcription.words && transcription.words.length > 0 ?
-                        transcription.words.length :
-                        transcription.text.split(' ').filter(w => w.trim().length > 0).length;
+                    const wordCount = countTranscriptWords(cleanedText);
 
                     const duration = transcription.words && transcription.words.length > 0 ?
                         transcription.words[transcription.words.length - 1].end :
-                        Math.max(10, Math.min(30, transcription.text.length * 0.05)); // Estimate 0.05 seconds per character
+                        Math.max(10, Math.min(30, cleanedText.length * 0.05)); // Estimate 0.05 seconds per character
 
                     const transcriptRecord = createTranscriptRecord({
                         id: transcriptId,

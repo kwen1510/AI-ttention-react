@@ -16,6 +16,82 @@ function isMissingRelationError(error) {
 // Global storage for session transcript history
 const sessionTranscriptHistory = new Map();
 
+export function normalizeTranscriptText(text) {
+    return String(text || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+export function countTranscriptWords(text) {
+    const normalized = normalizeTranscriptText(text);
+    return normalized ? normalized.split(' ').filter(Boolean).length : 0;
+}
+
+function toComparableWords(text) {
+    return normalizeTranscriptText(text)
+        .split(' ')
+        .map((word) => word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+        .filter(Boolean);
+}
+
+export function buildTranscriptCleanupContext(segments = [], {
+    maxSegments = 2,
+    maxWords = 120,
+    maxChars = 700
+} = {}) {
+    const recent = (segments || [])
+        .map((segment) => normalizeTranscriptText(segment?.text))
+        .filter(Boolean)
+        .slice(-Math.max(1, maxSegments));
+
+    if (recent.length === 0) {
+        return '';
+    }
+
+    let context = recent.join(' ');
+    const words = context.split(' ').filter(Boolean);
+    if (words.length > maxWords) {
+        context = words.slice(-maxWords).join(' ');
+    }
+
+    if (context.length > maxChars) {
+        context = context.slice(-maxChars).trim();
+    }
+
+    return context;
+}
+
+export function trimTranscriptBoundaryOverlap(previousText, nextText, {
+    minWords = 4,
+    maxWords = 12
+} = {}) {
+    const nextNormalized = normalizeTranscriptText(nextText);
+    if (!nextNormalized) {
+        return '';
+    }
+
+    const previousWords = toComparableWords(previousText);
+    const nextOriginalWords = nextNormalized.split(' ').filter(Boolean);
+    const nextComparableWords = nextOriginalWords
+        .map((word) => word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+        .filter(Boolean);
+
+    const overlapLimit = Math.min(maxWords, previousWords.length, nextComparableWords.length);
+    for (let size = overlapLimit; size >= minWords; size -= 1) {
+        const previousSlice = previousWords.slice(-size);
+        const nextSlice = nextComparableWords.slice(0, size);
+        const isMatch = previousSlice.every((word, index) => word === nextSlice[index]);
+        if (!isMatch) {
+            continue;
+        }
+
+        const trimmed = nextOriginalWords.slice(size).join(' ').trim();
+        return trimmed || nextNormalized;
+    }
+
+    return nextNormalized;
+}
+
 export function addToTranscriptHistory(sessionCode, transcript) {
     if (!sessionTranscriptHistory.has(sessionCode)) {
         sessionTranscriptHistory.set(sessionCode, []);

@@ -154,7 +154,8 @@ try {
   await teacherSummaryPage.getByText("Prompt saved successfully").waitFor();
 
   await teacherSummaryPage.locator("button:has(.session-code-text)").click();
-  await teacherSummaryPage.getByText(/No tokenized join link is required/i).waitFor();
+  await teacherSummaryPage.getByRole("heading", { name: /Student access/i }).waitFor();
+  await teacherSummaryPage.getByText(/Scan this QR code or enter the session code/i).waitFor();
   await closeQrModal(teacherSummaryPage);
 
   const studentSummaryPage = await context.newPage();

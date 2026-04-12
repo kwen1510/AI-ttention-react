@@ -104,6 +104,9 @@ const io = new Server(http, {
     origin: true,
     methods: ["GET", "POST"]
   },
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  connectTimeout: 20000,
   allowRequest: createSocketAllowRequestValidator(allowedOrigins)
 });
 

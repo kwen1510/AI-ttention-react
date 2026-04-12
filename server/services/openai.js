@@ -1,6 +1,13 @@
 import fetch from "node-fetch";
 import FormData from "form-data";
 import { OPENAI_API_KEY } from "../config/env.js";
+import {
+    buildTranscriptCleanupContext,
+    normalizeTranscriptText,
+    trimTranscriptBoundaryOverlap
+} from "./transcript.js";
+
+const TRANSCRIPT_CLEANUP_MODEL = "gpt-5-nano";
 
 export async function callOpenAIChat(apiKey, {
     model = "gpt-4o-mini",
@@ -12,10 +19,14 @@ export async function callOpenAIChat(apiKey, {
     const endpoint = "https://api.openai.com/v1/chat/completions";
     const payload = {
         model,
-        messages,
-        temperature,
-        max_tokens: maxTokens
+        messages
     };
+    if (String(model).startsWith("gpt-5")) {
+        payload.max_completion_tokens = maxTokens;
+    } else {
+        payload.temperature = temperature;
+        payload.max_tokens = maxTokens;
+    }
     if (responseFormat) {
         payload.response_format = responseFormat;
     }
@@ -153,5 +164,84 @@ export async function summarise(text, customPrompt) {
     } catch (err) {
         console.error("❌ Summarization error:", err);
         return "Summarization failed";
+    }
+}
+
+function sanitizeTranscriptCleanupOutput(output, fallback) {
+    const normalizedFallback = normalizeTranscriptText(fallback);
+    const cleaned = normalizeTranscriptText(
+        String(output || "")
+            .replace(/^```[\s\S]*?\n/, '')
+            .replace(/```$/, '')
+            .replace(/^cleaned(?: chunk| transcript)?\s*:\s*/i, '')
+            .replace(/^transcript\s*:\s*/i, '')
+            .replace(/^["'“”]+|["'“”]+$/g, '')
+    );
+
+    if (!cleaned) {
+        return normalizedFallback;
+    }
+
+    const fallbackWords = normalizedFallback.split(/\s+/).filter(Boolean).length;
+    const cleanedWords = cleaned.split(/\s+/).filter(Boolean).length;
+
+    if (fallbackWords > 0 && cleanedWords > fallbackWords * 1.8) {
+        return normalizedFallback;
+    }
+
+    return cleaned;
+}
+
+export async function cleanTranscriptChunk(currentText, {
+    previousSegments = []
+} = {}) {
+    const normalizedCurrent = normalizeTranscriptText(currentText);
+    if (!normalizedCurrent) {
+        return "";
+    }
+
+    const contextText = buildTranscriptCleanupContext(previousSegments);
+    const overlapTrimmed = trimTranscriptBoundaryOverlap(contextText, normalizedCurrent);
+
+    if (process.env.MOCK_AI_SERVICES === "true" && process.env.ALLOW_DEV_TEST === "true") {
+        return overlapTrimmed;
+    }
+
+    if (!OPENAI_API_KEY) {
+        return overlapTrimmed;
+    }
+
+    try {
+        const response = await callOpenAIChat(OPENAI_API_KEY, {
+            model: TRANSCRIPT_CLEANUP_MODEL,
+            maxTokens: 220,
+            temperature: 0,
+            messages: [
+                {
+                    role: "system",
+                    content: [
+                        "You clean short classroom speech-to-text transcript chunks.",
+                        "Preserve meaning exactly and do not add information that was not said.",
+                        "Only fix capitalization, punctuation, obvious repeated boundary text, and sentence continuity using the recent context.",
+                        "If uncertain, keep the wording unchanged.",
+                        "Return only the cleaned current chunk text."
+                    ].join(" ")
+                },
+                {
+                    role: "user",
+                    content: [
+                        `Recent transcript context (reference only): ${contextText || "(none)"}`,
+                        `Current chunk: ${overlapTrimmed}`
+                    ].join("\n\n")
+                }
+            ]
+        });
+
+        const output = response.choices?.[0]?.message?.content;
+        const cleaned = sanitizeTranscriptCleanupOutput(output, overlapTrimmed);
+        return trimTranscriptBoundaryOverlap(contextText, cleaned);
+    } catch (error) {
+        console.warn("⚠️ Transcript cleanup failed, using overlap-trimmed text:", error.message);
+        return overlapTrimmed;
     }
 }
