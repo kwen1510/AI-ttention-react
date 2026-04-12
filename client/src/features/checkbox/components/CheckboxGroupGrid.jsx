@@ -3,7 +3,7 @@ import { CheckboxGroupCard } from './CheckboxGroupCard';
 import { GraduationCap } from 'lucide-react';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
 
-export function CheckboxGroupGrid({ groups, onRelease }) {
+export function CheckboxGroupGrid({ groups, onRelease, canReleaseChecklist = false }) {
     if (groups.size === 0) {
         return (
             <EmptyState
@@ -22,6 +22,7 @@ export function CheckboxGroupGrid({ groups, onRelease }) {
                     groupNumber={num}
                     data={data}
                     onRelease={onRelease}
+                    canRelease={canReleaseChecklist}
                 />
             ))}
         </div>

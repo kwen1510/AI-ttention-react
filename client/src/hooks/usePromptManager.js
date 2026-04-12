@@ -5,6 +5,8 @@ export function usePromptManager(sessionCode, socket) {
     const [currentPrompt, setCurrentPrompt] = useState(DEFAULT_SUMMARY_PROMPT);
     const [promptLibrary, setPromptLibrary] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isLibraryLoading, setIsLibraryLoading] = useState(false);
+    const [libraryError, setLibraryError] = useState(null);
     const [feedback, setFeedback] = useState(null);
 
     const showFeedback = (message, type = 'info') => {
@@ -40,10 +42,10 @@ export function usePromptManager(sessionCode, socket) {
         }
     }, [sessionCode]);
 
-    const savePrompt = useCallback(async (text) => {
+    const savePrompt = useCallback(async (text, options = {}) => {
         if (!text.trim()) {
             showFeedback('Please enter a prompt', 'error');
-            return;
+            return false;
         }
         try {
             setIsLoading(true);
@@ -57,13 +59,15 @@ export function usePromptManager(sessionCode, socket) {
             });
 
             if (res.ok) {
-                showFeedback('Prompt saved successfully', 'success');
+                showFeedback(options.successMessage || 'Prompt saved successfully', 'success');
                 setCurrentPrompt(text);
+                return true;
             } else {
                 throw new Error('Failed to save');
             }
         } catch (err) {
             showFeedback('Error saving prompt', 'error');
+            return false;
         } finally {
             setIsLoading(false);
         }
@@ -98,26 +102,68 @@ export function usePromptManager(sessionCode, socket) {
 
     const loadLibrary = useCallback(async () => {
         try {
+            setIsLibraryLoading(true);
+            setLibraryError(null);
             const res = await fetch('/api/prompt-library');
             if (res.ok) {
                 const data = await res.json();
                 setPromptLibrary(data);
+                return data;
             }
+            throw new Error(`Failed to load library (${res.status})`);
         } catch (err) {
             console.error('Failed to load library:', err);
+            setLibraryError(err.message || 'Failed to load saved prompts');
+            return [];
+        } finally {
+            setIsLibraryLoading(false);
         }
     }, []);
+
+    const recordPromptUse = useCallback(async (promptId) => {
+        if (!promptId) return;
+        try {
+            await fetch(`/api/prompts/${promptId}/use`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionCode: sessionCode || 'current-session' })
+            });
+        } catch (err) {
+            console.warn('Failed to record prompt usage:', err);
+        }
+    }, [sessionCode]);
+
+    const applyLibraryPrompt = useCallback(async (prompt) => {
+        const text = normalizePromptText(prompt?.content);
+        if (!text) {
+            showFeedback('Selected prompt is empty', 'error');
+            return false;
+        }
+
+        const success = await savePrompt(text, {
+            successMessage: `${prompt.title || 'Prompt'} applied to session`
+        });
+
+        if (success) {
+            await recordPromptUse(prompt?._id);
+        }
+
+        return success;
+    }, [recordPromptUse, savePrompt]);
 
     return {
         currentPrompt,
         setCurrentPrompt,
         promptLibrary,
         isLoading,
+        isLibraryLoading,
+        libraryError,
         feedback,
         loadSessionPrompt,
         savePrompt,
         testPrompt,
         loadLibrary,
+        applyLibraryPrompt,
         setFeedback
     };
 }

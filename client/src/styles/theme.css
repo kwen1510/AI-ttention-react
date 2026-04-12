@@ -752,6 +752,53 @@ select:focus {
   background: var(--surface-subtle);
 }
 
+.checklist-item {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.checklist-item--green {
+  background: rgba(47, 125, 87, 0.08);
+  border-color: rgba(47, 125, 87, 0.18);
+}
+
+.checklist-item--red {
+  background: rgba(185, 76, 93, 0.08);
+  border-color: rgba(185, 76, 93, 0.18);
+}
+
+.checklist-item--grey {
+  background: rgba(113, 127, 150, 0.06);
+  border-color: rgba(113, 127, 150, 0.16);
+}
+
+.checklist-item__status {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.checklist-item__status--green {
+  color: var(--success);
+}
+
+.checklist-item__status--red {
+  color: var(--danger);
+}
+
+.checklist-item__status--grey {
+  color: var(--text-muted);
+}
+
+.checklist-item__quote {
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(120, 132, 155, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.5);
+}
+
 .copy-muted {
   color: var(--text-muted);
 }

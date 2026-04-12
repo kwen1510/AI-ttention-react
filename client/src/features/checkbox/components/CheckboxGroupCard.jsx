@@ -3,14 +3,20 @@ import { CheckCircle, Circle, ChevronDown, ChevronUp, Send, Check, ClipboardList
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
-import { getChecklistStatusLabel, getChecklistTone } from '../../../lib/statusTone.js';
+import {
+    getChecklistItemClassName,
+    getChecklistStatusClassName,
+    getChecklistStatusLabel,
+    normalizeChecklistStatus
+} from '../../../lib/statusTone.js';
 
-export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
+export function CheckboxGroupCard({ groupNumber, data, onRelease, canRelease = true }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const transcriptPanelId = useId();
 
     const completedCount = data.checkboxes.filter(c => c.completed).length;
     const totalCount = data.checkboxes.length;
+    const hasCriteria = totalCount > 0;
     const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
     return (
@@ -18,15 +24,16 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
             <PanelHeader
                 icon={ClipboardList}
                 title={`Group ${groupNumber}`}
-                description={`${completedCount}/${totalCount} criteria completed`}
+                description={hasCriteria ? `${completedCount}/${totalCount} criteria completed` : 'No criteria saved for this session yet'}
                 actions={(
                     <Button
                         onClick={() => onRelease(groupNumber)}
                         size="sm"
                         variant={data.isReleased ? 'secondary' : 'primary'}
+                        disabled={!data.isReleased && !canRelease && !hasCriteria}
                     >
                         {data.isReleased ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                        <span>{data.isReleased ? 'Released' : 'Release checklist'}</span>
+                        <span>{data.isReleased ? 'Released' : (canRelease || hasCriteria ? 'Release checklist' : 'Save criteria first')}</span>
                     </Button>
                 )}
             >
@@ -49,38 +56,47 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
                     </div>
                 </section>
 
-                <div className="space-y-3">
-                    {data.checkboxes.map((checkbox) => {
-                        const tone = getChecklistTone(checkbox.status);
-                        return (
-                            <div key={checkbox.id} className="surface-list__item flex items-start gap-3">
-                                <div className="mt-0.5 flex-shrink-0">
-                                    {checkbox.completed ? (
-                                        <CheckCircle className="h-5 w-5 text-[var(--success)]" />
-                                    ) : (
-                                        <Circle className="h-5 w-5 text-[var(--text-muted)]" />
-                                    )}
-                                </div>
-                                <div className="min-w-0 flex-1 space-y-2">
-                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                        <p className="text-sm font-medium text-[var(--text)]">
-                                            {checkbox.description}
-                                        </p>
-                                        <Badge tone={tone} size="sm">
-                                            {getChecklistStatusLabel(checkbox.status)}
-                                        </Badge>
+                {!hasCriteria ? (
+                    <div className="surface-list__item text-sm copy-muted">
+                        Save and apply checklist criteria before releasing this group to students.
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {data.checkboxes.map((checkbox) => {
+                            const normalizedStatus = normalizeChecklistStatus(checkbox.status);
+                            const isMet = normalizedStatus === 'green';
+                            return (
+                                <div key={checkbox.id} className={`${getChecklistItemClassName(checkbox.status)} flex items-start gap-3`}>
+                                    <div className="mt-0.5 flex-shrink-0">
+                                        {isMet ? (
+                                            <CheckCircle className="h-5 w-5 text-[var(--success)]" />
+                                        ) : normalizedStatus === 'red' ? (
+                                            <Circle className="h-5 w-5 text-[var(--danger)]" />
+                                        ) : (
+                                            <Circle className="h-5 w-5 text-[var(--text-muted)]" />
+                                        )}
                                     </div>
-                                    <p className="text-xs copy-muted">Rubric: {checkbox.rubric}</p>
-                                    {checkbox.quote ? (
-                                        <div className="ui-panel ui-panel--subtle ui-panel--pad-sm text-xs text-[var(--text)]">
-                                            "{checkbox.quote}"
+                                    <div className="min-w-0 flex-1 space-y-2">
+                                        <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <p className="text-sm font-medium text-[var(--text)]">
+                                                {checkbox.description}
+                                            </p>
+                                            <span className={getChecklistStatusClassName(checkbox.status)}>
+                                                {getChecklistStatusLabel(checkbox.status)}
+                                            </span>
                                         </div>
-                                    ) : null}
+                                        <p className="text-xs copy-muted">Rubric: {checkbox.rubric}</p>
+                                        {checkbox.quote ? (
+                                            <div className="checklist-item__quote text-xs text-[var(--text)]">
+                                                "{checkbox.quote}"
+                                            </div>
+                                        ) : null}
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {data.transcripts.length > 0 && (
                     <section className="surface-list">

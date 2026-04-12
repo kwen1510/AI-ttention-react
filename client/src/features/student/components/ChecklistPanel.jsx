@@ -3,7 +3,12 @@ import { CheckSquare, Clock, CheckCircle, Circle } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
-import { getChecklistStatusLabel, getChecklistTone } from '../../../lib/statusTone.js';
+import {
+    getChecklistItemClassName,
+    getChecklistStatusClassName,
+    getChecklistStatusLabel,
+    normalizeChecklistStatus
+} from '../../../lib/statusTone.js';
 
 export function ChecklistPanel({ checklist, isReleased }) {
     if (!isReleased) {
@@ -61,13 +66,16 @@ export function ChecklistPanel({ checklist, isReleased }) {
 
             <div className="flex-1 space-y-3 overflow-y-auto px-5 pb-5">
                 {checklist.map((item, index) => {
-                    const tone = getChecklistTone(item.status);
+                    const normalizedStatus = normalizeChecklistStatus(item.status);
+                    const isMet = normalizedStatus === 'green';
 
                     return (
-                        <div key={index} className="surface-list__item flex items-start gap-3 transition-all duration-300">
+                        <div key={index} className={`${getChecklistItemClassName(item.status)} flex items-start gap-3 transition-all duration-300`}>
                             <div className="mt-1 flex-shrink-0">
-                                {item.completed ? (
+                                {isMet ? (
                                     <CheckCircle className="h-5 w-5 text-[var(--success)]" />
+                                ) : normalizedStatus === 'red' ? (
+                                    <Circle className="h-5 w-5 text-[var(--danger)]" />
                                 ) : (
                                     <Circle className="h-5 w-5 text-[var(--text-muted)]" />
                                 )}
@@ -77,9 +85,9 @@ export function ChecklistPanel({ checklist, isReleased }) {
                                     <p className="text-sm font-medium text-[var(--text)]">
                                         {item.description}
                                     </p>
-                                    <Badge tone={tone} size="sm">
+                                    <span className={getChecklistStatusClassName(item.status)}>
                                         {getChecklistStatusLabel(item.status)}
-                                    </Badge>
+                                    </span>
                                 </div>
                                 {item.rubric && (
                                     <p className="text-xs copy-muted italic">
@@ -87,7 +95,7 @@ export function ChecklistPanel({ checklist, isReleased }) {
                                     </p>
                                 )}
                                 {item.quote && (
-                                    <div className="ui-panel ui-panel--subtle ui-panel--pad-sm text-xs text-[var(--text)]">
+                                    <div className="checklist-item__quote text-xs text-[var(--text)]">
                                         "{item.quote}"
                                     </div>
                                 )}

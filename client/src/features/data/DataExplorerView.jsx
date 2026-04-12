@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckSquare,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock3,
   Database,
   Download,
@@ -192,6 +194,36 @@ function CriterionStatus({ status }) {
   return <Badge tone={getChecklistTone(status)} size="sm">{getChecklistStatusLabel(status)}</Badge>;
 }
 
+function HistorySection({ title, description, icon: Icon, defaultOpen = false, children }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <Panel padding="lg">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          {Icon ? <Icon className="mt-0.5 h-4 w-4 text-[var(--primary)]" /> : null}
+          <div>
+            <h4 className="text-base font-semibold text-[var(--text)]">{title}</h4>
+            {description ? <p className="mt-1 text-sm">{description}</p> : null}
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((open) => !open)}
+        >
+          {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          <span>{isOpen ? "Collapse" : "Expand"}</span>
+        </Button>
+      </div>
+
+      {isOpen ? <div className="mt-4">{children}</div> : null}
+    </Panel>
+  );
+}
+
 function GroupHistoryPanel({ sessionMode, group }) {
   if (!group) {
     return (
@@ -202,6 +234,11 @@ function GroupHistoryPanel({ sessionMode, group }) {
   }
 
   const stats = group.transcriptStats || {};
+  const summaryTimeline = Array.isArray(group.summaryTimeline) ? group.summaryTimeline : [];
+  const earlierSummaryTimeline =
+    group.latestSummary && summaryTimeline.length > 0 && summaryTimeline[summaryTimeline.length - 1]?.summary_text === group.latestSummary
+      ? summaryTimeline.slice(0, -1)
+      : summaryTimeline;
 
   return (
     <div className="space-y-6">
@@ -225,15 +262,42 @@ function GroupHistoryPanel({ sessionMode, group }) {
       </Panel>
 
       {sessionMode === "summary" ? (
-        <Panel padding="lg">
-          <div className="mb-3 flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-[var(--accent)]" />
-            <h4 className="text-base font-semibold text-[var(--text)]">Latest summary</h4>
-          </div>
-          <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)] whitespace-pre-wrap">
-            {group.latestSummary || "No summary stored for this group yet."}
-          </div>
-        </Panel>
+        <HistorySection
+          title="Summary"
+          description="Expand to review the final summary and earlier summary updates for this group."
+          icon={MessageSquare}
+        >
+          {group.latestSummary ? (
+            <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)] whitespace-pre-wrap">
+              {group.latestSummary}
+            </div>
+          ) : (
+            <p className="text-sm">No summary stored for this group yet.</p>
+          )}
+
+          {earlierSummaryTimeline.length ? (
+            <div className="mt-4 space-y-4">
+              {earlierSummaryTimeline.map((entry, index) => (
+                <div key={`${entry.segment_cursor}-${entry.created_at || index}`} className="surface-list__item">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--text)]">Summary point {index + 1}</p>
+                    <p className="text-xs copy-muted">{formatDate(entry.created_at)}</p>
+                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
+                    Up to segment {entry.segment_cursor}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-[var(--text)]">
+                    {entry.summary_text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : group.latestSummary ? (
+            <p className="mt-4 text-sm">
+              No earlier summary versions were stored for this group.
+            </p>
+          ) : null}
+        </HistorySection>
       ) : null}
 
       {group.modeSpecificData?.criteria?.length ? (
@@ -270,53 +334,11 @@ function GroupHistoryPanel({ sessionMode, group }) {
         </Panel>
       ) : null}
 
-      {group.summaryTimeline?.length ? (
-        <Panel padding="lg">
-          <div className="mb-3 flex items-center gap-2">
-            <Clock3 className="h-4 w-4 text-[var(--primary)]" />
-            <h4 className="text-base font-semibold text-[var(--text)]">Summary timeline</h4>
-          </div>
-          <div className="space-y-4">
-            {group.summaryTimeline.map((entry, index) => (
-              <div key={`${entry.segment_cursor}-${entry.created_at || index}`} className="surface-list__item">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-[var(--text)]">Summary point {index + 1}</p>
-                  <p className="text-xs copy-muted">{formatDate(entry.created_at)}</p>
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
-                  Up to segment {entry.segment_cursor}
-                </p>
-                <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-[var(--text)]">
-                  {entry.summary_text}
-                </p>
-                {entry.latest_segment?.text ? (
-                  <div className="ui-panel ui-panel--subtle ui-panel--pad-sm mt-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
-                      Latest segment at that point
-                    </p>
-                    <p className="mt-1 text-sm whitespace-pre-wrap text-[var(--text)]">
-                      {entry.latest_segment.text}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </Panel>
-      ) : sessionMode === "summary" ? (
-        <Panel tone="subtle" padding="lg">
-          <p className="text-sm">
-            Summary snapshots have not been stored for this session yet. Older sessions show the latest
-            available summary without a timeline.
-          </p>
-        </Panel>
-      ) : null}
-
-      <Panel padding="lg">
-        <div className="mb-3 flex items-center gap-2">
-          <Database className="h-4 w-4 text-[var(--primary)]" />
-          <h4 className="text-base font-semibold text-[var(--text)]">Transcript segments</h4>
-        </div>
+      <HistorySection
+        title="Transcript segments"
+        description="Expand to inspect the original chunk-by-chunk transcript history."
+        icon={Database}
+      >
         {group.segments?.length ? (
           <div className="max-h-96 space-y-3 overflow-y-auto">
             {group.segments.map((segment, index) => (
@@ -340,7 +362,7 @@ function GroupHistoryPanel({ sessionMode, group }) {
         ) : (
           <p className="text-sm">No transcript segments stored for this group.</p>
         )}
-      </Panel>
+      </HistorySection>
     </div>
   );
 }

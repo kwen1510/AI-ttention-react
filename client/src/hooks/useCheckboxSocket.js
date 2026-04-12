@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext.jsx';
 import { createAppSocket } from '../lib/socketClient.js';
+import { normalizeChecklistStatus } from '../lib/statusTone.js';
+
+function normalizeCheckboxes(checkboxes = []) {
+    return (checkboxes || []).map((checkbox, index) => {
+        const status = normalizeChecklistStatus(checkbox?.status);
+        return {
+            ...checkbox,
+            id: Number(checkbox?.id ?? index),
+            status,
+            completed: checkbox?.completed === true || status === 'green',
+            quote: checkbox?.quote ?? null
+        };
+    });
+}
 
 export function useCheckboxSocket() {
     const { session, isStagingBypass } = useAuth();
@@ -109,21 +123,22 @@ export function useCheckboxSocket() {
 
                 // Update checkboxes
                 let newCheckboxes = [...(existing.checkboxes || [])];
-                if (Array.isArray(data.checkboxes)) {
-                    newCheckboxes = data.checkboxes;
+                if (Array.isArray(data.checkboxes) && data.checkboxes.length > 0) {
+                    newCheckboxes = normalizeCheckboxes(data.checkboxes);
                 }
                 if (data.checkboxUpdates) {
                     data.checkboxUpdates.forEach(update => {
                         const index = newCheckboxes.findIndex(c => c.id === update.criteriaId);
                         if (index !== -1) {
                             const checkbox = newCheckboxes[index];
+                            const status = normalizeChecklistStatus(update.status);
                             // Only update if not already completed correctly (green)
                             if (!checkbox.completed || checkbox.status !== 'green') {
                                 newCheckboxes[index] = {
                                     ...checkbox,
-                                    completed: update.completed,
+                                    completed: update.completed === true || status === 'green',
                                     quote: update.quote,
-                                    status: update.status || 'grey'
+                                    status
                                 };
                             }
                         }
@@ -149,10 +164,32 @@ export function useCheckboxSocket() {
             });
         };
 
+        const handleChecklistState = (data) => {
+            setGroups(prev => {
+                const newGroups = new Map(prev);
+                const groupNum = Number(data.groupNumber);
+                const existing = newGroups.get(groupNum) || {
+                    transcripts: [],
+                    checkboxes: [],
+                    stats: {},
+                    isReleased: false
+                };
+
+                newGroups.set(groupNum, {
+                    ...existing,
+                    checkboxes: Array.isArray(data.criteria) ? normalizeCheckboxes(data.criteria) : existing.checkboxes,
+                    isReleased: data.isReleased !== undefined ? Boolean(data.isReleased) : existing.isReleased,
+                    lastUpdate: Date.now()
+                });
+
+                return newGroups;
+            });
+        };
+
         const handleStudentJoined = ({ group }) => {
             setGroups(prev => {
                 const newGroups = new Map(prev);
-                const existing = newGroups.get(group) || { transcripts: [], checkboxes: [] };
+                const existing = newGroups.get(group) || { transcripts: [], checkboxes: [], stats: {}, isReleased: false };
                 newGroups.set(group, { ...existing, isActive: true });
                 return newGroups;
             });
@@ -172,11 +209,13 @@ export function useCheckboxSocket() {
         };
 
         socket.on('checkbox_update', handleCheckboxUpdate);
+        socket.on('checklist_state', handleChecklistState);
         socket.on('student_joined', handleStudentJoined);
         socket.on('student_left', handleStudentLeft);
 
         return () => {
             socket.off('checkbox_update', handleCheckboxUpdate);
+            socket.off('checklist_state', handleChecklistState);
             socket.off('student_joined', handleStudentJoined);
             socket.off('student_left', handleStudentLeft);
         };

@@ -6,7 +6,19 @@ import { SessionHeader } from '../features/admin/components/SessionHeader';
 import { CriteriaManager } from '../features/checkbox/components/CriteriaManager';
 import { CheckboxGroupGrid } from '../features/checkbox/components/CheckboxGroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
+import { PromptSelectorModal } from '../features/prompts/components/PromptSelectorModal.jsx';
 import { SectionHeader } from '../components/ui/panel.jsx';
+import { normalizeChecklistStatus } from '../lib/statusTone.js';
+
+function createChecklistSeed(criteria = []) {
+  return (criteria || []).map((criterion, index) => ({
+    ...criterion,
+    id: Number(criterion?.id ?? index),
+    status: 'grey',
+    completed: false,
+    quote: null
+  }));
+}
 
 function CheckboxDashboard() {
   const [searchParams] = useSearchParams();
@@ -29,12 +41,21 @@ function CheckboxDashboard() {
     setStrictness,
     isLoading,
     feedback,
-    saveCriteria
+    saveCriteria,
+    promptLibrary,
+    loadLibrary,
+    loadSessionCriteria,
+    applyLibraryPrompt,
+    isLibraryLoading,
+    libraryError,
+    setFeedback
   } = useCriteriaManager(sessionCode, socket);
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
   const [showQR, setShowQR] = useState(false);
+  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [applyingPromptId, setApplyingPromptId] = useState(null);
 
   // Initialize session
   useEffect(() => {
@@ -76,6 +97,108 @@ function CheckboxDashboard() {
     if (strictnessParam) setStrictness(Number(strictnessParam));
   }, [searchParams, setCriteriaText, setScenario, setStrictness]);
 
+  useEffect(() => {
+    if (!sessionCode) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const hydrateSession = async () => {
+      const data = await loadSessionCriteria();
+      if (cancelled || !data) {
+        return;
+      }
+
+      const releasedGroups = data.releasedGroups || {};
+      const criteriaWithProgress = Array.isArray(data.criteriaWithProgress) ? data.criteriaWithProgress : [];
+
+      setGroups((prev) => {
+        const next = new Map(prev);
+        const groupNumbers = new Set(Array.from(next.keys()));
+
+        Object.keys(releasedGroups).forEach((group) => {
+          const parsedGroup = Number(group);
+          if (Number.isFinite(parsedGroup) && parsedGroup > 0) {
+            groupNumbers.add(parsedGroup);
+          }
+        });
+
+        criteriaWithProgress.forEach((criterion) => {
+          Object.keys(criterion.groupProgress || {}).forEach((group) => {
+            const parsedGroup = Number(group);
+            if (Number.isFinite(parsedGroup) && parsedGroup > 0) {
+              groupNumbers.add(parsedGroup);
+            }
+          });
+        });
+
+        groupNumbers.forEach((groupNum) => {
+          const existing = next.get(groupNum) || {
+            transcripts: [],
+            checkboxes: [],
+            stats: {},
+            isReleased: false
+          };
+
+          const hydratedCheckboxes = criteriaWithProgress.length > 0
+            ? criteriaWithProgress.map((criterion, index) => {
+                const progress = criterion.groupProgress?.[groupNum];
+                const status = normalizeChecklistStatus(progress?.status);
+                return {
+                  id: index,
+                  dbId: criterion.dbId,
+                  description: criterion.description,
+                  rubric: criterion.rubric || '',
+                  weight: criterion.weight || 1,
+                  status,
+                  completed: progress?.completed === true || status === 'green',
+                  quote: progress?.quote ?? null
+                };
+              })
+            : createChecklistSeed(data.criteria || []);
+
+          next.set(groupNum, {
+            ...existing,
+            checkboxes: hydratedCheckboxes.length > 0 ? hydratedCheckboxes : existing.checkboxes,
+            isReleased: releasedGroups[groupNum] !== undefined ? Boolean(releasedGroups[groupNum]) : existing.isReleased
+          });
+        });
+
+        return next;
+      });
+    };
+
+    void hydrateSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSessionCriteria, sessionCode, setGroups]);
+
+  useEffect(() => {
+    if (!currentCriteria.length) {
+      return;
+    }
+
+    setGroups((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+
+      next.forEach((groupData, groupNum) => {
+        if (!Array.isArray(groupData.checkboxes) || groupData.checkboxes.length === 0) {
+          next.set(groupNum, {
+            ...groupData,
+            checkboxes: createChecklistSeed(currentCriteria)
+          });
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [currentCriteria, groups, setGroups]);
+
   const handleStartRecording = async () => {
     if (!sessionCode) return;
     try {
@@ -115,34 +238,49 @@ function CheckboxDashboard() {
     }
   };
 
+  const syncGroupsWithCriteria = (savedCriteria) => {
+    setGroups(prev => {
+      const newGroups = new Map(prev);
+      newGroups.forEach((groupData, groupNum) => {
+        newGroups.set(groupNum, {
+          ...groupData,
+          checkboxes: savedCriteria.map(c => ({
+            ...c,
+            completed: false,
+            quote: null,
+            status: 'grey'
+          }))
+        });
+      });
+      return newGroups;
+    });
+  };
+
   const handleSaveCriteria = async () => {
     const savedCriteria = await saveCriteria(interval);
     if (savedCriteria) {
-      // Update all groups with new criteria
-      setGroups(prev => {
-        const newGroups = new Map(prev);
-        newGroups.forEach((groupData, groupNum) => {
-          newGroups.set(groupNum, {
-            ...groupData,
-            checkboxes: savedCriteria.map(c => ({
-              ...c,
-              completed: false,
-              quote: null,
-              status: 'grey'
-            }))
-          });
-        });
-        return newGroups;
-      });
+      syncGroupsWithCriteria(savedCriteria);
     }
   };
 
   const handleReleaseChecklist = (groupNumber) => {
     if (socket && sessionCode) {
+      const group = groups.get(groupNumber);
+      const releaseCriteria = (group?.checkboxes?.length ? group.checkboxes : createChecklistSeed(currentCriteria));
+
+      if (!releaseCriteria.length) {
+        setFeedback({
+          message: 'Save checklist criteria before releasing them to students.',
+          type: 'error'
+        });
+        return;
+      }
+
       socket.emit('release_checklist', {
         sessionCode,
         groupNumber,
-        isReleased: true // Toggle logic could be added here
+        isReleased: true,
+        criteria: releaseCriteria
       });
 
       // Optimistic update
@@ -150,10 +288,29 @@ function CheckboxDashboard() {
         const newGroups = new Map(prev);
         const group = newGroups.get(groupNumber);
         if (group) {
-          newGroups.set(groupNumber, { ...group, isReleased: true });
+          newGroups.set(groupNumber, {
+            ...group,
+            isReleased: true,
+            checkboxes: group.checkboxes?.length ? group.checkboxes : releaseCriteria
+          });
         }
         return newGroups;
       });
+    }
+  };
+
+  const handleOpenPromptLibrary = async () => {
+    setShowPromptLibrary(true);
+    await loadLibrary();
+  };
+
+  const handleApplySavedPrompt = async (prompt) => {
+    setApplyingPromptId(prompt._id);
+    const savedCriteria = await applyLibraryPrompt(prompt, interval);
+    setApplyingPromptId(null);
+    if (savedCriteria) {
+      syncGroupsWithCriteria(savedCriteria);
+      setShowPromptLibrary(false);
     }
   };
 
@@ -191,13 +348,32 @@ function CheckboxDashboard() {
           }}
           feedback={feedback}
           isLoading={isLoading}
+          onOpenLibrary={handleOpenPromptLibrary}
+          isLibraryLoading={isLibraryLoading}
         />
 
         <CheckboxGroupGrid
           groups={groups}
           onRelease={handleReleaseChecklist}
+          canReleaseChecklist={currentCriteria.length > 0}
         />
       </main>
+
+      <PromptSelectorModal
+        isOpen={showPromptLibrary}
+        onClose={() => {
+          if (!applyingPromptId) {
+            setShowPromptLibrary(false);
+          }
+        }}
+        mode="checkbox"
+        prompts={promptLibrary}
+        isLoading={isLibraryLoading}
+        error={libraryError}
+        onRefresh={loadLibrary}
+        onUsePrompt={handleApplySavedPrompt}
+        applyingPromptId={applyingPromptId}
+      />
 
       <QRCodeModal
         isOpen={showQR}

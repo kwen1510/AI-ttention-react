@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react';
-import { FileText, ChevronDown, FlaskConical, Check } from 'lucide-react';
+import { FileText, ChevronDown, FlaskConical, Check, Library } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
@@ -16,9 +16,9 @@ export function PromptManager({
     onSave,
     onTest,
     onReset,
-    library,
-    onLoadFromLibrary,
-    feedback
+    feedback,
+    onOpenLibrary,
+    isLibraryLoading
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const contentId = useId();
@@ -58,6 +58,13 @@ export function PromptManager({
             {isOpen && (
                 <div id={contentId} className="border-t border-[var(--border)] p-6">
                     <div className="space-y-4">
+                        <div className="cluster">
+                            <Button type="button" onClick={onOpenLibrary} variant="secondary" size="sm" disabled={!onOpenLibrary || isLibraryLoading}>
+                                <Library className="h-3.5 w-3.5" />
+                                {isLibraryLoading ? 'Loading prompts…' : 'Saved prompts'}
+                            </Button>
+                        </div>
+
                         <Textarea
                             value={currentPrompt}
                             onChange={(e) => onPromptChange(e.target.value)}

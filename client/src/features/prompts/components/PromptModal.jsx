@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { HelpCircle } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
@@ -43,6 +43,13 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
             });
         }
     }, [initialData, isOpen]);
+
+    const categorySuggestions = useMemo(() => {
+        return ['General', ...categories]
+            .map((category) => String(category || '').trim())
+            .filter(Boolean)
+            .filter((category, index, values) => values.indexOf(category) === index);
+    }, [categories]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -117,20 +124,24 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                     </Field>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <Field label="Category" htmlFor="category">
-                            <Select
+                        <Field
+                            label="Category"
+                            htmlFor="category"
+                            hint="Choose an existing category or type a new one."
+                        >
+                            <Input
                                 name="category"
                                 id="category"
                                 value={formData.category}
                                 onChange={handleChange}
-                            >
-                                {categories.map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
+                                list="prompt-category-suggestions"
+                                placeholder="e.g., Assessment"
+                            />
+                            <datalist id="prompt-category-suggestions">
+                                {categorySuggestions.map((category) => (
+                                    <option key={category} value={category} />
                                 ))}
-                                {!categories.includes(formData.category) && (
-                                    <option value={formData.category}>{formData.category}</option>
-                                )}
-                            </Select>
+                            </datalist>
                         </Field>
                         <Field label="Mode" htmlFor="mode">
                             <Select

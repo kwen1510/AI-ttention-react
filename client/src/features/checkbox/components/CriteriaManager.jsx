@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react';
-import { ChevronDown, Info, HelpCircle, Trash2, Save, ClipboardList } from 'lucide-react';
+import { ChevronDown, Info, HelpCircle, Trash2, Save, ClipboardList, Library } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Textarea, Input } from '../../../components/ui/field.jsx';
@@ -16,9 +16,8 @@ export function CriteriaManager({
     onClear,
     feedback,
     isLoading,
-    library,
-    onLoadPrompt,
-    onLoadLibrary
+    onOpenLibrary,
+    isLibraryLoading
 }) {
     const [isOpen, setIsOpen] = useState(true);
     const [showFormatHelp, setShowFormatHelp] = useState(false);
@@ -48,6 +47,13 @@ export function CriteriaManager({
             {isOpen && (
                 <div id={contentId} className="border-t border-[var(--border)] p-6">
                     <div className="space-y-6">
+                        <div className="cluster">
+                            <Button type="button" onClick={onOpenLibrary} variant="secondary" size="sm" disabled={!onOpenLibrary || isLibraryLoading}>
+                                <Library className="h-3.5 w-3.5" />
+                                {isLibraryLoading ? 'Loading prompts…' : 'Saved prompts'}
+                            </Button>
+                        </div>
+
                         <Field label="Discussion question or scenario">
                             <Textarea
                                 value={scenario}

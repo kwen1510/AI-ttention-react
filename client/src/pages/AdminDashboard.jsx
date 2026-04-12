@@ -6,6 +6,7 @@ import { SessionHeader } from '../features/admin/components/SessionHeader';
 import { PromptManager } from '../features/admin/components/PromptManager';
 import { GroupGrid } from '../features/admin/components/GroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
+import { PromptSelectorModal } from '../features/prompts/components/PromptSelectorModal.jsx';
 import { SectionHeader } from '../components/ui/panel.jsx';
 import { DEFAULT_SUMMARY_PROMPT } from '../lib/prompts.js';
 
@@ -23,16 +24,22 @@ function AdminDashboard() {
   const {
     currentPrompt,
     setCurrentPrompt,
+    promptLibrary,
     savePrompt,
     testPrompt,
     feedback,
-    loadSessionPrompt
+    loadSessionPrompt,
+    loadLibrary,
+    applyLibraryPrompt,
+    isLibraryLoading,
+    libraryError
   } = usePromptManager(sessionCode, socket);
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
   const [showQR, setShowQR] = useState(false);
-  const hasGroups = groups.size > 0;
+  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [applyingPromptId, setApplyingPromptId] = useState(null);
 
   // Initialize session
   useEffect(() => {
@@ -123,6 +130,20 @@ function AdminDashboard() {
     }
   };
 
+  const handleOpenPromptLibrary = async () => {
+    setShowPromptLibrary(true);
+    await loadLibrary();
+  };
+
+  const handleApplySavedPrompt = async (prompt) => {
+    setApplyingPromptId(prompt._id);
+    const success = await applyLibraryPrompt(prompt);
+    setApplyingPromptId(null);
+    if (success) {
+      setShowPromptLibrary(false);
+    }
+  };
+
   return (
     <div className="admin-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
@@ -143,8 +164,6 @@ function AdminDashboard() {
           description="Monitor group participation, review transcript flow, and refine the running summary prompt in one place."
         />
 
-        {hasGroups ? <GroupGrid groups={groups} /> : null}
-
         <PromptManager
           currentPrompt={currentPrompt}
           onPromptChange={setCurrentPrompt}
@@ -152,10 +171,28 @@ function AdminDashboard() {
           onTest={testPrompt}
           onReset={() => setCurrentPrompt(DEFAULT_SUMMARY_PROMPT)}
           feedback={feedback}
+          onOpenLibrary={handleOpenPromptLibrary}
+          isLibraryLoading={isLibraryLoading}
         />
 
-        {!hasGroups ? <GroupGrid groups={groups} /> : null}
+        <GroupGrid groups={groups} />
       </main>
+
+      <PromptSelectorModal
+        isOpen={showPromptLibrary}
+        onClose={() => {
+          if (!applyingPromptId) {
+            setShowPromptLibrary(false);
+          }
+        }}
+        mode="summary"
+        prompts={promptLibrary}
+        isLoading={isLibraryLoading}
+        error={libraryError}
+        onRefresh={loadLibrary}
+        onUsePrompt={handleApplySavedPrompt}
+        applyingPromptId={applyingPromptId}
+      />
 
       <QRCodeModal
         isOpen={showQR}

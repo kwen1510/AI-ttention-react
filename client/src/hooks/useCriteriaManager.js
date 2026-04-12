@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { parseCheckboxPromptContent } from '../lib/prompts.js';
 
 export function useCriteriaManager(sessionCode, socket) {
     const [scenario, setScenario] = useState('');
@@ -6,6 +7,8 @@ export function useCriteriaManager(sessionCode, socket) {
     const [currentCriteria, setCurrentCriteria] = useState([]);
     const [strictness, setStrictness] = useState(2);
     const [isLoading, setIsLoading] = useState(false);
+    const [isLibraryLoading, setIsLibraryLoading] = useState(false);
+    const [libraryError, setLibraryError] = useState(null);
     const [feedback, setFeedback] = useState(null);
     const [promptLibrary, setPromptLibrary] = useState([]);
 
@@ -44,16 +47,51 @@ export function useCriteriaManager(sessionCode, socket) {
             });
     };
 
-    const saveCriteria = useCallback(async (interval) => {
-        if (!criteriaText.trim()) {
+    const formatCriteriaText = useCallback((criteria = []) => {
+        return (criteria || [])
+            .map((criterion) => {
+                const description = String(criterion?.description || '').trim();
+                const rubric = String(criterion?.rubric || '').trim();
+                if (!description) return null;
+                if (!rubric || rubric === 'No specific rubric provided') {
+                    return description;
+                }
+                return `${description} (${rubric})`;
+            })
+            .filter(Boolean)
+            .join('\n');
+    }, []);
+
+    const hydrateCriteria = useCallback((criteria = []) => {
+        return (criteria || []).map((criterion, index) => ({
+            id: Number(criterion?.id ?? index),
+            dbId: criterion?.dbId,
+            description: String(criterion?.description || ''),
+            rubric: String(criterion?.rubric || 'No specific rubric provided'),
+            completed: criterion?.completed === true,
+            quote: criterion?.quote ?? null,
+            status: criterion?.status || 'grey',
+            weight: criterion?.weight || 1
+        }));
+    }, []);
+
+    const saveCriteria = useCallback(async (interval, overrides = {}, options = {}) => {
+        const nextCriteriaText = String(overrides.criteriaText ?? criteriaText);
+        const nextScenario = String(overrides.scenario ?? scenario);
+        const nextStrictness = Number(overrides.strictness ?? strictness);
+
+        if (!nextCriteriaText.trim()) {
             showFeedback('Please enter at least one criterion', 'error');
             return null;
         }
 
         try {
             setIsLoading(true);
-            const parsedCriteria = parseCriteria(criteriaText);
+            const parsedCriteria = parseCriteria(nextCriteriaText);
             setCurrentCriteria(parsedCriteria);
+            setScenario(nextScenario);
+            setCriteriaText(nextCriteriaText);
+            setStrictness(nextStrictness);
 
             // Cleanup old data
             await fetch(`/api/cleanup/${sessionCode}`, { method: 'POST' });
@@ -64,14 +102,17 @@ export function useCriteriaManager(sessionCode, socket) {
                 body: JSON.stringify({
                     sessionCode,
                     criteria: parsedCriteria,
-                    scenario: scenario || "Academic discussion session",
+                    scenario: nextScenario || "Academic discussion session",
                     interval: interval * 1000,
-                    strictness
+                    strictness: nextStrictness
                 })
             });
 
             if (response.ok) {
-                showFeedback(`Criteria saved successfully! ${parsedCriteria.length} items ready.`, 'success');
+                showFeedback(
+                    options.successMessage || `Criteria saved successfully! ${parsedCriteria.length} items ready.`,
+                    'success'
+                );
                 return parsedCriteria;
             } else {
                 throw new Error('Failed to save criteria');
@@ -87,42 +128,100 @@ export function useCriteriaManager(sessionCode, socket) {
 
     const loadLibrary = useCallback(async () => {
         try {
-            // Assuming we reuse the prompt library endpoint but filter/use differently?
-            // Or maybe there's a specific checkbox prompt library endpoint?
-            // The original code used `/api/prompt-library` but filtered or used `loadCheckboxPrompt`.
-            // Let's assume `/api/prompt-library` returns all prompts and we filter by type/mode if needed, 
-            // or just display them. The original code filtered by checking if content had "Scenario:" etc.
+            setIsLibraryLoading(true);
+            setLibraryError(null);
             const res = await fetch('/api/prompt-library');
             if (res.ok) {
                 const data = await res.json();
                 setPromptLibrary(data);
+                return data;
             }
+            throw new Error(`Failed to load library (${res.status})`);
         } catch (err) {
             console.error('Failed to load library:', err);
+            setLibraryError(err.message || 'Failed to load saved prompts');
+            return [];
+        } finally {
+            setIsLibraryLoading(false);
         }
     }, []);
 
     const loadPrompt = useCallback((prompt) => {
-        const lines = prompt.content.split('\n').filter(line => line.trim());
-        let newScenario = '';
-        let newCriteriaLines = [];
+        const parsedPrompt = parseCheckboxPromptContent(prompt.content, prompt.scenario || '');
 
-        if (lines.length > 0 && /^\s*scenario\s*:/i.test(lines[0])) {
-            newScenario = lines[0].replace(/^\s*scenario\s*:\s*/i, '').trim();
-            newCriteriaLines = lines.slice(1);
-        } else {
-            if (prompt.scenario) {
-                newScenario = prompt.scenario.trim();
-                newCriteriaLines = lines;
-            } else {
-                newCriteriaLines = lines;
-            }
-        }
-
-        setScenario(newScenario);
-        setCriteriaText(newCriteriaLines.join('\n'));
+        setScenario(parsedPrompt.scenario);
+        setCriteriaText(parsedPrompt.criteriaText);
         showFeedback('Prompt loaded', 'success');
     }, []);
+
+    const loadSessionCriteria = useCallback(async () => {
+        if (!sessionCode) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`/api/checkbox/${sessionCode}`);
+            if (response.status === 404) {
+                return null;
+            }
+            if (!response.ok) {
+                throw new Error(`Failed to load checklist session (${response.status})`);
+            }
+
+            const data = await response.json();
+            if (data?.success === false && (!Array.isArray(data.criteriaWithProgress) || data.criteriaWithProgress.length === 0)) {
+                return null;
+            }
+            const hydratedCriteria = hydrateCriteria(data.criteriaWithProgress || []);
+            setScenario(String(data.scenario || ''));
+            setCriteriaText(formatCriteriaText(hydratedCriteria));
+            setCurrentCriteria(hydratedCriteria);
+
+            return {
+                ...data,
+                criteria: hydratedCriteria
+            };
+        } catch (err) {
+            console.error('Failed to load checklist session:', err);
+            return null;
+        }
+    }, [formatCriteriaText, hydrateCriteria, sessionCode]);
+
+    const recordPromptUse = useCallback(async (promptId) => {
+        if (!promptId) return;
+        try {
+            await fetch(`/api/prompts/${promptId}/use`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionCode: sessionCode || 'current-session' })
+            });
+        } catch (err) {
+            console.warn('Failed to record prompt usage:', err);
+        }
+    }, [sessionCode]);
+
+    const applyLibraryPrompt = useCallback(async (prompt, interval) => {
+        const parsedPrompt = parseCheckboxPromptContent(prompt?.content, prompt?.scenario || '');
+        const nextStrictness = Number(prompt?.strictness || strictness || 2);
+
+        const savedCriteria = await saveCriteria(
+            interval,
+            {
+                scenario: parsedPrompt.scenario,
+                criteriaText: parsedPrompt.criteriaText,
+                strictness: nextStrictness
+            },
+            {
+                successMessage: `${prompt?.title || 'Prompt'} applied to session`
+            }
+        );
+
+        if (savedCriteria) {
+            await recordPromptUse(prompt?._id);
+        }
+
+        return savedCriteria;
+    }, [recordPromptUse, saveCriteria, strictness]);
 
     return {
         scenario,
@@ -133,11 +232,15 @@ export function useCriteriaManager(sessionCode, socket) {
         strictness,
         setStrictness,
         isLoading,
+        isLibraryLoading,
+        libraryError,
         feedback,
         promptLibrary,
         saveCriteria,
         loadLibrary,
+        loadSessionCriteria,
         loadPrompt,
+        applyLibraryPrompt,
         setFeedback
     };
 }
