@@ -2,19 +2,28 @@ import React from 'react';
 import { Play, Square, QrCode } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Input } from '../../../components/ui/field.jsx';
-import { StatusBadge } from '../../../components/ui/badge.jsx';
+import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
 import { Toolbar, ToolbarGroup } from '../../../components/ui/toolbar.jsx';
 
 export function SessionHeader({
     sessionCode,
     isConnected,
     isRecording,
+    elapsedTime = 0,
+    nextChunkIn = null,
     onStartRecording,
     onStopRecording,
     onOpenQR,
     interval,
     onIntervalChange
 }) {
+    const formatTime = (seconds) => {
+        const safeSeconds = Math.max(0, Number(seconds) || 0);
+        const mins = Math.floor(safeSeconds / 60);
+        const secs = Math.floor(safeSeconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
     return (
         <div className="page-shell page-shell--fluid pb-0">
             <Toolbar className="gap-3">
@@ -38,6 +47,12 @@ export function SessionHeader({
                     <StatusBadge tone={isConnected ? 'success' : 'danger'} pulse={isConnected}>
                         {isConnected ? 'Connected' : 'Disconnected'}
                     </StatusBadge>
+
+                    {isRecording ? <Badge tone="danger">Recording live</Badge> : null}
+                    {isRecording ? <Badge tone="primary">Elapsed {formatTime(elapsedTime)}</Badge> : null}
+                    {isRecording && Number.isFinite(nextChunkIn) ? (
+                        <Badge tone="accent">Next chunk {formatTime(nextChunkIn)}</Badge>
+                    ) : null}
 
                     <Field label="Interval (sec)" htmlFor="sessionInterval" className="w-[8rem]">
                         <Input

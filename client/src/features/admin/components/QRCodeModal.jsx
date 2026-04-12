@@ -67,7 +67,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent size="sm" className="student-access-modal">
+            <DialogContent size="md" className="student-access-modal">
                 <DialogHeader>
                     <DialogTitle>Student access</DialogTitle>
                     <DialogDescription>
@@ -113,11 +113,11 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                         </Alert>
                     ) : null}
 
-                    <div className="modal-copy-block">
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs copy-muted">{joinUrl}</span>
-                        <Button onClick={copyLink} variant="secondary" size="sm" className="shrink-0">
+                    <div className="modal-copy-block student-access-modal__copy-row">
+                        <span className="student-access-modal__link copy-muted">{joinUrl}</span>
+                        <Button onClick={copyLink} variant="secondary" size="sm" className="student-access-modal__copy-button">
                             <Copy className="h-4 w-4" />
-                            Copy
+                            Copy link
                         </Button>
                     </div>
 

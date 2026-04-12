@@ -48,6 +48,7 @@ import {
     getOwnedSessionOrThrow,
     listOwnedHistorySessions
 } from "../services/history.js";
+import { isSummaryReleased } from "../services/summaryRelease.js";
 
 const router = express.Router();
 const db = createSupabaseDb();
@@ -260,6 +261,53 @@ function filterPrompts(prompts, { search = "", category = "", mode = "" } = {}) 
     });
 }
 
+function parseCheckboxPromptContentForTest(text = "", fallbackScenario = "") {
+    const lines = String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let scenario = String(fallbackScenario || "").trim();
+    const criteria = [];
+
+    for (const line of lines) {
+        const scenarioMatch = line.match(/^scenario\s*[:\-]\s*(.+)$/i);
+        if (!scenario && scenarioMatch) {
+            scenario = scenarioMatch[1].trim();
+            continue;
+        }
+        criteria.push(line);
+    }
+
+    if (!scenario && criteria.length > 0) {
+        scenario = criteria.shift();
+    }
+
+    return {
+        scenario,
+        criteria
+    };
+}
+
+function buildCheckboxCriteriaForTest(lines = []) {
+    return (lines || []).map((line, index) => {
+        const match = String(line || "").trim().match(/^(.+?)\s*\((.+)\)\s*$/);
+        if (match) {
+            return {
+                originalIndex: index,
+                description: match[1].trim(),
+                rubric: match[2].trim()
+            };
+        }
+
+        return {
+            originalIndex: index,
+            description: String(line || "").trim(),
+            rubric: "No specific rubric provided"
+        };
+    }).filter((criterion) => criterion.description);
+}
+
 router.get("/auth/me", async (req, res) => {
     const teacher = await requireTeacher(req, res);
     if (!teacher) return;
@@ -347,6 +395,67 @@ router.post("/test-summary", aiLimiter, express.json(), async (req, res) => {
             error: "Summary failed",
             details: err.message,
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
+    }
+});
+
+router.post("/test-prompt", aiLimiter, express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const mode = req.body?.mode === "checkbox" ? "checkbox" : "summary";
+        const promptContent = String(req.body?.promptContent || "").trim();
+        const transcript = String(req.body?.transcript || "").trim();
+        const strictness = Math.max(1, Math.min(Number(req.body?.strictness) || 2, 3));
+
+        if (!promptContent) {
+            return res.status(400).json({ error: "Prompt content is required" });
+        }
+
+        if (!transcript) {
+            return res.status(400).json({ error: "Transcript text is required" });
+        }
+
+        if (mode === "summary") {
+            const summary = await summarise(transcript, promptContent);
+            return res.json({
+                success: true,
+                mode,
+                summary
+            });
+        }
+
+        const parsedPrompt = parseCheckboxPromptContentForTest(promptContent);
+        const criteria = buildCheckboxCriteriaForTest(parsedPrompt.criteria);
+
+        if (!parsedPrompt.scenario || criteria.length === 0) {
+            return res.status(400).json({
+                error: 'Checkbox prompts need a "Scenario:" line and at least one criterion.'
+            });
+        }
+
+        const result = await processCheckboxTranscript(
+            transcript,
+            criteria,
+            parsedPrompt.scenario,
+            strictness,
+            []
+        );
+
+        return res.json({
+            success: true,
+            mode,
+            scenario: parsedPrompt.scenario,
+            criteria,
+            matches: Array.isArray(result?.matches) ? result.matches : []
+        });
+    } catch (err) {
+        console.error("❌ Test prompt error:", err);
+        res.status(500).json({
+            error: "Prompt test failed",
+            details: err.message,
+            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
         });
     }
 });
@@ -1091,6 +1200,12 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             timestamp: now
         });
 
+        const summaryReleased = await isSummaryReleased({
+            sessionCode: resolvedSessionCode,
+            sessionId: session._id,
+            groupNumber
+        });
+
         io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("transcription_and_summary", {
             transcription: {
                 text: finalTranscriptText,
@@ -1098,7 +1213,8 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 duration,
                 wordCount
             },
-            summary,
+            summary: summaryReleased ? summary : null,
+            isReleased: summaryReleased,
             isLatestSegment: true
         });
         io?.to(resolvedSessionCode).emit("admin_update", {
@@ -1109,6 +1225,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             transcriptDuration: duration,
             transcriptWordCount: wordCount,
             summary,
+            summaryReleased,
             stats: {
                 totalSegments: stats.total_segments,
                 totalWords: stats.total_words,

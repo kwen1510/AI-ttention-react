@@ -17,6 +17,7 @@ import {
     getTranscriptBundle,
     persistSummarySnapshot
 } from "./transcript.js";
+import { isSummaryReleased, recordSummaryRelease } from "./summaryRelease.js";
 
 // Auto-summary management
 export const activeSummaryTimers = new Map();
@@ -337,6 +338,12 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
                         timestamp: now
                     });
 
+                    const summaryReleased = await isSummaryReleased({
+                        sessionCode,
+                        sessionId: session._id,
+                        groupNumber
+                    });
+
                     // Send both new transcription and updated summary to clients
                     ioInstance.to(roomName).emit("transcription_and_summary", {
                         transcription: {
@@ -345,7 +352,8 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
                             duration: duration,
                             wordCount: wordCount
                         },
-                        summary,
+                        summary: summaryReleased ? summary : null,
+                        isReleased: summaryReleased,
                         isLatestSegment: true
                     });
 
@@ -358,6 +366,7 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
                         transcriptDuration: duration,
                         transcriptWordCount: wordCount,
                         summary,
+                        summaryReleased,
                         stats: {
                             totalSegments: stats.total_segments,
                             totalWords: stats.total_words,
@@ -545,9 +554,10 @@ export function initSocket(io) {
                 const { code: resolvedCode, session, sessionState } = joinContext;
                 sessionCode = resolvedCode;
                 groupNumber = parsedGroup;
+                let sessionRecord = session || null;
 
                 if (sessionState?.persisted || session) {
-                    const sessionRecord = session || await db.collection("sessions").findOne({ code: resolvedCode });
+                    sessionRecord = sessionRecord || await db.collection("sessions").findOne({ code: resolvedCode });
                     if (!sessionRecord) {
                         socket.emit("error", "Session data inconsistent");
                         return;
@@ -623,7 +633,43 @@ export function initSocket(io) {
                         mode: mem.mode || "summary"
                     });
                 }
-                socket.to(resolvedCode).emit("student_joined", { group: parsedGroup, socketId: socket.id });
+
+                const currentSummaryReleased = (mem.mode || "summary") === "summary"
+                    ? await isSummaryReleased({
+                        sessionCode: resolvedCode,
+                        sessionId: sessionRecord?._id || mem.id || null,
+                        groupNumber: parsedGroup
+                    })
+                    : false;
+
+                if ((mem.mode || "summary") === "summary") {
+                    let latestSummary = null;
+                    if (currentSummaryReleased && sessionRecord) {
+                        const persistedGroup = await db.collection("groups").findOne({
+                            session_id: sessionRecord._id,
+                            number: parsedGroup
+                        });
+
+                        if (persistedGroup) {
+                            const summaryRecord = await db.collection("summaries").findOne({ group_id: persistedGroup._id });
+                            latestSummary = summaryRecord?.text || null;
+                        }
+                    }
+
+                    socket.emit("summary_state", {
+                        sessionCode: resolvedCode,
+                        groupNumber: parsedGroup,
+                        isReleased: currentSummaryReleased,
+                        summary: currentSummaryReleased ? latestSummary : null,
+                        timestamp: Date.now()
+                    });
+                }
+
+                socket.to(resolvedCode).emit("student_joined", {
+                    group: parsedGroup,
+                    socketId: socket.id,
+                    summaryReleased: currentSummaryReleased
+                });
                 console.log(`[${ts()}] 📢 Notified admin about student joining group ${parsedGroup}`);
             } catch (error) {
                 console.error("❌ Error joining session:", error);
@@ -948,6 +994,53 @@ export function initSocket(io) {
                 latestChecklistState.set(cacheKey, checklistData);
             } catch (error) {
                 console.error("❌ Error handling checklist release:", error);
+            }
+        });
+
+        socket.on("release_summary", async (data) => {
+            try {
+                const access = await ensureTeacherOwnsSession(data?.sessionCode);
+                if (!access) return;
+
+                const parsedGroupNumber = Number(data?.groupNumber ?? data?.group);
+                if (!Number.isFinite(parsedGroupNumber) || parsedGroupNumber <= 0) {
+                    console.error(`❌ Invalid group number received for release_summary: ${data?.groupNumber ?? data?.group}`);
+                    return;
+                }
+
+                const sessionId = access.session?._id || access.sessionState?.id || null;
+                const summaryRelease = await recordSummaryRelease({
+                    sessionCode: access.code,
+                    sessionId,
+                    groupNumber: parsedGroupNumber,
+                    isReleased: data?.isReleased !== false
+                });
+
+                let latestSummary = null;
+                if (sessionId) {
+                    const group = await db.collection("groups").findOne({
+                        session_id: sessionId,
+                        number: parsedGroupNumber
+                    });
+
+                    if (group) {
+                        const summaryRecord = await db.collection("summaries").findOne({ group_id: group._id });
+                        latestSummary = summaryRecord?.text || null;
+                    }
+                }
+
+                const summaryState = {
+                    sessionCode: access.code,
+                    groupNumber: parsedGroupNumber,
+                    isReleased: summaryRelease.isReleased,
+                    summary: summaryRelease.isReleased ? latestSummary : null,
+                    timestamp: summaryRelease.timestamp
+                };
+
+                io.to(access.code).emit("summary_state", summaryState);
+                io.to(`${access.code}-${parsedGroupNumber}`).emit("summary_state", summaryState);
+            } catch (error) {
+                console.error("❌ Error handling summary release:", error);
             }
         });
     });

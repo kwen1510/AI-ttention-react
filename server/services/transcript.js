@@ -22,6 +22,45 @@ export function normalizeTranscriptText(text) {
         .trim();
 }
 
+const TRANSCRIPT_ARTIFACT_LINE_PATTERNS = [
+    /^(?:much more at|for more(?: information)?(?: visit)?|learn more at|read more at|visit|visit us at)\s+(?:https?:\/\/|www\.)\S+$/i,
+    /^(?:https?:\/\/|www\.)\S+$/i
+];
+
+const TRAILING_TRANSCRIPT_ARTIFACT_PATTERNS = [
+    /(?:^|[.!?]\s+)(?:much more at|for more(?: information)?(?: visit)?|learn more at|read more at|visit|visit us at)\s+(?:https?:\/\/|www\.)\S+$/i
+];
+
+function isTranscriptArtifactLine(line) {
+    const normalizedLine = normalizeTranscriptText(line);
+    if (!normalizedLine) {
+        return false;
+    }
+
+    return TRANSCRIPT_ARTIFACT_LINE_PATTERNS.some((pattern) => pattern.test(normalizedLine));
+}
+
+export function stripTranscriptArtifacts(text) {
+    const rawText = String(text || "");
+    if (!rawText.trim()) {
+        return "";
+    }
+
+    const filteredLines = rawText
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .filter((line) => !isTranscriptArtifactLine(line));
+
+    let cleaned = filteredLines.join("\n");
+
+    TRAILING_TRANSCRIPT_ARTIFACT_PATTERNS.forEach((pattern) => {
+        cleaned = cleaned.replace(pattern, "").trim();
+    });
+
+    return normalizeTranscriptText(cleaned);
+}
+
 export function countTranscriptWords(text) {
     const normalized = normalizeTranscriptText(text);
     return normalized ? normalized.split(' ').filter(Boolean).length : 0;

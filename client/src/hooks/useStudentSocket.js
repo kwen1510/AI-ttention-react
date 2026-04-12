@@ -8,6 +8,7 @@ export function useStudentSocket() {
     const [sessionInfo, setSessionInfo] = useState({ code: null, group: null, mode: 'summary' });
     const [transcription, setTranscription] = useState(null);
     const [summary, setSummary] = useState(null);
+    const [summaryReleased, setSummaryReleased] = useState(false);
     const [checklist, setChecklist] = useState([]);
     const [checklistReleased, setChecklistReleased] = useState(false);
     const [error, setError] = useState(null);
@@ -66,6 +67,9 @@ export function useStudentSocket() {
                 mode: data.mode || 'summary'
             });
             setError(null);
+            if ((data.mode || 'summary') === 'summary') {
+                setSummaryReleased(false);
+            }
 
             if (data.status === 'recording' && data.interval) {
                 setRecordingState({ isRecording: true, interval: data.interval });
@@ -84,7 +88,21 @@ export function useStudentSocket() {
             if (data.transcription) {
                 setTranscription(data.transcription);
             }
-            if (data.summary) {
+            if (Object.prototype.hasOwnProperty.call(data, 'isReleased')) {
+                setSummaryReleased(Boolean(data.isReleased));
+            }
+            if (Object.prototype.hasOwnProperty.call(data, 'summary')) {
+                setSummary(data.summary);
+            }
+        };
+
+        const handleSummaryState = (data) => {
+            if (Number(data.groupNumber) !== Number(sessionInfo.group)) {
+                return;
+            }
+
+            setSummaryReleased(Boolean(data.isReleased));
+            if (Object.prototype.hasOwnProperty.call(data, 'summary')) {
                 setSummary(data.summary);
             }
         };
@@ -112,11 +130,13 @@ export function useStudentSocket() {
         socket.on('record_now', handleRecordNow);
         socket.on('stop_recording', handleStopRecording);
         socket.on('transcription_and_summary', handleTranscriptionAndSummary);
+        socket.on('summary_state', handleSummaryState);
         socket.on('checkbox_update', handleCheckboxUpdate);
         socket.on('checklist_state', handleChecklistState);
         socket.on('session_reset', () => {
             setTranscription(null);
             setSummary(null);
+            setSummaryReleased(false);
             setChecklist([]);
             setChecklistReleased(false);
             setRecordingState({ isRecording: false, interval: null });
@@ -127,6 +147,7 @@ export function useStudentSocket() {
             socket.off('record_now', handleRecordNow);
             socket.off('stop_recording', handleStopRecording);
             socket.off('transcription_and_summary', handleTranscriptionAndSummary);
+            socket.off('summary_state', handleSummaryState);
             socket.off('checkbox_update', handleCheckboxUpdate);
             socket.off('checklist_state', handleChecklistState);
             socket.off('session_reset');
@@ -170,6 +191,7 @@ export function useStudentSocket() {
         setSessionInfo({ code: null, group: null, mode: 'summary' });
         setTranscription(null);
         setSummary(null);
+        setSummaryReleased(false);
         setChecklist([]);
         setChecklistReleased(false);
         setError(null);
@@ -188,6 +210,7 @@ export function useStudentSocket() {
         sessionInfo,
         transcription,
         summary,
+        summaryReleased,
         checklist,
         setChecklist, // Allow fetching to update this
         checklistReleased,

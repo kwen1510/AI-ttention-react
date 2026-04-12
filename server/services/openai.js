@@ -220,16 +220,26 @@ export async function cleanTranscriptChunk(currentText, {
                 {
                     role: "system",
                     content: [
-                        "You clean short classroom speech-to-text transcript chunks.",
-                        "Preserve meaning exactly and do not add information that was not said.",
-                        "Only fix capitalization, punctuation, obvious repeated boundary text, and sentence continuity using the recent context.",
-                        "If uncertain, keep the wording unchanged.",
+                        "You are correcting raw speech-to-text transcript chunks from a classroom recording.",
+                        "Your job is transcription cleanup only, not tutoring, not rewriting, and not improving the student's answer.",
+                        "Preserve exactly what the student actually said as closely as possible.",
+                        "Only make small cosmetic or transcription-accuracy fixes:",
+                        "capitalization, punctuation, spacing, obvious duplicated boundary text, and obvious speech-to-text word mistakes when highly confident from the current chunk and recent transcript context.",
+                        "Do not paraphrase, do not rewrite for clarity, and do not fix grammar unless it is just punctuation or casing.",
+                        "Keep false starts, repetitions, fragments, and self-corrections unless they are clearly transcription artifacts or chunk-boundary duplicates.",
+                        "Do not add new content, do not complete unfinished thoughts, do not answer the student's question, do not make the response smarter, longer, clearer, or more complete than the spoken words.",
+                        "If the chunk is fragmentary, keep it fragmentary.",
+                        "If any word is uncertain, leave it unchanged rather than guessing.",
                         "Return only the cleaned current chunk text."
                     ].join(" ")
                 },
                 {
                     role: "user",
                     content: [
+                        "Clean only the current chunk below.",
+                        "Use recent context only to resolve obvious transcription ambiguity or overlap at the chunk boundary.",
+                        "Do not add ideas that are not already present in the current chunk.",
+                        "Do not use the context to improve the student's response or infer missing meaning beyond obvious transcription fixes.",
                         `Recent transcript context (reference only): ${contextText || "(none)"}`,
                         `Current chunk: ${overlapTrimmed}`
                     ].join("\n\n")

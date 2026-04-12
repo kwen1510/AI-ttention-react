@@ -20,6 +20,10 @@ function createChecklistSeed(criteria = []) {
   }));
 }
 
+function resolveReleaseCriteria(groupData, currentCriteria) {
+  return (groupData?.checkboxes?.length ? groupData.checkboxes : createChecklistSeed(currentCriteria));
+}
+
 function CheckboxDashboard() {
   const [searchParams] = useSearchParams();
   const {
@@ -53,6 +57,7 @@ function CheckboxDashboard() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [showQR, setShowQR] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [applyingPromptId, setApplyingPromptId] = useState(null);
@@ -199,6 +204,24 @@ function CheckboxDashboard() {
     });
   }, [currentCriteria, groups, setGroups]);
 
+  useEffect(() => {
+    if (!isRecording) {
+      setElapsedTime(0);
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setElapsedTime((previous) => previous + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  const elapsedInCycle = interval > 0 ? elapsedTime % interval : 0;
+  const nextChunkIn = isRecording
+    ? (elapsedInCycle === 0 ? interval : interval - elapsedInCycle)
+    : null;
+
   const handleStartRecording = async () => {
     if (!sessionCode) return;
     try {
@@ -266,7 +289,7 @@ function CheckboxDashboard() {
   const handleReleaseChecklist = (groupNumber) => {
     if (socket && sessionCode) {
       const group = groups.get(groupNumber);
-      const releaseCriteria = (group?.checkboxes?.length ? group.checkboxes : createChecklistSeed(currentCriteria));
+      const releaseCriteria = resolveReleaseCriteria(group, currentCriteria);
 
       if (!releaseCriteria.length) {
         setFeedback({
@@ -299,6 +322,69 @@ function CheckboxDashboard() {
     }
   };
 
+  const handleReleaseAllChecklists = () => {
+    if (!socket || !sessionCode) {
+      return;
+    }
+
+    const releaseTargets = Array.from(groups.entries())
+      .filter(([, groupData]) => !groupData?.isReleased)
+      .map(([groupNumber, groupData]) => ({
+        groupNumber,
+        criteria: resolveReleaseCriteria(groupData, currentCriteria)
+      }));
+
+    if (!releaseTargets.length) {
+      setFeedback({
+        message: groups.size === 0
+          ? 'Student groups need to join before you can release a checklist.'
+          : 'All visible groups have already been released.',
+        type: 'primary'
+      });
+      return;
+    }
+
+    const missingCriteria = releaseTargets.some((target) => !target.criteria.length);
+    if (missingCriteria) {
+      setFeedback({
+        message: 'Save checklist criteria before releasing them to students.',
+        type: 'error'
+      });
+      return;
+    }
+
+    releaseTargets.forEach(({ groupNumber, criteria }) => {
+      socket.emit('release_checklist', {
+        sessionCode,
+        groupNumber,
+        isReleased: true,
+        criteria
+      });
+    });
+
+    setGroups((prev) => {
+      const next = new Map(prev);
+      releaseTargets.forEach(({ groupNumber, criteria }) => {
+        const group = next.get(groupNumber);
+        if (!group) {
+          return;
+        }
+
+        next.set(groupNumber, {
+          ...group,
+          isReleased: true,
+          checkboxes: group.checkboxes?.length ? group.checkboxes : criteria
+        });
+      });
+      return next;
+    });
+
+    setFeedback({
+      message: `Released checklist to ${releaseTargets.length} ${releaseTargets.length === 1 ? 'group' : 'groups'}.`,
+      type: 'success'
+    });
+  };
+
   const handleOpenPromptLibrary = async () => {
     setShowPromptLibrary(true);
     await loadLibrary();
@@ -320,6 +406,8 @@ function CheckboxDashboard() {
         sessionCode={sessionCode}
         isConnected={isConnected}
         isRecording={isRecording}
+        elapsedTime={elapsedTime}
+        nextChunkIn={nextChunkIn}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
         onOpenQR={() => setShowQR(true)}
@@ -346,6 +434,9 @@ function CheckboxDashboard() {
             setScenario('');
             setCriteriaText('');
           }}
+          onReleaseAll={handleReleaseAllChecklists}
+          canReleaseAll={groups.size > 0 && currentCriteria.length > 0 && Array.from(groups.values()).some((group) => !group?.isReleased)}
+          releaseAllLabel="Release all checklists"
           feedback={feedback}
           isLoading={isLoading}
           onOpenLibrary={handleOpenPromptLibrary}

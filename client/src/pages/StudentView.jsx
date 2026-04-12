@@ -22,6 +22,7 @@ function StudentView() {
     sessionInfo,
     transcription,
     summary,
+    summaryReleased,
     checklist,
     checklistReleased,
     error: socketError,
@@ -116,7 +117,7 @@ function StudentView() {
                 isReleased={checklistReleased}
               />
             ) : (
-              <SummaryPanel summary={summary} />
+              <SummaryPanel summary={summary} isReleased={summaryReleased} />
             )}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileText, CheckSquare, Search, Play, RefreshCw, X } from 'lucide-react';
+import { FileText, CheckSquare, Play, RefreshCw, X } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { Button } from '../../../components/ui/button.jsx';
@@ -98,13 +98,12 @@ export function PromptSelectorModal({
                                 className="flex-1"
                             >
                                 <div className="relative">
-                                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
                                     <Input
                                         type="text"
                                         value={search}
                                         onChange={(event) => setSearch(event.target.value)}
                                         placeholder={mode === 'checkbox' ? 'Search by topic, class, or criteria' : 'Search by topic, class, or prompt goal'}
-                                        className="bg-[var(--surface)] pl-10 pr-10"
+                                        className="bg-[var(--surface)] pr-10"
                                     />
                                     {search ? (
                                         <button

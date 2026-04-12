@@ -88,7 +88,8 @@ export function useAdminSocket() {
                     stats: {},
                     uploadErrors: 0,
                     uploadStatus: null,
-                    isActive: true
+                    isActive: true,
+                    isReleased: false
                 };
 
                 // Update transcripts
@@ -110,6 +111,7 @@ export function useAdminSocket() {
                     cumulativeTranscript: data.cumulativeTranscript || existing.cumulativeTranscript,
                     summary: data.summary ? { text: data.summary, timestamp: Date.now() } : existing.summary,
                     stats: data.stats || existing.stats,
+                    isReleased: typeof data.summaryReleased === 'boolean' ? data.summaryReleased : existing.isReleased,
                     isActive: typeof data.isActive === 'boolean' ? data.isActive : existing.isActive,
                     lastUpdate: Date.now()
                 });
@@ -133,7 +135,7 @@ export function useAdminSocket() {
             console.warn(`Upload error in group ${data.group}:`, data.error);
         };
 
-        const handleStudentJoined = ({ group }) => {
+        const handleStudentJoined = ({ group, summaryReleased }) => {
             setGroups(prev => {
                 const newGroups = new Map(prev);
                 const existing = newGroups.get(group) || {
@@ -141,11 +143,13 @@ export function useAdminSocket() {
                     summary: null,
                     stats: {},
                     uploadErrors: 0,
-                    uploadStatus: null
+                    uploadStatus: null,
+                    isReleased: false
                 };
 
                 newGroups.set(group, {
                     ...existing,
+                    isReleased: typeof summaryReleased === 'boolean' ? summaryReleased : existing.isReleased,
                     isActive: true,
                     lastUpdate: Date.now()
                 });
@@ -163,7 +167,8 @@ export function useAdminSocket() {
                     stats: {},
                     uploadErrors: 0,
                     uploadStatus: null,
-                    isActive: true
+                    isActive: true,
+                    isReleased: false
                 };
 
                 newGroups.set(data.group, {
@@ -202,11 +207,40 @@ export function useAdminSocket() {
             });
         };
 
+        const handleSummaryState = (data) => {
+            const groupNum = Number(data.groupNumber);
+            if (!Number.isFinite(groupNum) || groupNum <= 0) {
+                return;
+            }
+
+            setGroups((prev) => {
+                const next = new Map(prev);
+                const existing = next.get(groupNum) || {
+                    transcripts: [],
+                    summary: null,
+                    stats: {},
+                    uploadErrors: 0,
+                    uploadStatus: null,
+                    isActive: true,
+                    isReleased: false
+                };
+
+                next.set(groupNum, {
+                    ...existing,
+                    isReleased: Boolean(data.isReleased),
+                    lastUpdate: Date.now()
+                });
+
+                return next;
+            });
+        };
+
         socket.on('admin_update', handleAdminUpdate);
         socket.on('upload_error', handleUploadError);
         socket.on('upload_status', handleUploadStatus);
         socket.on('student_joined', handleStudentJoined);
         socket.on('student_left', handleStudentLeft);
+        socket.on('summary_state', handleSummaryState);
 
         return () => {
             socket.off('admin_update', handleAdminUpdate);
@@ -214,6 +248,7 @@ export function useAdminSocket() {
             socket.off('upload_status', handleUploadStatus);
             socket.off('student_joined', handleStudentJoined);
             socket.off('student_left', handleStudentLeft);
+            socket.off('summary_state', handleSummaryState);
         };
     }, []);
 
@@ -258,6 +293,7 @@ export function useAdminSocket() {
         isConnected,
         sessionCode,
         groups,
+        setGroups,
         joinSession
     };
 }

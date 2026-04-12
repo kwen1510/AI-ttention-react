@@ -1,10 +1,10 @@
 import React, { useId, useState } from 'react';
-import { ChevronDown, ChevronUp, MessageSquare, ScrollText, UploadCloud } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, ScrollText, UploadCloud, Send, Check } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { StatusBadge, Badge } from '../../../components/ui/badge.jsx';
 
-export function GroupCard({ groupNumber, data }) {
+export function GroupCard({ groupNumber, data, onRelease }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const transcriptPanelId = useId();
 
@@ -60,12 +60,27 @@ export function GroupCard({ groupNumber, data }) {
                 title={`Group ${groupNumber}`}
                 description={`${data.transcripts.length} transcript segments`}
                 actions={(
+                    <Button
+                        type="button"
+                        onClick={() => onRelease?.(groupNumber)}
+                        size="sm"
+                        variant={data.isReleased ? 'secondary' : 'primary'}
+                        disabled={!onRelease || Boolean(data.isReleased)}
+                    >
+                        {data.isReleased ? <Check className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                        <span>{data.isReleased ? 'Released' : 'Release summary'}</span>
+                    </Button>
+                )}
+            >
+                <div className="cluster mt-2">
+                    <Badge tone="neutral">{groupNumber}</Badge>
                     <StatusBadge tone={statusTone} pulse={statusTone !== 'neutral'}>
                         {statusLabel}
                     </StatusBadge>
-                )}
-            >
-                <Badge tone="neutral">{groupNumber}</Badge>
+                    <StatusBadge tone={data.isReleased ? 'success' : 'warning'}>
+                        {data.isReleased ? 'Visible to students' : 'Not released'}
+                    </StatusBadge>
+                </div>
             </PanelHeader>
 
             <div className="mt-6 space-y-6">

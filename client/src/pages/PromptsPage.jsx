@@ -4,7 +4,7 @@ import { usePrompts } from '../hooks/usePrompts';
 import { PromptsList } from '../features/prompts/components/PromptsList';
 import { PromptModal } from '../features/prompts/components/PromptModal';
 import { PromptViewModal } from '../features/prompts/components/PromptViewModal';
-import { Plus, Search, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { buildModePath, getStagingBasePath } from '../lib/stagingBypass.js';
 import { Alert } from '../components/ui/alert.jsx';
 import { Button } from '../components/ui/button.jsx';
@@ -148,13 +148,11 @@ function PromptsPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_14rem_12rem]">
             <Field label="Search">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
                 <Input
                   type="text"
                   placeholder="Search prompts..."
                   value={filters.search}
                   onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                  className="pl-10"
                 />
               </div>
             </Field>

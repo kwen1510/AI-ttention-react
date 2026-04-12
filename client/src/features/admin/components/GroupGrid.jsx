@@ -3,7 +3,7 @@ import { GroupCard } from './GroupCard';
 import { GraduationCap } from 'lucide-react';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
 
-export function GroupGrid({ groups }) {
+export function GroupGrid({ groups, onRelease }) {
     if (groups.size === 0) {
         return (
             <EmptyState
@@ -17,7 +17,7 @@ export function GroupGrid({ groups }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {Array.from(groups.entries()).map(([num, data]) => (
-                <GroupCard key={num} groupNumber={num} data={data} />
+                <GroupCard key={num} groupNumber={num} data={data} onRelease={onRelease} />
             ))}
         </div>
     );

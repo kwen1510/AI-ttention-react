@@ -8,7 +8,10 @@ import { GroupGrid } from '../features/admin/components/GroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
 import { PromptSelectorModal } from '../features/prompts/components/PromptSelectorModal.jsx';
 import { SectionHeader } from '../components/ui/panel.jsx';
+import { Alert } from '../components/ui/alert.jsx';
+import { Button } from '../components/ui/button.jsx';
 import { DEFAULT_SUMMARY_PROMPT } from '../lib/prompts.js';
+import { Send } from 'lucide-react';
 
 function AdminDashboard() {
   const [searchParams] = useSearchParams();
@@ -18,6 +21,7 @@ function AdminDashboard() {
     isConnected,
     sessionCode,
     groups,
+    setGroups,
     joinSession
   } = useAdminSocket();
 
@@ -37,9 +41,11 @@ function AdminDashboard() {
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [showQR, setShowQR] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [applyingPromptId, setApplyingPromptId] = useState(null);
+  const [releaseFeedback, setReleaseFeedback] = useState(null);
 
   // Initialize session
   useEffect(() => {
@@ -90,6 +96,24 @@ function AdminDashboard() {
       setCurrentPrompt(selectedPrompt);
     }
   }, [selectedPrompt, setCurrentPrompt]);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setElapsedTime(0);
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setElapsedTime((previous) => previous + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  const elapsedInCycle = interval > 0 ? elapsedTime % interval : 0;
+  const nextChunkIn = isRecording
+    ? (elapsedInCycle === 0 ? interval : interval - elapsedInCycle)
+    : null;
 
   const handleStartRecording = async () => {
     if (!sessionCode) return;
@@ -144,12 +168,100 @@ function AdminDashboard() {
     }
   };
 
+  const showReleaseFeedback = (message, type = 'primary') => {
+    setReleaseFeedback({ message, type });
+    if (type !== 'error') {
+      window.setTimeout(() => {
+        setReleaseFeedback((current) => (current?.message === message ? null : current));
+      }, 5000);
+    }
+  };
+
+  const handleReleaseSummary = (groupNumber) => {
+    if (!socket || !sessionCode) {
+      return;
+    }
+
+    socket.emit('release_summary', {
+      sessionCode,
+      groupNumber,
+      isReleased: true
+    });
+
+    setGroups((prev) => {
+      const next = new Map(prev);
+      const group = next.get(groupNumber);
+      if (group) {
+        next.set(groupNumber, {
+          ...group,
+          isReleased: true
+        });
+      }
+      return next;
+    });
+
+    showReleaseFeedback(`Released summary to Group ${groupNumber}.`, 'success');
+  };
+
+  const handleReleaseAllSummaries = () => {
+    if (!socket || !sessionCode) {
+      return;
+    }
+
+    const releaseTargets = Array.from(groups.entries())
+      .filter(([, groupData]) => !groupData?.isReleased)
+      .map(([groupNumber]) => groupNumber);
+
+    if (!releaseTargets.length) {
+      showReleaseFeedback(
+        groups.size === 0
+          ? 'Student groups need to join before you can release summaries.'
+          : 'All visible groups have already been released.',
+        'primary'
+      );
+      return;
+    }
+
+    releaseTargets.forEach((groupNumber) => {
+      socket.emit('release_summary', {
+        sessionCode,
+        groupNumber,
+        isReleased: true
+      });
+    });
+
+    setGroups((prev) => {
+      const next = new Map(prev);
+      releaseTargets.forEach((groupNumber) => {
+        const group = next.get(groupNumber);
+        if (!group) {
+          return;
+        }
+
+        next.set(groupNumber, {
+          ...group,
+          isReleased: true
+        });
+      });
+      return next;
+    });
+
+    showReleaseFeedback(
+      `Released summaries to ${releaseTargets.length} ${releaseTargets.length === 1 ? 'group' : 'groups'}.`,
+      'success'
+    );
+  };
+
+  const canReleaseAll = groups.size > 0 && Array.from(groups.values()).some((group) => !group?.isReleased);
+
   return (
     <div className="admin-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
         isConnected={isConnected}
         isRecording={isRecording}
+        elapsedTime={elapsedTime}
+        nextChunkIn={nextChunkIn}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
         onOpenQR={() => setShowQR(true)}
@@ -162,7 +274,25 @@ function AdminDashboard() {
           eyebrow="Teacher workspace"
           title="Live summary session"
           description="Monitor group participation, review transcript flow, and refine the running summary prompt in one place."
+          actions={(
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleReleaseAllSummaries}
+              disabled={!canReleaseAll}
+            >
+              <Send className="h-4 w-4" />
+              <span>Release all summaries</span>
+            </Button>
+          )}
         />
+
+        {releaseFeedback ? (
+          <Alert tone={releaseFeedback.type === 'error' ? 'danger' : releaseFeedback.type === 'success' ? 'success' : 'primary'}>
+            <p>{releaseFeedback.message}</p>
+          </Alert>
+        ) : null}
 
         <PromptManager
           currentPrompt={currentPrompt}
@@ -175,7 +305,7 @@ function AdminDashboard() {
           isLibraryLoading={isLibraryLoading}
         />
 
-        <GroupGrid groups={groups} />
+        <GroupGrid groups={groups} onRelease={handleReleaseSummary} />
       </main>
 
       <PromptSelectorModal

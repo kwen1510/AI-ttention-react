@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react';
-import { ChevronDown, Info, HelpCircle, Trash2, Save, ClipboardList, Library } from 'lucide-react';
+import { ChevronDown, Info, HelpCircle, Trash2, Save, ClipboardList, Library, Send } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Textarea, Input } from '../../../components/ui/field.jsx';
@@ -14,6 +14,9 @@ export function CriteriaManager({
     onStrictnessChange,
     onSave,
     onClear,
+    onReleaseAll,
+    canReleaseAll = false,
+    releaseAllLabel = 'Release all checklists',
     feedback,
     isLoading,
     onOpenLibrary,
@@ -120,10 +123,22 @@ export function CriteriaManager({
                                 <Trash2 className="h-4 w-4" />
                                 Clear All
                             </Button>
-                            <Button type="button" onClick={onSave} disabled={isLoading} variant="primary" className="w-full sm:w-auto">
-                                <Save className="h-4 w-4" />
-                                {isLoading ? 'Saving…' : 'Save & Apply'}
-                            </Button>
+                            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                                <Button
+                                    type="button"
+                                    onClick={onReleaseAll}
+                                    disabled={isLoading || !canReleaseAll}
+                                    variant="secondary"
+                                    className="w-full sm:w-auto"
+                                >
+                                    <Send className="h-4 w-4" />
+                                    {releaseAllLabel}
+                                </Button>
+                                <Button type="button" onClick={onSave} disabled={isLoading} variant="primary" className="w-full sm:w-auto">
+                                    <Save className="h-4 w-4" />
+                                    {isLoading ? 'Saving…' : 'Save & Apply'}
+                                </Button>
+                            </div>
                         </div>
 
                         {feedback && (

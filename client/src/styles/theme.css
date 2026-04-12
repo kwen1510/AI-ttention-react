@@ -741,6 +741,31 @@ select:focus {
 
 .student-access-modal {
   padding: 1.25rem;
+  max-width: min(40rem, calc(100vw - 1.25rem));
+}
+
+.student-access-modal__copy-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.student-access-modal__link {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.76rem;
+  padding-bottom: 0.1rem;
+}
+
+.student-access-modal__copy-button {
+  width: 100%;
+  justify-content: center;
 }
 
 .ui-dialog__content[data-size='md'] {
@@ -879,5 +904,10 @@ select:focus {
 
   .app-nav {
     width: 100%;
+  }
+
+  .student-access-modal {
+    padding: 1rem;
+    max-width: calc(100vw - 1rem);
   }
 }
