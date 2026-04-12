@@ -638,10 +638,16 @@ select:focus {
   margin: 0 auto;
   padding: 1rem clamp(1.25rem, 2vw, 2rem);
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.app-navbar__top-row {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  width: 100%;
 }
 
 .app-navbar__brand {
@@ -671,6 +677,18 @@ select:focus {
 }
 
 .app-navbar__brand-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.app-navbar__nav {
+  width: 100%;
+}
+
+.app-navbar__signout {
+  align-self: flex-start;
+  margin-left: auto;
+  padding-inline: 0.75rem;
   font-size: 0.82rem;
   color: var(--text-muted);
 }
@@ -847,6 +865,10 @@ select:focus {
 
   .ui-toolbar__group {
     width: 100%;
+  }
+
+  .app-navbar__top-row {
+    align-items: flex-start;
   }
 
   .app-nav {

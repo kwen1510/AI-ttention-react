@@ -62,39 +62,45 @@ function Navbar({ active = "", basePath = "", showModes = true, showSignOut = tr
   return (
     <header className="app-navbar">
       <div className="app-navbar__inner">
-        <div className="app-navbar__brand min-w-0">
-          <div className="app-navbar__brand-mark">
-            <GraduationCap className="h-5 w-5" />
+        <div className="app-navbar__top-row">
+          <div className="app-navbar__brand min-w-0">
+            <div className="app-navbar__brand-mark">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="app-navbar__brand-title truncate">AI(ttention)</div>
+              <div className="app-navbar__brand-subtitle">Teacher workspace</div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="app-navbar__brand-title truncate">AI(ttention)</div>
-            <div className="app-navbar__brand-subtitle">Teacher workspace</div>
-          </div>
-        </div>
-
-        <div className="flex w-full min-w-0 flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:justify-end">
-          {showModes && (
-            <nav className="min-w-0 lg:flex-1" aria-label="Teacher sections">
-              <div className="app-nav scrollbar-hide overflow-x-auto">
-                {modes.map((item) => (
-                  <ModeButton
-                    key={item.key}
-                    item={item}
-                    isActive={item.isActive}
-                    onNavigate={handleModeNavigate}
-                  />
-                ))}
-              </div>
-            </nav>
-          )}
 
           {showSignOut && (
-            <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => signOut()}>
-              <LogOut className="h-4 w-4" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="app-navbar__signout shrink-0"
+              onClick={() => signOut()}
+            >
+              <LogOut className="h-3.5 w-3.5" />
               <span>Sign out</span>
             </Button>
           )}
         </div>
+
+        {showModes && (
+          <nav className="app-navbar__nav" aria-label="Teacher sections">
+            <div className="app-nav scrollbar-hide overflow-x-auto">
+              {modes.map((item) => (
+                <ModeButton
+                  key={item.key}
+                  item={item}
+                  isActive={item.isActive}
+                  onNavigate={handleModeNavigate}
+                />
+              ))}
+            </div>
+          </nav>
+        )}
       </div>
     </header>
   );
