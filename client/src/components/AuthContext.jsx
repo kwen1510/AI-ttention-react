@@ -91,6 +91,14 @@ export function AuthProvider({ children }) {
       if (!isMounted) return;
       setSession(nextSession ?? null);
       setUser(nextSession?.user ?? null);
+      if (nextSession?.access_token) {
+        setTeacherLoading(true);
+        return;
+      }
+
+      setIsTeacher(false);
+      setTeacherProfile(null);
+      setTeacherLoading(false);
     });
 
     return () => {

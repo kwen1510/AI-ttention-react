@@ -56,9 +56,12 @@ export function JoinForm({
                             id="sessionCode"
                             value={code}
                             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                            placeholder="Enter 6-character code"
+                            placeholder="Enter code"
                             maxLength={6}
-                            className="text-center text-xl font-mono tracking-[0.28em] uppercase"
+                            className="student-join-code-input"
+                            autoCapitalize="characters"
+                            autoCorrect="off"
+                            spellCheck={false}
                             required
                         />
                     </Field>
