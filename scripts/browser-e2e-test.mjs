@@ -139,6 +139,7 @@ try {
 
   const summarySessionCode = await waitForSessionCode(teacherSummaryPage);
   assert.match(summarySessionCode, /^[A-Z0-9]{6}$/);
+  const summaryJoinUrl = `${baseUrl}/s?c=${summarySessionCode}`;
 
   await teacherSummaryPage.getByRole("button", { name: /AI Summarization Prompts/i }).click();
   const summaryPromptText = `E2E summary prompt ${Date.now()}`;
@@ -151,23 +152,15 @@ try {
   await expectOkResponse(savePromptResponse, "summary prompt save");
   await teacherSummaryPage.getByText("Prompt saved successfully").waitFor();
 
-  const joinTokenResponse = teacherSummaryPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${summarySessionCode}/join-token`)
-  );
-  await teacherSummaryPage.locator("button.session-code-display").click();
-  const joinTokenPayload = await (await expectOkResponse(joinTokenResponse, "join token creation")).json();
-  assert.match(joinTokenPayload.url, /\/student\?token=/);
-  await teacherSummaryPage.getByText("Students can open this link").waitFor();
+  await teacherSummaryPage.locator("button:has(.session-code-text)").click();
+  await teacherSummaryPage.getByText(/No tokenized join link is required/i).waitFor();
   await closeQrModal(teacherSummaryPage);
 
   const studentSummaryPage = await context.newPage();
   attachDiagnostics(studentSummaryPage, "student-summary", diagnostics, baseUrl);
-  await studentSummaryPage.goto(joinTokenPayload.url, { waitUntil: "domcontentloaded" });
-  await studentSummaryPage.getByText("Secure session link loaded").waitFor({ timeout: 20_000 });
-  assert.equal(await studentSummaryPage.locator("#sessionCode").count(), 0);
+  await studentSummaryPage.goto(summaryJoinUrl, { waitUntil: "domcontentloaded" });
   await studentSummaryPage.locator("#groupNumber").fill("1");
-  await studentSummaryPage.getByRole("button", { name: "Join Session" }).click();
+  await studentSummaryPage.getByRole("button", { name: /Join with code/i }).click();
   await studentSummaryPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentSummaryPage.getByText("Group 1", { exact: false }).waitFor();
   await teacherSummaryPage.getByRole("heading", { name: "Group 1" }).waitFor({ timeout: 20_000 });
@@ -282,7 +275,7 @@ try {
 
   const studentCheckboxPage = await context.newPage();
   attachDiagnostics(studentCheckboxPage, "student-checkbox", diagnostics, baseUrl);
-  await studentCheckboxPage.goto(`${baseUrl}/student?code=${checkboxSessionCode}&group=2`, {
+  await studentCheckboxPage.goto(`${baseUrl}/s?c=${checkboxSessionCode}&g=2`, {
     waitUntil: "domcontentloaded",
   });
   await studentCheckboxPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });

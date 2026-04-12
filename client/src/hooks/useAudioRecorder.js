@@ -8,7 +8,7 @@ const INITIAL_UPLOAD_STATE = {
     lastError: null
 };
 
-export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError, joinToken = '') {
+export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError) {
     const [isRecording, setIsRecording] = useState(false);
     const [isPageVisible, setIsPageVisible] = useState(true);
     const [uploadState, setUploadState] = useState(INITIAL_UPLOAD_STATE);
@@ -22,7 +22,6 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
     const sessionRef = useRef({
         sessionCode,
         groupNumber,
-        joinToken,
         socket
     });
     const isRecordingRef = useRef(false);
@@ -33,10 +32,9 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         sessionRef.current = {
             sessionCode,
             groupNumber,
-            joinToken,
             socket
         };
-    }, [groupNumber, joinToken, sessionCode, socket]);
+    }, [groupNumber, sessionCode, socket]);
 
     useEffect(() => {
         const handleVisibilityChange = () => {
@@ -140,11 +138,10 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         const {
             sessionCode: currentSessionCode,
             groupNumber: currentGroupNumber,
-            joinToken: currentJoinToken,
             socket: currentSocket
         } = sessionRef.current;
 
-        if ((!currentSessionCode && !currentJoinToken) || !currentGroupNumber || !blob?.size) {
+        if (!currentSessionCode || !currentGroupNumber || !blob?.size) {
             return;
         }
 
@@ -162,12 +159,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
 
         const formData = new FormData();
         formData.append('file', blob, `chunk_${Date.now()}.webm`);
-        if (currentSessionCode) {
-            formData.append('sessionCode', currentSessionCode);
-        }
-        if (currentJoinToken) {
-            formData.append('joinToken', currentJoinToken);
-        }
+        formData.append('sessionCode', currentSessionCode);
         formData.append('groupNumber', parsedGroup);
 
         try {

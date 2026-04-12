@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GraduationCap, AlertCircle } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Input } from '../../../components/ui/field.jsx';
@@ -10,12 +10,11 @@ export function JoinForm({
     error,
     notice = "",
     initialCode = "",
-    initialGroup = "",
-    initialToken = ""
+    initialGroup = ""
 }) {
     const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
     const [group, setGroup] = useState(() => String(initialGroup || '').trim());
-    const hasJoinToken = Boolean(String(initialToken || '').trim());
+    const lastAutoJoinKeyRef = useRef('');
 
     useEffect(() => {
         setCode(String(initialCode || '').trim().toUpperCase());
@@ -25,9 +24,32 @@ export function JoinForm({
         setGroup(String(initialGroup || '').trim());
     }, [initialGroup]);
 
+    useEffect(() => {
+        const normalizedCode = String(code || '').trim().toUpperCase();
+        const parsedGroup = Number.parseInt(group, 10);
+
+        if (!/^[A-Z0-9]{6}$/.test(normalizedCode) || !Number.isFinite(parsedGroup) || parsedGroup <= 0) {
+            return undefined;
+        }
+
+        const attemptKey = `${normalizedCode}:${parsedGroup}`;
+        if (lastAutoJoinKeyRef.current === attemptKey) {
+            return undefined;
+        }
+
+        const timer = window.setTimeout(() => {
+            lastAutoJoinKeyRef.current = attemptKey;
+            onJoin(normalizedCode, parsedGroup);
+        }, 150);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [code, group, onJoin]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        if ((code || hasJoinToken) && group) {
+        if (code && group) {
             onJoin(code, group);
         }
     };
@@ -45,28 +67,22 @@ export function JoinForm({
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {hasJoinToken ? (
-                        <Alert tone="primary" title="Student join link loaded">
-                            <p>
-                                {code
-                                    ? `You are joining session ${code}. Select your group number to continue.`
-                                    : 'Select your group number to continue.'}
-                            </p>
-                        </Alert>
-                    ) : (
-                        <Field label="Session code" htmlFor="sessionCode">
-                            <Input
-                                type="text"
-                                id="sessionCode"
-                                value={code}
-                                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                                placeholder="Enter 6-digit code"
-                                maxLength={6}
-                                className="text-center text-xl font-mono tracking-[0.35em] uppercase"
-                                required={!hasJoinToken}
-                            />
-                        </Field>
-                    )}
+                    <Alert tone="primary" title="Session-code join">
+                        <p>The app will join automatically once the session code and group number are filled in.</p>
+                    </Alert>
+
+                    <Field label="Session code" htmlFor="sessionCode">
+                        <Input
+                            type="text"
+                            id="sessionCode"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value.toUpperCase())}
+                            placeholder="Enter 6-digit code"
+                            maxLength={6}
+                            className="text-center text-xl font-mono tracking-[0.35em] uppercase"
+                            required
+                        />
+                    </Field>
 
                     <Field label="Group number" htmlFor="groupNumber">
                         <Input
@@ -83,7 +99,7 @@ export function JoinForm({
                     </Field>
 
                     <Button type="submit" variant="primary" size="lg" className="w-full">
-                        Join Session
+                        Join with code
                     </Button>
                 </form>
 

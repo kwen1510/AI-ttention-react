@@ -690,6 +690,11 @@ select:focus {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 1.5rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .ui-dialog__content[data-size='sm'] {

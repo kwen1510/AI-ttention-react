@@ -7,7 +7,7 @@ import {
 } from "../middleware/auth.js";
 import { verifyJoinToken } from "./joinTokens.js";
 import { activeSessions, latestChecklistState } from "./state.js";
-import { transcribe, extractMime } from "./elevenlabs.js";
+import { transcribe, extractMime, isIgnorableTranscriptionText } from "./elevenlabs.js";
 import { summarise } from "./openai.js";
 import {
     createTranscriptRecord,
@@ -261,7 +261,7 @@ async function generateSummaryForGroup(sessionCode, groupNumber) {
 
             // Only proceed if we have valid transcription
             let cleanedText = transcription.text;
-            if (transcription.text && transcription.text !== "No transcription available" && transcription.text !== "Transcription failed") {
+            if (transcription.text && !isIgnorableTranscriptionText(transcription.text)) {
                 // Save this individual transcription segment
                 const session = await db.collection("sessions").findOne({ code: sessionCode });
                 const group = await db.collection("groups").findOne({ session_id: session._id, number: parseInt(groupNumber) });

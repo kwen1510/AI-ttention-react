@@ -5,7 +5,7 @@ import { upload } from "../middleware/upload.js";
 import { optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
 import { aiLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseDb } from "../db/db.js";
-import { transcribe } from "../services/elevenlabs.js";
+import { isIgnorableTranscriptionText, transcribe } from "../services/elevenlabs.js";
 import { summarise } from "../services/openai.js";
 import {
     assertJoinableSessionState,
@@ -66,6 +66,10 @@ function createHttpError(message, status = 400) {
     return error;
 }
 
+function isUniqueViolation(error) {
+    return String(error?.code || "") === "23505" || /duplicate key/i.test(String(error?.message || ""));
+}
+
 function normalizeIntervalMs(value, fallback = 30000) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 5000) {
@@ -108,6 +112,49 @@ async function getOwnedSessionContext(sessionCode, teacherId) {
     }
 
     throw createHttpError("Session not found", 404);
+}
+
+async function ensureSessionRecord({
+    code,
+    teacherId,
+    mode,
+    intervalMs,
+    createdAt,
+    active = false,
+    startTime = null,
+    strictness = undefined
+}) {
+    try {
+        const inserted = await db.collection("sessions").insertOne({
+            _id: uuid(),
+            owner_id: teacherId,
+            code,
+            mode,
+            active,
+            interval_ms: intervalMs,
+            strictness,
+            created_at: createdAt,
+            start_time: startTime,
+            end_time: null,
+            total_duration_seconds: null
+        });
+        return inserted.inserted;
+    } catch (error) {
+        if (!isUniqueViolation(error)) {
+            throw error;
+        }
+
+        const existing = await db.collection("sessions").findOne({ code });
+        if (!existing) {
+            throw error;
+        }
+
+        if (existing.owner_id && existing.owner_id !== teacherId) {
+            throw createHttpError("Session code collision detected. Create a new session and try again.", 409);
+        }
+
+        return existing;
+    }
 }
 
 async function ensureGroupRecord(sessionId, groupNumber) {
@@ -375,35 +422,31 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
 
         let persistedSession = session;
         if (!persistedSession) {
-            const inserted = await db.collection("sessions").insertOne({
-                _id: uuid(),
-                owner_id: teacher.id,
+            persistedSession = await ensureSessionRecord({
                 code,
+                teacherId: teacher.id,
                 mode: requestedMode,
+                intervalMs,
+                createdAt,
                 active: true,
-                interval_ms: intervalMs,
-                created_at: createdAt,
-                start_time: startTime,
-                end_time: null,
-                total_duration_seconds: null
+                startTime
             });
-            persistedSession = inserted.inserted;
-        } else {
-            await db.collection("sessions").updateOne(
-                { _id: persistedSession._id },
-                {
-                    $set: {
-                        owner_id: teacher.id,
-                        mode: requestedMode,
-                        active: true,
-                        interval_ms: intervalMs,
-                        start_time: persistedSession.start_time || startTime,
-                        end_time: null
-                    }
-                }
-            );
-            persistedSession = await db.collection("sessions").findOne({ _id: persistedSession._id });
         }
+
+        await db.collection("sessions").updateOne(
+            { _id: persistedSession._id },
+            {
+                $set: {
+                    owner_id: teacher.id,
+                    mode: requestedMode,
+                    active: true,
+                    interval_ms: intervalMs,
+                    start_time: persistedSession.start_time || startTime,
+                    end_time: null
+                }
+            }
+        );
+        persistedSession = await db.collection("sessions").findOne({ _id: persistedSession._id });
 
         activeSessions.set(code, {
             ...(memory || {}),
@@ -521,20 +564,15 @@ router.post("/session/:code/prompt", express.json(), async (req, res) => {
                 return res.status(404).json({ error: "Session not found" });
             }
 
-            const newId = uuid();
-            await db.collection("sessions").insertOne({
-                _id: newId,
-                owner_id: teacher.id,
-                code: code,
+            session = await ensureSessionRecord({
+                code,
+                teacherId: teacher.id,
                 mode: mem.mode || "summary",
-                interval_ms: mem.interval || 30000,
-                created_at: mem.created_at || Date.now(),
+                intervalMs: mem.interval || 30000,
+                createdAt: mem.created_at || Date.now(),
                 active: mem.active || false,
-                start_time: mem.startTime || null,
-                end_time: null,
-                total_duration_seconds: null
+                startTime: mem.startTime || null
             });
-            session = { _id: newId, owner_id: teacher.id };
             mem.ownerId = teacher.id;
             activeSessions.set(code, mem);
         } else if (session.owner_id !== teacher.id) {
@@ -857,16 +895,7 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
         const transcription = await transcribe(file.buffer, file.mimetype);
         const { text, wordCount, duration } = extractTranscriptMetrics(transcription);
 
-        const ignoredTranscriptions = new Set([
-            "No audio data available",
-            "Audio too short for transcription",
-            "Invalid WebM container - only complete containers are supported",
-            "Transcription temporarily unavailable",
-            "No transcription available",
-            "Transcription failed"
-        ]);
-
-        if (!text || ignoredTranscriptions.has(text)) {
+        if (!text || isIgnorableTranscriptionText(text)) {
             return res.json({ success: true, skipped: true });
         }
 

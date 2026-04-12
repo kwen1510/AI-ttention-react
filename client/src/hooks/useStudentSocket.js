@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createAppSocket } from '../lib/socketClient.js';
 
-export function useStudentSocket(joinToken = '') {
+export function useStudentSocket() {
     const socketRef = useRef(null);
-    const joinTokenRef = useRef(String(joinToken || '').trim());
     const joinStateRef = useRef({ code: null, group: null });
     const [isConnected, setIsConnected] = useState(false);
     const [sessionInfo, setSessionInfo] = useState({ code: null, group: null, mode: 'summary' });
@@ -21,21 +20,9 @@ export function useStudentSocket(joinToken = '') {
         };
     }, [sessionInfo.code, sessionInfo.group]);
 
-    useEffect(() => {
-        joinTokenRef.current = String(joinToken || '').trim();
-    }, [joinToken]);
-
     // Initialize socket
     useEffect(() => {
-        const token = String(joinToken || '').trim();
-        const socket = token
-            ? createAppSocket({
-                auth: {
-                    type: 'student',
-                    joinToken: token
-                }
-            })
-            : createAppSocket();
+        const socket = createAppSocket();
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -44,8 +31,6 @@ export function useStudentSocket(joinToken = '') {
             const { code, group } = joinStateRef.current;
             if (code && group) {
                 socket.emit('join', { code, group });
-            } else if (joinTokenRef.current && group) {
-                socket.emit('join', { group });
             }
         });
 
@@ -67,7 +52,7 @@ export function useStudentSocket(joinToken = '') {
             socket.disconnect();
             socketRef.current = null;
         };
-    }, [joinToken]);
+    }, []);
 
     // Event handlers
     useEffect(() => {
@@ -167,22 +152,16 @@ export function useStudentSocket(joinToken = '') {
     const joinSession = useCallback((code, group) => {
         const normalizedCode = String(code || '').trim().toUpperCase();
         const parsedGroup = parseInt(group, 10);
-        const token = joinTokenRef.current;
 
-        if (socketRef.current && Number.isFinite(parsedGroup) && parsedGroup > 0 && (normalizedCode || token)) {
+        if (socketRef.current && Number.isFinite(parsedGroup) && parsedGroup > 0 && normalizedCode) {
             joinStateRef.current = {
-                code: normalizedCode || null,
+                code: normalizedCode,
                 group: parsedGroup
             };
-            socketRef.current.emit('join', token
-                ? {
-                    code: normalizedCode || undefined,
-                    group: parsedGroup
-                }
-                : {
-                    code: normalizedCode,
-                    group: parsedGroup
-                });
+            socketRef.current.emit('join', {
+                code: normalizedCode,
+                group: parsedGroup
+            });
         }
     }, []);
 

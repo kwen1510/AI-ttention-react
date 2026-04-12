@@ -95,7 +95,7 @@ async function waitForSessionCode(page) {
 
 async function openStudentJoinModal(page) {
   await page.locator("button:has(.session-code-text)").click();
-  await page.getByRole("heading", { name: "Student join link" }).waitFor({ timeout: 20_000 });
+  await page.getByText(/No tokenized join link is required/i).waitFor({ timeout: 20_000 });
 }
 
 async function closeDialog(page) {
@@ -140,25 +140,18 @@ try {
 
   const sessionCode = await waitForSessionCode(teacherPage);
   assert.match(sessionCode, /^[A-Z0-9]{6}$/);
+  const joinUrl = `${baseUrl}/s?c=${sessionCode}`;
 
   await teacherPage.locator('input[type="number"]').first().fill(String(TEST_INTERVAL_SECONDS));
 
-  const joinTokenResponse = teacherPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${sessionCode}/join-token`)
-  );
   await openStudentJoinModal(teacherPage);
-  const joinTokenPayload = await (await expectOkResponse(joinTokenResponse, "join token creation")).json();
-  assert.match(joinTokenPayload.url, /\/student\?token=/);
-  await teacherPage.getByText(/Scan the QR code for the compact session link/i).waitFor({ timeout: 20_000 });
   await closeDialog(teacherPage);
 
   const studentPage = await context.newPage();
   attachDiagnostics(studentPage, "student", diagnostics, baseUrl);
-  await studentPage.goto(joinTokenPayload.url, { waitUntil: "domcontentloaded" });
-  await studentPage.getByText("Student join link loaded").waitFor({ timeout: 20_000 });
+  await studentPage.goto(joinUrl, { waitUntil: "domcontentloaded" });
   await studentPage.locator("#groupNumber").fill("1");
-  await studentPage.getByRole("button", { name: "Join Session" }).click();
+  await studentPage.getByRole("button", { name: /Join with code/i }).click();
   await studentPage.getByText(`Session ${sessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await teacherPage.getByRole("heading", { name: "Group 1" }).waitFor({ timeout: 20_000 });
 

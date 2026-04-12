@@ -53,6 +53,7 @@ function App() {
         <Route path="/staging/prompts" element={renderTeacherRoute(<PromptsPage />)} />
 
         <Route path="/student" element={<StudentView />} />
+        <Route path="/s" element={<StudentView />} />
       </Route>
 
       <Route path="/staging" element={<Navigate to="/staging/admin" replace />} />

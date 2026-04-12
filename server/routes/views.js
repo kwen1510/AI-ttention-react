@@ -92,6 +92,7 @@ const spaRoutes = [
     '/mindmap',
     '/mindmap-playground',
     '/prompts',
+    '/s',
     '/student',
 ];
 

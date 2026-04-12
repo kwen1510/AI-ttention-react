@@ -7,16 +7,14 @@ import { JoinForm } from '../features/student/components/JoinForm';
 import { TranscriptionPanel } from '../features/student/components/TranscriptionPanel';
 import { SummaryPanel } from '../features/student/components/SummaryPanel';
 import { ChecklistPanel } from '../features/student/components/ChecklistPanel';
-import { extractSessionCodeFromJoinToken } from '../lib/joinToken.js';
 import { Alert } from '../components/ui/alert.jsx';
 
 function StudentView() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
-  const joinToken = String(params.get('token') || '').trim();
-  const initialCode = extractSessionCodeFromJoinToken(joinToken) || String(params.get('code') || '').trim().toUpperCase();
-  const initialGroup = String(params.get('group') || '').trim();
+  const initialCode = String(params.get('c') || params.get('code') || '').trim().toUpperCase();
+  const initialGroup = String(params.get('g') || params.get('group') || '').trim();
   const {
     socket,
     isConnected,
@@ -28,7 +26,7 @@ function StudentView() {
     error: socketError,
     recordingState,
     joinSession
-  } = useStudentSocket(joinToken);
+  } = useStudentSocket();
 
   const [uploadError, setUploadError] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -43,8 +41,7 @@ function StudentView() {
     sessionInfo.code,
     sessionInfo.group,
     socket,
-    setUploadError,
-    joinToken
+    setUploadError
   );
 
   // Handle recording state from socket
@@ -72,10 +69,10 @@ function StudentView() {
 
   // Auto-join from URL params
   useEffect(() => {
-    if ((initialCode || joinToken) && initialGroup && !sessionInfo.code) {
+    if (initialCode && initialGroup && !sessionInfo.code) {
       joinSession(initialCode, initialGroup);
     }
-  }, [initialCode, initialGroup, joinSession, joinToken, sessionInfo.code]);
+  }, [initialCode, initialGroup, joinSession, sessionInfo.code]);
 
   if (!sessionInfo.code) {
     return (
@@ -84,7 +81,6 @@ function StudentView() {
         error={socketError}
         initialCode={initialCode}
         initialGroup={initialGroup}
-        initialToken={joinToken}
         notice={blockedTeacherAccess ? 'Teacher tools require an approved teacher account. Student access is limited to the session join screen.' : ''}
       />
     );

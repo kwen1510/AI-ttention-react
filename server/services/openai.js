@@ -1,11 +1,6 @@
 import fetch from "node-fetch";
-import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
-import { ELEVENLABS_KEY } from "../config/env.js";
-
-// Initialize ElevenLabs client
-export const elevenlabs = new ElevenLabsClient({
-    apiKey: ELEVENLABS_KEY,
-});
+import FormData from "form-data";
+import { OPENAI_API_KEY } from "../config/env.js";
 
 export async function callOpenAIChat(apiKey, {
     model = "gpt-4o-mini",
@@ -40,6 +35,56 @@ export async function callOpenAIChat(apiKey, {
     }
 
     return res.json();
+}
+
+export async function transcribeAudioWithOpenAI(buffer, {
+    mimeType = "audio/webm",
+    filename = "audio.webm"
+} = {}) {
+    if (!OPENAI_API_KEY) {
+        throw new Error("OpenAI audio transcription unavailable: missing OPENAI_API_KEY");
+    }
+
+    const formData = new FormData();
+    formData.append("file", buffer, {
+        filename,
+        contentType: mimeType
+    });
+    formData.append("model", "whisper-1");
+    formData.append("response_format", "verbose_json");
+    formData.append("timestamp_granularities[]", "word");
+
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            ...formData.getHeaders()
+        },
+        body: formData
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        const error = new Error(`OpenAI audio transcription error ${response.status} ${response.statusText}: ${errorText}`);
+        error.status = response.status;
+        throw error;
+    }
+
+    const result = await response.json();
+    const words = Array.isArray(result?.words)
+        ? result.words
+            .map((word) => ({
+                word: String(word?.word || "").trim(),
+                start: Number(word?.start || 0),
+                end: Number(word?.end || 0)
+            }))
+            .filter((word) => word.word)
+        : [];
+
+    return {
+        text: String(result?.text || "").trim() || "No transcription available",
+        words
+    };
 }
 
 export function parseJsonFromText(text) {
@@ -85,13 +130,12 @@ export async function summarise(text, customPrompt) {
         }
 
         const basePrompt = customPrompt || "Summarise the following classroom discussion in ≤6 clear bullet points:";
-        const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
-        if (!apiKey) {
+        if (!OPENAI_API_KEY) {
             console.warn('⚠️ OpenAI API key not configured; skipping summarisation');
             return "Summarization unavailable (missing OpenAI key)";
         }
 
-        const response = await callOpenAIChat(apiKey, {
+        const response = await callOpenAIChat(OPENAI_API_KEY, {
             model: "gpt-4o-mini",
             maxTokens: 800,
             temperature: 0,
