@@ -7,9 +7,11 @@ import { PromptManager } from '../features/admin/components/PromptManager';
 import { GroupGrid } from '../features/admin/components/GroupGrid';
 import { QRCodeModal } from '../features/admin/components/QRCodeModal';
 import { SectionHeader } from '../components/ui/panel.jsx';
+import { DEFAULT_SUMMARY_PROMPT } from '../lib/prompts.js';
 
 function AdminDashboard() {
   const [searchParams] = useSearchParams();
+  const selectedPrompt = String(searchParams.get('prompt') || '').trim();
   const {
     socket,
     isConnected,
@@ -30,6 +32,7 @@ function AdminDashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
   const [showQR, setShowQR] = useState(false);
+  const hasGroups = groups.size > 0;
 
   // Initialize session
   useEffect(() => {
@@ -64,16 +67,22 @@ function AdminDashboard() {
   // Load prompt when session is ready
   useEffect(() => {
     if (sessionCode) {
-      loadSessionPrompt();
+      const controller = new AbortController();
+      void loadSessionPrompt({
+        signal: controller.signal,
+        fallbackPrompt: selectedPrompt || DEFAULT_SUMMARY_PROMPT
+      });
+      return () => controller.abort();
     }
-  }, [sessionCode, loadSessionPrompt]);
+
+    return undefined;
+  }, [sessionCode, loadSessionPrompt, selectedPrompt]);
 
   useEffect(() => {
-    const prompt = searchParams.get('prompt');
-    if (prompt) {
-      setCurrentPrompt(prompt);
+    if (selectedPrompt) {
+      setCurrentPrompt(selectedPrompt);
     }
-  }, [searchParams, setCurrentPrompt]);
+  }, [selectedPrompt, setCurrentPrompt]);
 
   const handleStartRecording = async () => {
     if (!sessionCode) return;
@@ -134,16 +143,18 @@ function AdminDashboard() {
           description="Monitor group participation, review transcript flow, and refine the running summary prompt in one place."
         />
 
+        {hasGroups ? <GroupGrid groups={groups} /> : null}
+
         <PromptManager
           currentPrompt={currentPrompt}
           onPromptChange={setCurrentPrompt}
           onSave={savePrompt}
           onTest={testPrompt}
-          onReset={() => setCurrentPrompt("Summarise the following classroom discussion in ≤6 clear bullet points:")}
+          onReset={() => setCurrentPrompt(DEFAULT_SUMMARY_PROMPT)}
           feedback={feedback}
         />
 
-        <GroupGrid groups={groups} />
+        {!hasGroups ? <GroupGrid groups={groups} /> : null}
       </main>
 
       <QRCodeModal

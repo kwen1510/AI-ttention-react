@@ -163,7 +163,7 @@ try {
   await expectOkResponse(startResponse, "summary start");
 
   await studentPage.getByText(/Recording/, { exact: false }).waitFor({ timeout: 20_000 });
-  await studentPage.locator(".ui-badge").filter({ hasText: /Uploading chunk|Uploaded at/i }).first().waitFor({ timeout: 45_000 });
+  await studentPage.locator(".ui-badge").filter({ hasText: /Uploading audio chunk|Last upload/i }).first().waitFor({ timeout: 45_000 });
   await teacherPage.locator(".ui-badge").filter({ hasText: /Uploading|Last upload/i }).first().waitFor({ timeout: 45_000 });
   await teacherPage.getByText(/1 transcript segments?|2 transcript segments?/, { exact: false }).waitFor({ timeout: 45_000 });
 
@@ -179,8 +179,8 @@ try {
   await teacherPage.getByRole("button", { name: /Stop recording/i }).click();
   await expectOkResponse(stopResponse, "summary stop");
 
-  await studentPage.locator(".ui-badge").filter({ hasText: /Finalizing last chunk|Last upload/i }).first().waitFor({ timeout: 30_000 });
-  await studentPage.getByText("Waiting for teacher", { exact: false }).waitFor({ timeout: 30_000 });
+  await studentPage.locator(".ui-badge").filter({ hasText: /Finalizing session audio|Last upload/i }).first().waitFor({ timeout: 30_000 });
+  await studentPage.getByText(/Wrapping up recording|Recording complete/i, { exact: false }).waitFor({ timeout: 30_000 });
   await teacherPage.locator(".ui-badge").filter({ hasText: /Last upload/i }).first().waitFor({ timeout: 30_000 });
 
   const promptsPage = await context.newPage();
@@ -225,3 +225,5 @@ try {
     });
   }
 }
+
+process.exit(0);

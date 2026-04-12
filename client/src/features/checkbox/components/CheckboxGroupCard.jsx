@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { CheckCircle, Circle, ChevronDown, ChevronUp, Send, Check, ClipboardList } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
-import { getChecklistTone } from '../../../lib/statusTone.js';
+import { getChecklistStatusLabel, getChecklistTone } from '../../../lib/statusTone.js';
 
 export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const transcriptPanelId = useId();
 
     const completedCount = data.checkboxes.filter(c => c.completed).length;
     const totalCount = data.checkboxes.length;
@@ -66,7 +67,7 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
                                             {checkbox.description}
                                         </p>
                                         <Badge tone={tone} size="sm">
-                                            {checkbox.status || 'pending'}
+                                            {getChecklistStatusLabel(checkbox.status)}
                                         </Badge>
                                     </div>
                                     <p className="text-xs copy-muted">Rubric: {checkbox.rubric}</p>
@@ -87,7 +88,14 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
                             <h4 className="text-sm font-semibold text-[var(--text)]">
                                 Discussion transcript ({data.transcripts.length})
                             </h4>
-                            <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                aria-expanded={isExpanded}
+                                aria-controls={transcriptPanelId}
+                                onClick={() => setIsExpanded(!isExpanded)}
+                            >
                                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                 <span>{isExpanded ? 'Show less' : 'Show full transcript'}</span>
                             </Button>
@@ -104,7 +112,7 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease }) {
                         </div>
 
                         {isExpanded ? (
-                            <div className="surface-list__item text-sm copy-strong whitespace-pre-wrap break-words">
+                            <div id={transcriptPanelId} className="surface-list__item text-sm copy-strong whitespace-pre-wrap break-words">
                                 {data.transcripts.map(t => t.text).join(' ')}
                             </div>
                         ) : null}

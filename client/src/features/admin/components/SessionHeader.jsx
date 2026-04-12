@@ -17,12 +17,13 @@ export function SessionHeader({
 }) {
     return (
         <div className="page-shell page-shell--fluid pb-0">
-            <Toolbar>
-                <ToolbarGroup className="flex-1">
+            <Toolbar className="gap-3">
+                <ToolbarGroup className="flex w-full flex-wrap items-end gap-3 lg:w-auto lg:flex-1">
                     <Button
                         onClick={onOpenQR}
+                        type="button"
                         variant="secondary"
-                        size="md"
+                        size="sm"
                         className="min-h-touch h-auto min-w-[11rem] items-center justify-between px-3 py-2.5"
                     >
                         <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
@@ -38,8 +39,9 @@ export function SessionHeader({
                         {isConnected ? 'Connected' : 'Disconnected'}
                     </StatusBadge>
 
-                    <Field label="Interval" className="w-full max-w-[8rem]">
+                    <Field label="Interval (sec)" htmlFor="sessionInterval" className="w-[8rem]">
                         <Input
+                            id="sessionInterval"
                             type="number"
                             min={5}
                             max={120}
@@ -49,13 +51,27 @@ export function SessionHeader({
                     </Field>
                 </ToolbarGroup>
 
-                <ToolbarGroup>
-                    <Button onClick={onStartRecording} disabled={isRecording} variant="primary">
+                <ToolbarGroup className="flex w-full flex-wrap gap-3 sm:w-auto sm:justify-end">
+                    <Button
+                        type="button"
+                        onClick={onStartRecording}
+                        disabled={isRecording}
+                        variant="primary"
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                    >
                         <Play className="h-4 w-4" />
                         <span>Start recording</span>
                     </Button>
 
-                    <Button onClick={onStopRecording} disabled={!isRecording} variant="danger">
+                    <Button
+                        type="button"
+                        onClick={onStopRecording}
+                        disabled={!isRecording}
+                        variant="danger"
+                        size="sm"
+                        className="flex-1 sm:flex-none"
+                    >
                         <Square className="h-4 w-4" />
                         <span>Stop recording</span>
                     </Button>

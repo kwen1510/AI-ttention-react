@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { MessageSquare, ChevronDown, ChevronUp, UploadCloud } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Badge } from '../../../components/ui/badge.jsx';
@@ -8,7 +8,7 @@ import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 export function TranscriptionPanel({ transcription, uploadState = null }) {
     const [history, setHistory] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
-    const scrollRef = useRef(null);
+    const historyId = useId();
 
     const formatClockTime = (timestamp) => {
         if (!timestamp) return '';
@@ -21,22 +21,22 @@ export function TranscriptionPanel({ transcription, uploadState = null }) {
 
     const uploadPhase = uploadState?.phase || 'idle';
     let uploadTone = 'neutral';
-    let uploadLabel = 'Waiting to upload';
+    let uploadLabel = 'Waiting for audio';
 
     if (uploadPhase === 'uploading') {
         uploadTone = 'primary';
         uploadLabel = uploadState?.pendingUploads > 1
-            ? `Uploading ${uploadState.pendingUploads} chunks`
-            : 'Uploading chunk';
+            ? `Uploading ${uploadState.pendingUploads} audio chunks`
+            : 'Uploading audio chunk';
     } else if (uploadPhase === 'finalizing') {
         uploadTone = 'warning';
-        uploadLabel = 'Finalizing last chunk';
+        uploadLabel = 'Finalizing session audio';
     } else if (uploadPhase === 'error') {
         uploadTone = 'danger';
-        uploadLabel = uploadState?.lastError || 'Upload failed';
+        uploadLabel = uploadState?.lastError || 'Upload issue';
     } else if (uploadState?.lastUploadedAt) {
         uploadTone = 'success';
-        uploadLabel = `Uploaded at ${formatClockTime(uploadState.lastUploadedAt)}`;
+        uploadLabel = `Last upload ${formatClockTime(uploadState.lastUploadedAt)}`;
     }
 
     // Update history when new transcription arrives
@@ -46,6 +46,9 @@ export function TranscriptionPanel({ transcription, uploadState = null }) {
         }
     }, [transcription]);
 
+    const hasTranscriptHistory = Boolean(transcription) || history.length > 0;
+    const historicalEntries = transcription ? history.slice(1) : history;
+
     return (
         <Panel padding="none" className="flex h-full flex-col overflow-hidden">
             <div className="p-5">
@@ -54,20 +57,29 @@ export function TranscriptionPanel({ transcription, uploadState = null }) {
                     title="Live transcription"
                     description="Audio chunks appear here as they are transcribed."
                     actions={(
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <Badge tone={uploadTone} size="sm" icon={UploadCloud}>
                                 {uploadLabel}
                             </Badge>
-                            <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
-                                {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                <span>{showHistory ? 'Hide history' : 'Show history'}</span>
-                            </Button>
+                            {hasTranscriptHistory ? (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={showHistory}
+                                    aria-controls={historyId}
+                                    onClick={() => setShowHistory(!showHistory)}
+                                >
+                                    {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                    <span>{showHistory ? 'Hide history' : 'Show history'}</span>
+                                </Button>
+                            ) : null}
                         </div>
                     )}
                 />
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 pb-5" ref={scrollRef}>
+            <div className="flex-1 overflow-y-auto px-5 pb-5">
                 {!transcription && history.length === 0 ? (
                     <EmptyState
                         icon={MessageSquare}
@@ -87,19 +99,27 @@ export function TranscriptionPanel({ transcription, uploadState = null }) {
                                 </div>
                                 {transcription.text && (
                                     <div className="mt-3 border-t border-[var(--border)] pt-3 text-xs copy-muted">
-                                        <span className="font-medium">Chunk:</span> "{transcription.text}"
+                                        <span className="font-medium">Latest chunk:</span> "{transcription.text}"
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        {showHistory && history.map((item, index) => (
-                            <div key={index} className="surface-list__item text-sm">
-                                <div className="copy-strong">
-                                    {item.cumulativeText || item.text}
-                                </div>
+                        {showHistory ? (
+                            <div id={historyId} className="space-y-3">
+                                {historicalEntries.length > 0 ? historicalEntries.map((item, index) => (
+                                    <div key={index} className="surface-list__item text-sm">
+                                        <div className="copy-strong">
+                                            {item.cumulativeText || item.text}
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <div className="surface-list__item text-sm">
+                                        Previous transcript updates will appear here after a new chunk arrives.
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                        ) : null}
                     </div>
                 )}
             </div>

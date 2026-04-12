@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { ChevronDown, ChevronUp, MessageSquare, ScrollText, UploadCloud } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
@@ -6,6 +6,7 @@ import { StatusBadge, Badge } from '../../../components/ui/badge.jsx';
 
 export function GroupCard({ groupNumber, data }) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const transcriptPanelId = useId();
 
     // Format summary text with HTML-like structure
     const formatSummary = (text) => {
@@ -103,14 +104,21 @@ export function GroupCard({ groupNumber, data }) {
                             <ScrollText className="h-4 w-4 text-[var(--primary)]" />
                             <h4 className="text-sm font-semibold text-[var(--text)]">Transcript</h4>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            aria-expanded={isExpanded}
+                            aria-controls={transcriptPanelId}
+                            onClick={() => setIsExpanded(!isExpanded)}
+                        >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             <span>{isExpanded ? 'Hide transcript' : 'Show transcript'}</span>
                         </Button>
                     </div>
 
                     {isExpanded ? (
-                        <div className="max-h-60 space-y-3 overflow-y-auto">
+                        <div id={transcriptPanelId} className="max-h-60 space-y-3 overflow-y-auto">
                             {data.cumulativeTranscript ? (
                                 <div className="surface-list__item text-sm text-[var(--text)] whitespace-pre-wrap">
                                     {data.cumulativeTranscript}

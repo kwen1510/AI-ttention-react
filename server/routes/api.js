@@ -3,7 +3,7 @@ import { randomInt } from "crypto";
 import { v4 as uuid } from "uuid";
 import { upload } from "../middleware/upload.js";
 import { optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
-import { aiLimiter } from "../middleware/rateLimit.js";
+import { aiLimiter, aiUploadLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseDb } from "../db/db.js";
 import { isIgnorableTranscriptionText, transcribe } from "../services/elevenlabs.js";
 import { summarise } from "../services/openai.js";
@@ -832,7 +832,7 @@ router.post("/prompts/:id/use", express.json(), async (req, res) => {
     }
 });
 
-router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, res) => {
+router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (req, res) => {
     try {
         const file = req.file;
         const joinToken = String(req.body?.joinToken || "").trim();
@@ -1121,7 +1121,7 @@ router.post("/transcribe-chunk", aiLimiter, upload.single('file'), async (req, r
 });
 
 /* Mindmap transcription endpoint */
-router.post("/transcribe-mindmap-chunk", aiLimiter, upload.single('file'), async (req, res) => {
+router.post("/transcribe-mindmap-chunk", aiUploadLimiter, upload.single('file'), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;

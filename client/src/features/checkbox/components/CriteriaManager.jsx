@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { ChevronDown, Info, HelpCircle, Trash2, Save, ClipboardList } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
@@ -15,16 +15,25 @@ export function CriteriaManager({
     onSave,
     onClear,
     feedback,
+    isLoading,
     library,
     onLoadPrompt,
     onLoadLibrary
 }) {
     const [isOpen, setIsOpen] = useState(true);
     const [showFormatHelp, setShowFormatHelp] = useState(false);
+    const contentId = useId();
+    const strictnessLabel = strictness === 1 ? 'Lenient' : strictness === 2 ? 'Moderate' : 'Strict';
 
     return (
         <Panel padding="none">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-6 text-left">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                aria-expanded={isOpen}
+                aria-controls={contentId}
+                className="w-full p-6 text-left"
+            >
                 <div className="flex items-center justify-between gap-3">
                     <PanelHeader
                         className="w-full border-b-0 p-0"
@@ -37,7 +46,7 @@ export function CriteriaManager({
             </button>
 
             {isOpen && (
-                <div className="border-t border-[var(--border)] p-6">
+                <div id={contentId} className="border-t border-[var(--border)] p-6">
                     <div className="space-y-6">
                         <Field label="Discussion question or scenario">
                             <Textarea
@@ -48,7 +57,10 @@ export function CriteriaManager({
                             />
                         </Field>
 
-                        <Field label="Criteria checklist" hint="Each line becomes a separate criterion.">
+                        <Field
+                            label="Criteria checklist"
+                            hint="Write one criterion per line. Use Description (Rubric) when you want to include guidance."
+                        >
                             {showFormatHelp && (
                                 <Alert className="mb-3" tone="primary" icon={Info} title="Format guide">
                                     <p className="mb-2">Use the format <code>Description (Rubric)</code>.</p>
@@ -67,8 +79,8 @@ export function CriteriaManager({
                             />
 
                             <div className="mt-2 flex items-center justify-between gap-3">
-                                <p className="text-xs copy-muted">Each line becomes a separate criterion.</p>
-                                <Button onClick={() => setShowFormatHelp(!showFormatHelp)} variant="ghost" size="sm">
+                                <span className="text-xs copy-muted">Use plain lines or add rubric details in parentheses.</span>
+                                <Button type="button" onClick={() => setShowFormatHelp(!showFormatHelp)} variant="ghost" size="sm">
                                     <HelpCircle className="h-3.5 w-3.5" />
                                     Format Help
                                 </Button>
@@ -80,7 +92,7 @@ export function CriteriaManager({
                                 <div className="mb-3 flex items-center justify-between">
                                     <span className="text-xs copy-muted font-medium">Lenient</span>
                                     <span className="text-sm font-semibold text-[var(--text)]">
-                                        {strictness === 1 ? 'Lenient' : strictness === 2 ? 'Moderate' : 'Strict'}
+                                        {strictnessLabel}
                                     </span>
                                     <span className="text-xs copy-muted font-medium">Strict</span>
                                 </div>
@@ -90,19 +102,21 @@ export function CriteriaManager({
                                     max={3}
                                     value={strictness}
                                     onChange={(e) => onStrictnessChange(Number(e.target.value))}
+                                    aria-label="Evaluation strictness"
+                                    aria-valuetext={strictnessLabel}
                                     className="p-0"
                                 />
                             </div>
                         </Field>
 
-                        <div className="cluster justify-between border-t border-[var(--border)] pt-4">
-                            <Button onClick={onClear} variant="ghost" size="sm">
+                        <div className="flex flex-col-reverse gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                            <Button type="button" onClick={onClear} disabled={isLoading} variant="ghost" size="sm" className="w-full sm:w-auto">
                                 <Trash2 className="h-4 w-4" />
                                 Clear All
                             </Button>
-                            <Button onClick={onSave} variant="primary">
+                            <Button type="button" onClick={onSave} disabled={isLoading} variant="primary" className="w-full sm:w-auto">
                                 <Save className="h-4 w-4" />
-                                Save & Apply
+                                {isLoading ? 'Saving…' : 'Save & Apply'}
                             </Button>
                         </div>
 

@@ -186,6 +186,20 @@ try {
   await teacherPage.locator('input[type="number"]').first().fill(String(TEST_INTERVAL_SECONDS));
   await takeScreenshot(teacherPage, "01-teacher-summary-dashboard.png", { fullPage: true });
 
+  const mobileStudentJoinPage = await context.newPage();
+  attachDiagnostics(mobileStudentJoinPage, "student-join-mobile", diagnostics, baseUrl);
+  await mobileStudentJoinPage.setViewportSize({ width: 390, height: 844 });
+  await mobileStudentJoinPage.goto(`${baseUrl}/student?c=${sessionCode}&g=3`, {
+    waitUntil: "domcontentloaded",
+  });
+  await mobileStudentJoinPage.locator("#sessionCode").waitFor({ timeout: 20_000 });
+  assert.equal(await mobileStudentJoinPage.locator("#sessionCode").inputValue(), sessionCode);
+  assert.equal(await mobileStudentJoinPage.locator("#groupNumber").inputValue(), "3");
+  await mobileStudentJoinPage.waitForTimeout(500);
+  assert.equal(await mobileStudentJoinPage.locator(".session-code-text").count(), 0);
+  await assertNoHorizontalOverflow(mobileStudentJoinPage, "Mobile student join page");
+  await takeScreenshot(mobileStudentJoinPage, "00-mobile-student-join.png", { fullPage: true });
+
   await teacherPage.locator("button:has(.session-code-text)").click();
   await teacherPage.getByText(/No tokenized join link is required/i).waitFor({ timeout: 20_000 });
   await assertDialogFitsViewport(teacherPage, "QR modal");
@@ -219,9 +233,17 @@ try {
   const promptsPage = await context.newPage();
   attachDiagnostics(promptsPage, "teacher-prompts", diagnostics, baseUrl);
   await promptsPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
-  await promptsPage.getByRole("heading", { name: "Prompt Library" }).waitFor({ timeout: 20_000 });
+  await promptsPage.getByRole("heading", { name: /Prompt library/i }).waitFor({ timeout: 20_000 });
   await assertNoHorizontalOverflow(promptsPage, "Prompts page");
   await takeScreenshot(promptsPage, "05-prompts-page.png", { fullPage: true });
+
+  const mobileTeacherPage = await context.newPage();
+  attachDiagnostics(mobileTeacherPage, "teacher-prompts-mobile", diagnostics, baseUrl);
+  await mobileTeacherPage.setViewportSize({ width: 390, height: 844 });
+  await mobileTeacherPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
+  await mobileTeacherPage.getByRole("heading", { name: /Prompt library/i }).waitFor({ timeout: 20_000 });
+  await assertNoHorizontalOverflow(mobileTeacherPage, "Mobile prompts page");
+  await takeScreenshot(mobileTeacherPage, "05a-prompts-page-mobile.png", { fullPage: true });
 
   const checkboxTeacherPage = await context.newPage();
   attachDiagnostics(checkboxTeacherPage, "teacher-checkbox", diagnostics, baseUrl);
@@ -249,6 +271,7 @@ try {
   const checkboxStudentPage = await context.newPage();
   attachDiagnostics(checkboxStudentPage, "student-checkbox", diagnostics, baseUrl);
   await checkboxStudentPage.goto(`${baseUrl}/s?c=${checkboxSessionCode}&g=2`, { waitUntil: "domcontentloaded" });
+  await checkboxStudentPage.getByRole("button", { name: /Join with code/i }).click();
   await checkboxStudentPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await checkboxTeacherPage.getByRole("heading", { name: "Group 2" }).waitFor({ timeout: 20_000 });
 
@@ -274,7 +297,7 @@ try {
   const historyPage = await context.newPage();
   attachDiagnostics(historyPage, "history", diagnostics, baseUrl);
   await historyPage.goto(`${baseUrl}/staging/history`, { waitUntil: "domcontentloaded" });
-  await historyPage.getByRole("heading", { name: "Session History" }).waitFor({ timeout: 20_000 });
+  await historyPage.getByRole("heading", { name: /Session history/i }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${sessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await assertNoHorizontalOverflow(historyPage, "History page");
@@ -295,10 +318,10 @@ try {
   );
   await teacherPage.getByRole("button", { name: /Stop recording/i }).click();
   await expectOkResponse(stopSummaryResponse, "summary stop");
-  await studentPage.getByText(/Waiting for teacher/i, { exact: false }).waitFor({ timeout: 20_000 });
+  await studentPage.getByText(/Wrapping up recording|Recording complete/i, { exact: false }).waitFor({ timeout: 30_000 });
 
   await studentPage.getByRole("button", { name: /Leave session/i }).click();
-  await studentPage.getByText(/Session-code join/i, { exact: false }).waitFor({ timeout: 20_000 });
+  await studentPage.locator("#sessionCode").waitFor({ timeout: 20_000 });
   await assertNoHorizontalOverflow(studentPage, "Student join page after leave");
   await takeScreenshot(studentPage, "10-student-after-leave.png", { fullPage: true });
 
@@ -335,3 +358,5 @@ try {
     });
   }
 }
+
+process.exit(0);

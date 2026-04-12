@@ -32,26 +32,41 @@ export function StudentHeader({
 
     const uploadPhase = uploadState?.phase || 'idle';
     let uploadTone = 'neutral';
-    let uploadLabel = 'Awaiting first upload';
+    let uploadLabel = 'Ready for the first upload';
 
     if (uploadPhase === 'uploading') {
         uploadTone = 'primary';
         uploadLabel = uploadState?.pendingUploads > 1
-            ? `Uploading ${uploadState.pendingUploads} chunks`
-            : 'Uploading chunk';
+            ? `Uploading ${uploadState.pendingUploads} audio chunks`
+            : 'Uploading audio chunk';
     } else if (uploadPhase === 'finalizing') {
         uploadTone = 'warning';
-        uploadLabel = 'Finalizing last chunk';
+        uploadLabel = 'Finalizing session audio';
     } else if (uploadPhase === 'error') {
         uploadTone = 'danger';
-        uploadLabel = uploadState?.lastError || 'Upload failed';
+        uploadLabel = uploadState?.lastError || 'Upload issue';
     } else if (uploadState?.lastUploadedAt) {
         uploadTone = 'success';
         uploadLabel = `Last upload ${formatClockTime(uploadState.lastUploadedAt)}`;
     }
 
+    const hasCompletedRecording = !isRecording && uploadPhase !== 'finalizing' && Boolean(uploadState?.lastUploadedAt);
+    let recordingTone = 'neutral';
+    let recordingLabel = 'Waiting for the teacher';
+
+    if (isRecording) {
+        recordingTone = isPageVisible ? 'danger' : 'warning';
+        recordingLabel = isPageVisible ? 'Recording live' : 'Recording in background';
+    } else if (uploadPhase === 'finalizing') {
+        recordingTone = 'warning';
+        recordingLabel = 'Wrapping up recording';
+    } else if (hasCompletedRecording) {
+        recordingTone = 'success';
+        recordingLabel = 'Recording complete';
+    }
+
     return (
-        <Panel padding="lg" className="flex flex-wrap items-center justify-between gap-4">
+        <Panel padding="lg" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
                 <div className="ui-panel-heading__icon">
                     <GraduationCap className="h-5 w-5" />
@@ -65,20 +80,13 @@ export function StudentHeader({
                 </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
                 <StatusBadge tone={isConnected ? 'success' : 'danger'} pulse={isConnected}>
                     {isConnected ? 'Connected' : 'Disconnected'}
                 </StatusBadge>
-                <Badge
-                    tone={isRecording ? (isPageVisible ? 'danger' : 'warning') : 'neutral'}
-                    icon={TimerReset}
-                >
-                    {isRecording
-                        ? (isPageVisible ? 'Recording live' : 'Recording in background')
-                        : 'Waiting for teacher'}
-                </Badge>
+                <Badge tone={recordingTone} icon={TimerReset}>{recordingLabel}</Badge>
                 <Badge tone={uploadTone}>{uploadLabel}</Badge>
-                <Badge tone="primary">{formatTime(elapsedTime)}</Badge>
+                {isRecording ? <Badge tone="primary">{formatTime(elapsedTime)}</Badge> : null}
                 {onLeaveSession ? (
                     <Button type="button" variant="secondary" size="sm" onClick={onLeaveSession}>
                         <LogOut className="h-4 w-4" />

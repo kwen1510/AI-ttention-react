@@ -34,7 +34,7 @@ function ModeButton({ item, isActive, onNavigate }) {
       variant={isActive ? "primary" : "ghost"}
       onClick={handleClick}
       aria-current={isActive ? "page" : undefined}
-      className={isActive ? "app-nav__item app-nav__item--active" : "app-nav__item"}
+      className={isActive ? "app-nav__item app-nav__item--active shrink-0" : "app-nav__item shrink-0"}
     >
       <Icon className="w-4 h-4 mr-1 sm:mr-2" />
       <span className="truncate whitespace-nowrap">{item.label}</span>
@@ -72,9 +72,9 @@ function Navbar({ active = "", basePath = "", showModes = true, showSignOut = tr
           </div>
         </div>
 
-        <div className="cluster flex-1 justify-end">
+        <div className="flex w-full min-w-0 flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:justify-end">
           {showModes && (
-            <div className="cluster min-w-0 flex-1 justify-end">
+            <nav className="min-w-0 lg:flex-1" aria-label="Teacher sections">
               <div className="app-nav scrollbar-hide overflow-x-auto">
                 {modes.map((item) => (
                   <ModeButton
@@ -85,11 +85,11 @@ function Navbar({ active = "", basePath = "", showModes = true, showSignOut = tr
                   />
                 ))}
               </div>
-            </div>
+            </nav>
           )}
 
           {showSignOut && (
-            <Button type="button" variant="secondary" size="sm" onClick={() => signOut()}>
+            <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => signOut()}>
               <LogOut className="h-4 w-4" />
               <span>Sign out</span>
             </Button>

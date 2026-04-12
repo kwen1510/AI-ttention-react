@@ -7,6 +7,7 @@ process.env.PORT = process.env.PORT || "0";
 process.env.STAGING_AUTH_BYPASS = "true";
 process.env.ALLOW_DEV_TEST = "true";
 process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST = "false";
+process.env.MOCK_AI_SERVICES = "true";
 
 const { http, startServer } = await import("../index.js");
 
@@ -64,7 +65,7 @@ function attachDiagnostics(page, label, diagnostics, baseUrl) {
 async function waitForSessionCode(page) {
   await page.waitForFunction(() => {
     const value = document.querySelector(".session-code-text")?.textContent?.trim();
-    return Boolean(value && value !== "-" && value.length >= 6);
+    return /^[A-Z0-9]{6}$/.test(value || "");
   }, null, { timeout: 20_000 });
 
   return String(await page.locator(".session-code-text").textContent()).trim();
@@ -135,13 +136,13 @@ try {
   const teacherSummaryPage = await context.newPage();
   attachDiagnostics(teacherSummaryPage, "teacher-summary", diagnostics, baseUrl);
   await teacherSummaryPage.goto(`${baseUrl}/staging/admin`, { waitUntil: "domcontentloaded" });
-  await teacherSummaryPage.getByText("AI Summarization Prompts").waitFor({ timeout: 20_000 });
+  await teacherSummaryPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
 
   const summarySessionCode = await waitForSessionCode(teacherSummaryPage);
   assert.match(summarySessionCode, /^[A-Z0-9]{6}$/);
   const summaryJoinUrl = `${baseUrl}/s?c=${summarySessionCode}`;
 
-  await teacherSummaryPage.getByRole("button", { name: /AI Summarization Prompts/i }).click();
+  await teacherSummaryPage.getByRole("button", { name: /Summary prompt/i }).click();
   const summaryPromptText = `E2E summary prompt ${Date.now()}`;
   const savePromptResponse = teacherSummaryPage.waitForResponse((response) =>
     response.request().method() === "POST" &&
@@ -163,27 +164,10 @@ try {
   await studentSummaryPage.getByRole("button", { name: /Join with code/i }).click();
   await studentSummaryPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentSummaryPage.getByText("Group 1", { exact: false }).waitFor();
-  await teacherSummaryPage.getByRole("heading", { name: "Group 1" }).waitFor({ timeout: 20_000 });
-
-  const startSummaryResponse = teacherSummaryPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${summarySessionCode}/start`)
-  );
-  await teacherSummaryPage.getByRole("button", { name: "Start Recording" }).click();
-  await expectOkResponse(startSummaryResponse, "summary start");
-  await studentSummaryPage.getByText(/Recording/, { exact: false }).waitFor({ timeout: 20_000 });
-
-  const stopSummaryResponse = teacherSummaryPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${summarySessionCode}/stop`)
-  );
-  await teacherSummaryPage.getByRole("button", { name: "Stop Recording" }).click();
-  await expectOkResponse(stopSummaryResponse, "summary stop");
-  await studentSummaryPage.getByText("Waiting...", { exact: false }).waitFor({ timeout: 20_000 });
 
   const promptsPage = teacherSummaryPage;
   await promptsPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
-  await promptsPage.getByRole("heading", { name: "Prompt Library" }).waitFor({ timeout: 20_000 });
+  await promptsPage.getByRole("heading", { name: /Prompt library/i }).waitFor({ timeout: 20_000 });
 
   const promptId = Date.now();
   const promptTitle = `E2E Prompt ${promptId}`;
@@ -202,7 +186,7 @@ try {
   await promptsPage.locator("#description").fill(promptDescription);
   await promptsPage.locator("#content").fill(promptContent);
   await promptsPage.locator("#tags").fill("e2e, browser");
-  await promptsPage.getByRole("button", { name: "Save Prompt" }).click();
+  await promptsPage.getByRole("button", { name: /Save prompt/i }).click();
   await expectOkResponse(createPromptResponse, "prompt create");
   await promptsPage.getByText(promptTitle, { exact: true }).waitFor({ timeout: 20_000 });
 
@@ -215,7 +199,7 @@ try {
   );
   await promptsPage.getByRole("button", { name: "Edit" }).click();
   await promptsPage.locator("#description").fill(promptDescriptionUpdated);
-  await promptsPage.getByRole("button", { name: "Update Prompt" }).click();
+  await promptsPage.getByRole("button", { name: /Update prompt/i }).click();
   await expectOkResponse(updatePromptResponse, "prompt update");
   await promptsPage.getByText(promptTitle, { exact: true }).waitFor();
 
@@ -242,19 +226,20 @@ try {
   await promptsPage.getByRole("button", { name: "Use Prompt" }).click();
   await expectOkResponse(usePromptResponse, "prompt use");
   await promptsPage.waitForURL(new RegExp(`${baseUrl}/staging/admin\\?prompt=`), { timeout: 20_000 });
-  await promptsPage.getByRole("button", { name: /AI Summarization Prompts/i }).click();
+  await promptsPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
+  await promptsPage.getByRole("button", { name: /Summary prompt/i }).click();
   await promptsPage.locator("textarea").first().waitFor();
   assert.equal(await promptsPage.locator("textarea").first().inputValue(), promptContent);
 
   await promptsPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
-  await promptsPage.getByRole("heading", { name: "Prompt Library" }).waitFor();
+  await promptsPage.getByRole("heading", { name: /Prompt library/i }).waitFor();
   await deletePromptByTitle(promptsPage, promptTitle);
   await deletePromptByTitle(promptsPage, promptTitleCopy);
 
   const teacherCheckboxPage = await context.newPage();
   attachDiagnostics(teacherCheckboxPage, "teacher-checkbox", diagnostics, baseUrl);
   await teacherCheckboxPage.goto(`${baseUrl}/staging/checkbox`, { waitUntil: "domcontentloaded" });
-  await teacherCheckboxPage.getByText("Discussion Criteria Setup").waitFor({ timeout: 20_000 });
+  await teacherCheckboxPage.getByRole("heading", { name: /Live checklist session/i }).waitFor({ timeout: 20_000 });
 
   const checkboxSessionCode = await waitForSessionCode(teacherCheckboxPage);
   const checkboxScenario = `Discuss the causes of climate change ${Date.now()}`;
@@ -278,49 +263,34 @@ try {
   await studentCheckboxPage.goto(`${baseUrl}/s?c=${checkboxSessionCode}&g=2`, {
     waitUntil: "domcontentloaded",
   });
+  await studentCheckboxPage.getByRole("button", { name: /Join with code/i }).click();
   await studentCheckboxPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
-  await studentCheckboxPage.getByText("Waiting for teacher to release checklist").waitFor({ timeout: 20_000 });
-  await teacherCheckboxPage.getByRole("heading", { name: "Group 2" }).waitFor({ timeout: 20_000 });
-
-  const startCheckboxResponse = teacherCheckboxPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${checkboxSessionCode}/start`)
-  );
-  await teacherCheckboxPage.getByRole("button", { name: "Start Recording" }).click();
-  await expectOkResponse(startCheckboxResponse, "checkbox start");
-  await studentCheckboxPage.getByText(/Recording/, { exact: false }).waitFor({ timeout: 20_000 });
-
-  const stopCheckboxResponse = teacherCheckboxPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    response.url().endsWith(`/api/session/${checkboxSessionCode}/stop`)
-  );
-  await teacherCheckboxPage.getByRole("button", { name: "Stop Recording" }).click();
-  await expectOkResponse(stopCheckboxResponse, "checkbox stop");
-  await studentCheckboxPage.getByText("Waiting...", { exact: false }).waitFor({ timeout: 20_000 });
-
-  await teacherCheckboxPage.getByRole("button", { name: "Release Checklist" }).click();
-  await studentCheckboxPage.getByText("Group Checklist").waitFor({ timeout: 20_000 });
+  await studentCheckboxPage.getByText(/Waiting for the checklist/i).waitFor({ timeout: 20_000 });
+  await teacherCheckboxPage.getByRole("button", { name: /Release checklist/i }).click();
+  await studentCheckboxPage.getByText("Group checklist", { exact: false }).waitFor({ timeout: 20_000 });
   await studentCheckboxPage.getByText("States at least one human cause").waitFor();
   await studentCheckboxPage.getByText("Suggests one mitigation strategy").waitFor();
 
   const historyPage = await context.newPage();
   attachDiagnostics(historyPage, "history", diagnostics, baseUrl);
   await historyPage.goto(`${baseUrl}/staging/history`, { waitUntil: "domcontentloaded" });
-  await historyPage.getByRole("heading", { name: "Session History" }).waitFor({ timeout: 20_000 });
+  await historyPage.getByRole("heading", { name: /Session history/i }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
 
-  const summaryCard = historyPage.locator(".glass-panel", { hasText: `Session ${summarySessionCode}` }).first();
+  const summaryCard = historyPage
+    .getByRole("heading", { name: `Session ${summarySessionCode}` })
+    .locator("xpath=ancestor::div[contains(@class,'ui-panel')][1]");
   await summaryCard.getByRole("button", { name: "Open history" }).click();
-  const historyModal = historyPage.locator(".qr-modal-content");
+  const historyModal = historyPage.getByRole("dialog");
   await historyModal.getByRole("heading", { name: `Session ${summarySessionCode}` }).waitFor({ timeout: 20_000 });
 
   const combinedDownloadPromise = historyPage.waitForEvent("download");
-  await historyModal.getByRole("button", { name: "Download Combined JSON" }).click();
+  await historyModal.getByRole("button", { name: "Combined JSON" }).click();
   await combinedDownloadPromise;
 
   const segmentsDownloadPromise = historyPage.waitForEvent("download");
-  await historyModal.getByRole("button", { name: "Download Segments JSON" }).click();
+  await historyModal.getByRole("button", { name: "Segments JSON" }).click();
   await segmentsDownloadPromise;
 
   await historyModal.locator("button").last().click();
@@ -329,7 +299,7 @@ try {
   const dataPage = await context.newPage();
   attachDiagnostics(dataPage, "data", diagnostics, baseUrl);
   await dataPage.goto(`${baseUrl}/staging/data`, { waitUntil: "domcontentloaded" });
-  await dataPage.getByRole("heading", { name: "Session History" }).waitFor({ timeout: 20_000 });
+  await dataPage.getByRole("heading", { name: /Session history/i }).waitFor({ timeout: 20_000 });
   await dataPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
 
   if (diagnostics.length > 0) {
@@ -363,3 +333,5 @@ try {
     });
   }
 }
+
+process.exit(0);

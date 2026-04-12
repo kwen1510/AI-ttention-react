@@ -71,7 +71,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                 <DialogHeader>
                     <DialogTitle>Student access</DialogTitle>
                     <DialogDescription>
-                        Students can type this session code on the student page, or use the code-based link below. No tokenized join link is required.
+                        Students can scan this code or open the student page and enter the session code manually. No tokenized join link is required.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -121,9 +121,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                         </Button>
                     </div>
 
-                    <p className="text-xs copy-muted">
-                        Students on other devices can open the student page directly and enter the session code shown above.
-                    </p>
+                    <p className="text-xs copy-muted">Manual entry still works on any device using the session code shown above.</p>
                 </div>
             </DialogContent>
         </Dialog>

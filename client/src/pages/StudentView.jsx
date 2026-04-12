@@ -69,13 +69,6 @@ function StudentView() {
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  // Auto-join from URL params
-  useEffect(() => {
-    if (initialCode && initialGroup && !sessionInfo.code) {
-      joinSession(initialCode, initialGroup);
-    }
-  }, [initialCode, initialGroup, joinSession, sessionInfo.code]);
-
   if (!sessionInfo.code) {
     return (
       <JoinForm

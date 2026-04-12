@@ -23,7 +23,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Field, Select } from "@/components/ui/field.jsx";
 import { Panel, SectionHeader } from "@/components/ui/panel.jsx";
-import { getChecklistTone } from "@/lib/statusTone.js";
+import { getChecklistStatusLabel, getChecklistTone } from "@/lib/statusTone.js";
 
 const MODE_META = {
   summary: {
@@ -41,7 +41,13 @@ const MODE_META = {
 function formatDate(value) {
   if (!value) return "Unknown date";
   try {
-    return new Date(value).toLocaleString();
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(value));
   } catch {
     return String(value);
   }
@@ -128,7 +134,7 @@ function SessionCard({ session, onSelect }) {
   const Icon = meta.icon;
 
   return (
-    <Panel padding="lg" className="h-full">
+    <Panel padding="lg" className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="ui-panel-heading__icon">
@@ -183,7 +189,7 @@ function MetricCard({ label, value }) {
 }
 
 function CriterionStatus({ status }) {
-  return <Badge tone={getChecklistTone(status)} size="sm">{status || "pending"}</Badge>;
+  return <Badge tone={getChecklistTone(status)} size="sm">{getChecklistStatusLabel(status)}</Badge>;
 }
 
 function GroupHistoryPanel({ sessionMode, group }) {
@@ -564,7 +570,8 @@ export default function DataExplorerView() {
   const canGoNext = pagination.total > 0 && offset + sessions.length < pagination.total;
 
   return (
-    <div className="stack">
+    <div className="page-shell page-shell--fluid">
+      <div className="stack">
       <SectionHeader
         eyebrow="Teacher workspace"
         title="Session history"
@@ -679,6 +686,7 @@ export default function DataExplorerView() {
       {selectedSession ? (
         <SessionModal selectedSession={selectedSession} onClose={() => setSelectedSession(null)} />
       ) : null}
+      </div>
     </div>
   );
 }

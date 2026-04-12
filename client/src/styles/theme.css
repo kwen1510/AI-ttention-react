@@ -659,7 +659,7 @@ select:focus {
 
 .app-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.4rem;
   padding: 0.3rem;
   border-radius: var(--radius-md);
@@ -781,10 +781,6 @@ select:focus {
   }
 
   .ui-toolbar__group {
-    width: 100%;
-  }
-
-  .ui-button:not(.ui-button--icon) {
     width: 100%;
   }
 

@@ -14,11 +14,56 @@ export const apiLimiter = rateLimit({
     handler: createJsonRateLimitHandler("Too many API requests")
 });
 
+function buildAiRequesterKey(req) {
+    if (req.teacher?.id) {
+        return `teacher:${req.teacher.id}`;
+    }
+
+    const sessionCode = String(
+        req.get?.("x-session-code") ||
+        req.body?.sessionCode ||
+        ""
+    ).trim().toUpperCase();
+    const groupNumber = String(
+        req.get?.("x-group-number") ||
+        req.body?.groupNumber ||
+        ""
+    ).trim();
+    const joinToken = String(
+        req.get?.("x-join-token") ||
+        req.body?.joinToken ||
+        ""
+    ).trim();
+
+    if (sessionCode && groupNumber) {
+        return `session:${sessionCode}:group:${groupNumber}`;
+    }
+
+    if (sessionCode) {
+        return `session:${sessionCode}`;
+    }
+
+    if (joinToken) {
+        return `join:${joinToken}`;
+    }
+
+    return ipKeyGenerator(req.ip);
+}
+
 export const aiLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     limit: 20,
     standardHeaders: "draft-8",
     legacyHeaders: false,
-    keyGenerator: (req) => req.teacher?.id ? `teacher:${req.teacher.id}` : ipKeyGenerator(req.ip),
+    keyGenerator: buildAiRequesterKey,
+    handler: createJsonRateLimitHandler("Too many AI requests")
+});
+
+export const aiUploadLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    limit: 180,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    keyGenerator: buildAiRequesterKey,
     handler: createJsonRateLimitHandler("Too many AI requests")
 });

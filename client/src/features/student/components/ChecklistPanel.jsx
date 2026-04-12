@@ -3,10 +3,10 @@ import { CheckSquare, Clock, CheckCircle, Circle } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
-import { getChecklistTone } from '../../../lib/statusTone.js';
+import { getChecklistStatusLabel, getChecklistTone } from '../../../lib/statusTone.js';
 
 export function ChecklistPanel({ checklist, isReleased }) {
-    if (!isReleased && (!checklist || checklist.length === 0)) {
+    if (!isReleased) {
         return (
             <Panel padding="none" className="flex h-full flex-col overflow-hidden">
                 <div className="p-5">
@@ -21,6 +21,27 @@ export function ChecklistPanel({ checklist, isReleased }) {
                         icon={Clock}
                         title="Waiting for the checklist"
                         description="Once released, the criteria and your group's progress will appear here."
+                    />
+                </div>
+            </Panel>
+        );
+    }
+
+    if (!checklist || checklist.length === 0) {
+        return (
+            <Panel padding="none" className="flex h-full flex-col overflow-hidden">
+                <div className="p-5">
+                    <PanelHeader
+                        icon={CheckSquare}
+                        title="Group checklist"
+                        description="Live checklist progress for your group."
+                    />
+                </div>
+                <div className="flex-1 px-5 pb-5">
+                    <EmptyState
+                        icon={CheckSquare}
+                        title="Checklist unavailable"
+                        description="The checklist was released, but no criteria are available yet."
                     />
                 </div>
             </Panel>
@@ -57,7 +78,7 @@ export function ChecklistPanel({ checklist, isReleased }) {
                                         {item.description}
                                     </p>
                                     <Badge tone={tone} size="sm">
-                                        {item.status || 'pending'}
+                                        {getChecklistStatusLabel(item.status)}
                                     </Badge>
                                 </div>
                                 {item.rubric && (

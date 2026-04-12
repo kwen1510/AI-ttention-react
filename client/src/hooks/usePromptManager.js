@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
+import { DEFAULT_SUMMARY_PROMPT, normalizePromptText } from '../lib/prompts.js';
 
 export function usePromptManager(sessionCode, socket) {
-    const [currentPrompt, setCurrentPrompt] = useState('');
+    const [currentPrompt, setCurrentPrompt] = useState(DEFAULT_SUMMARY_PROMPT);
     const [promptLibrary, setPromptLibrary] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [feedback, setFeedback] = useState(null);
@@ -13,16 +14,29 @@ export function usePromptManager(sessionCode, socket) {
         }
     };
 
-    const loadSessionPrompt = useCallback(async () => {
-        if (!sessionCode) return;
+    const loadSessionPrompt = useCallback(async ({ signal, fallbackPrompt } = {}) => {
+        const resolvedFallback = normalizePromptText(fallbackPrompt) || DEFAULT_SUMMARY_PROMPT;
+
+        if (!sessionCode) {
+            setCurrentPrompt(resolvedFallback);
+            return;
+        }
         try {
-            const res = await fetch(`/api/session/${sessionCode}/prompt`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.prompt) setCurrentPrompt(data.prompt);
+            const res = await fetch(`/api/session/${sessionCode}/prompt`, { signal });
+            if (!res.ok) {
+                setCurrentPrompt(resolvedFallback);
+                return;
             }
+
+            const data = await res.json();
+            const nextPrompt = normalizePromptText(data?.prompt) || resolvedFallback;
+            setCurrentPrompt(nextPrompt);
         } catch (err) {
-            console.error('Failed to load session prompt:', err);
+            if (err?.name === 'AbortError' || signal?.aborted) {
+                return;
+            }
+
+            setCurrentPrompt(resolvedFallback);
         }
     }, [sessionCode]);
 

@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { FileText, ChevronDown, FlaskConical, Check } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Textarea } from '../../../components/ui/field.jsx';
+import {
+    DEFAULT_SUMMARY_PROMPT,
+    getSummaryPromptPreview,
+    isDefaultSummaryPrompt,
+} from '../../../lib/prompts.js';
 
 export function PromptManager({
     currentPrompt,
@@ -16,10 +21,20 @@ export function PromptManager({
     feedback
 }) {
     const [isOpen, setIsOpen] = useState(false);
+    const contentId = useId();
+    const activePrompt = String(currentPrompt || '').trim() || DEFAULT_SUMMARY_PROMPT;
+    const usingDefaultPrompt = isDefaultSummaryPrompt(activePrompt);
+    const promptPreview = getSummaryPromptPreview(activePrompt);
 
     return (
         <Panel padding="none">
-            <button onClick={() => setIsOpen(!isOpen)} className="w-full p-6 text-left">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                aria-expanded={isOpen}
+                aria-controls={contentId}
+                className="w-full p-6 text-left"
+            >
                 <div className="flex items-center justify-between gap-3">
                     <PanelHeader
                         className="w-full border-b-0 p-0"
@@ -29,10 +44,19 @@ export function PromptManager({
                     />
                     <ChevronDown className={`h-5 w-5 text-[var(--text-muted)] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
+
+                {!isOpen ? (
+                    <div className="ml-[3.375rem] mt-4 space-y-2">
+                        <span className="ui-badge ui-badge--sm ui-badge--neutral">
+                            {usingDefaultPrompt ? 'Default prompt' : 'Session prompt'}
+                        </span>
+                        <p className="line-clamp-2 text-sm copy-muted">{promptPreview}</p>
+                    </div>
+                ) : null}
             </button>
 
             {isOpen && (
-                <div className="border-t border-[var(--border)] p-6">
+                <div id={contentId} className="border-t border-[var(--border)] p-6">
                     <div className="space-y-4">
                         <Textarea
                             value={currentPrompt}
@@ -42,17 +66,17 @@ export function PromptManager({
                             placeholder="Enter your custom prompt..."
                         />
 
-                        <div className="cluster justify-between">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="cluster">
-                                <Button onClick={() => onTest(currentPrompt)} variant="secondary" size="sm">
+                                <Button type="button" onClick={() => onTest(currentPrompt)} variant="secondary" size="sm">
                                     <FlaskConical className="h-3.5 w-3.5" />
                                     Test
                                 </Button>
-                                <Button onClick={() => onSave(currentPrompt)} variant="primary" size="sm">
+                                <Button type="button" onClick={() => onSave(currentPrompt)} variant="primary" size="sm">
                                     <Check className="h-3.5 w-3.5" />
                                     Apply
                                 </Button>
-                                <Button onClick={onReset} variant="ghost" size="sm">
+                                <Button type="button" onClick={onReset} variant="ghost" size="sm">
                                     Reset Default
                                 </Button>
                             </div>

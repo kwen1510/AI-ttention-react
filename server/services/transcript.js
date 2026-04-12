@@ -6,9 +6,11 @@ let warnedAboutMissingSummarySnapshots = false;
 
 function isMissingRelationError(error) {
     const code = String(error?.code || '');
-    const details = String(error?.details || '');
     const message = String(error?.message || '');
-    return code === '42P01' || details.includes('summary_snapshots') || message.includes('summary_snapshots');
+    return code === '42P01'
+        || code === 'PGRST205'
+        || message.includes(`Could not find the table 'public.summary_snapshots'`)
+        || message.includes('relation "summary_snapshots" does not exist');
 }
 
 // Global storage for session transcript history

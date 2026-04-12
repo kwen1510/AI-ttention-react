@@ -165,6 +165,10 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         try {
             const response = await fetch('/api/transcribe-chunk', {
                 method: 'POST',
+                headers: {
+                    'x-session-code': currentSessionCode,
+                    'x-group-number': String(parsedGroup)
+                },
                 body: formData
             });
 

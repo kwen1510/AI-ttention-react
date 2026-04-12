@@ -27,6 +27,7 @@ function CheckboxDashboard() {
     currentCriteria,
     strictness,
     setStrictness,
+    isLoading,
     feedback,
     saveCriteria
   } = useCriteriaManager(sessionCode, socket);
@@ -189,6 +190,7 @@ function CheckboxDashboard() {
             setCriteriaText('');
           }}
           feedback={feedback}
+          isLoading={isLoading}
         />
 
         <CheckboxGroupGrid
