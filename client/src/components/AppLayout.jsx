@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar.jsx';
 import { useAuth } from './AuthContext.jsx';
-import { getStagingBasePath, isStagingBypassPath } from '../lib/stagingBypass.js';
+import { getStagingBasePath } from '../lib/stagingBypass.js';
 
 function getActiveMode(pathname) {
   const normalizedPath = pathname.startsWith('/staging/')
@@ -21,9 +21,8 @@ function AppLayout() {
   const basePath = getStagingBasePath(location.pathname);
   const { user } = useAuth();
   const isStudentRoute = location.pathname.startsWith('/student');
-  const isStagingRoute = isStagingBypassPath(location.pathname);
   const showModes = !isStudentRoute;
-  const showSignOut = Boolean(user) && !isStudentRoute && !isStagingRoute;
+  const showSignOut = Boolean(user) && !isStudentRoute;
 
   return (
     <div className="app-shell flex min-h-screen flex-col">

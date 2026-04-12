@@ -39,7 +39,8 @@ export async function callOpenAIChat(apiKey, {
 
 export async function transcribeAudioWithOpenAI(buffer, {
     mimeType = "audio/webm",
-    filename = "audio.webm"
+    filename = "audio.webm",
+    language = "en"
 } = {}) {
     if (!OPENAI_API_KEY) {
         throw new Error("OpenAI audio transcription unavailable: missing OPENAI_API_KEY");
@@ -51,6 +52,7 @@ export async function transcribeAudioWithOpenAI(buffer, {
         contentType: mimeType
     });
     formData.append("model", "whisper-1");
+    formData.append("language", language);
     formData.append("response_format", "verbose_json");
     formData.append("timestamp_granularities[]", "word");
 

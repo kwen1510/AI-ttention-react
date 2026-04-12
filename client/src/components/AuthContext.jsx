@@ -218,7 +218,17 @@ export function AuthProvider({ children }) {
       isStagingBypass,
       teacherLoading,
       teacherProfile,
-      signOut: () => (supabase ? supabase.auth.signOut() : Promise.resolve()),
+      signOut: () => {
+        if (supabase) {
+          return supabase.auth.signOut();
+        }
+
+        if (typeof window !== 'undefined') {
+          window.location.assign('/student?blocked=teacher');
+        }
+
+        return Promise.resolve();
+      },
     }),
     [config, fetchReady, isStagingBypass, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
   );

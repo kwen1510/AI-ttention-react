@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 import FormData from "form-data";
-import { ELEVENLABS_KEY } from "../config/env.js";
+import { ELEVENLABS_KEY, TRANSCRIPTION_LANGUAGE } from "../config/env.js";
 import { transcribeAudioWithOpenAI } from "./openai.js";
 
 let mockChunkCounter = 0;
@@ -121,6 +121,7 @@ export async function transcribe(buf, format = 'audio/webm') {
             contentType: audioMime
         });
         formData.append('model_id', 'scribe_v1');
+        formData.append('language_code', TRANSCRIPTION_LANGUAGE);
         formData.append('timestamps_granularity', 'word');
 
         if (ELEVENLABS_KEY) {
@@ -169,7 +170,8 @@ export async function transcribe(buf, format = 'audio/webm') {
 
         return await transcribeAudioWithOpenAI(buf, {
             mimeType: audioMime,
-            filename
+            filename,
+            language: TRANSCRIPTION_LANGUAGE
         });
 
     } catch (err) {

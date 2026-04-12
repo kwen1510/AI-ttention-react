@@ -1,7 +1,8 @@
 import React from 'react';
-import { GraduationCap, TimerReset } from 'lucide-react';
+import { GraduationCap, LogOut, TimerReset } from 'lucide-react';
 import { Panel } from '../../../components/ui/panel.jsx';
 import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
+import { Button } from '../../../components/ui/button.jsx';
 
 export function StudentHeader({
     sessionCode,
@@ -10,7 +11,8 @@ export function StudentHeader({
     isRecording,
     isPageVisible,
     elapsedTime,
-    uploadState = null
+    uploadState = null,
+    onLeaveSession
 }) {
     // Format elapsed time
     const formatTime = (seconds) => {
@@ -77,6 +79,12 @@ export function StudentHeader({
                 </Badge>
                 <Badge tone={uploadTone}>{uploadLabel}</Badge>
                 <Badge tone="primary">{formatTime(elapsedTime)}</Badge>
+                {onLeaveSession ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={onLeaveSession}>
+                        <LogOut className="h-4 w-4" />
+                        <span>Leave session</span>
+                    </Button>
+                ) : null}
             </div>
         </Panel>
     );

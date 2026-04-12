@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useStudentSocket } from '../hooks/useStudentSocket';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { StudentHeader } from '../features/student/components/StudentHeader';
@@ -11,6 +11,7 @@ import { Alert } from '../components/ui/alert.jsx';
 
 function StudentView() {
   const location = useLocation();
+  const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
   const initialCode = String(params.get('c') || params.get('code') || '').trim().toUpperCase();
@@ -25,7 +26,8 @@ function StudentView() {
     checklistReleased,
     error: socketError,
     recordingState,
-    joinSession
+    joinSession,
+    leaveSession
   } = useStudentSocket();
 
   const [uploadError, setUploadError] = useState(null);
@@ -97,6 +99,10 @@ function StudentView() {
           isPageVisible={isPageVisible}
           elapsedTime={elapsedTime}
           uploadState={uploadState}
+          onLeaveSession={() => {
+            leaveSession();
+            navigate('/student', { replace: true });
+          }}
         />
 
         {uploadError && (

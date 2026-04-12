@@ -165,6 +165,23 @@ export function useStudentSocket() {
         }
     }, []);
 
+    const leaveSession = useCallback(() => {
+        joinStateRef.current = { code: null, group: null };
+        setSessionInfo({ code: null, group: null, mode: 'summary' });
+        setTranscription(null);
+        setSummary(null);
+        setChecklist([]);
+        setChecklistReleased(false);
+        setError(null);
+        setRecordingState({ isRecording: false, interval: null });
+
+        const socket = socketRef.current;
+        if (socket) {
+            socket.disconnect();
+            socket.connect();
+        }
+    }, []);
+
     return {
         socket: socketRef.current,
         isConnected,
@@ -177,6 +194,7 @@ export function useStudentSocket() {
         setChecklistReleased,
         error,
         recordingState,
-        joinSession
+        joinSession,
+        leaveSession
     };
 }

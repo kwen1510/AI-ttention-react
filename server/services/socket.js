@@ -20,6 +20,10 @@ import {
 export const activeSummaryTimers = new Map();
 const processingGroups = new Set();
 
+function isUniqueViolation(error) {
+    return String(error?.code || "") === "23505" || /duplicate key/i.test(String(error?.message || ""));
+}
+
 function createSocketPrincipalError(message, status = 401) {
     const error = new Error(message);
     error.status = status;
@@ -544,18 +548,35 @@ export function initSocket(io) {
                         return;
                     }
 
-                    const existing = await db.collection("groups").findOne({
+                    let existing = await db.collection("groups").findOne({
                         session_id: sessionRecord._id,
                         number: parsedGroup
                     });
                     groupId = existing?._id ?? uuid();
 
                     if (!existing) {
-                        await db.collection("groups").insertOne({
-                            _id: groupId,
-                            session_id: sessionRecord._id,
-                            number: parsedGroup
-                        });
+                        try {
+                            await db.collection("groups").insertOne({
+                                _id: groupId,
+                                session_id: sessionRecord._id,
+                                number: parsedGroup
+                            });
+                        } catch (error) {
+                            if (!isUniqueViolation(error)) {
+                                throw error;
+                            }
+
+                            existing = await db.collection("groups").findOne({
+                                session_id: sessionRecord._id,
+                                number: parsedGroup
+                            });
+
+                            if (!existing) {
+                                throw error;
+                            }
+
+                            groupId = existing._id;
+                        }
                     }
                 } else {
                     groupId = uuid();
