@@ -11,6 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '../../../components/ui/dialog.jsx';
+import { useAuth } from '../../../components/AuthContext.jsx';
 import { parseCheckboxPromptContent } from '../../../lib/prompts.js';
 import {
     getChecklistItemClassName,
@@ -42,8 +43,10 @@ function formatHistorySessionLabel(session) {
             year: 'numeric'
         }).format(new Date(dateValue))
         : 'Unknown date';
+    const modeLabel = session.mode === 'checkbox' ? 'Checklist' : 'Summary';
+    const transcriptCount = Number(session.totalTranscripts || 0);
 
-    return `${session.code} · ${dateLabel}`;
+    return `${session.code} · ${modeLabel} · ${dateLabel}${transcriptCount > 0 ? ` · ${transcriptCount} segments` : ''}`;
 }
 
 function buildCheckboxCriteriaPreview(text = '') {
@@ -65,19 +68,44 @@ function buildCheckboxCriteriaPreview(text = '') {
     }).filter((criterion) => criterion.description);
 }
 
+function buildHistoryTranscript(groups = []) {
+    const transcriptGroups = (Array.isArray(groups) ? groups : [])
+        .map((group) => ({
+            groupNumber: Number(group?.groupNumber ?? group?.number),
+            fullTranscript: String(group?.fullTranscript || '').trim()
+        }))
+        .filter((group) => group.fullTranscript);
+
+    if (transcriptGroups.length === 0) {
+        return '';
+    }
+
+    if (transcriptGroups.length === 1) {
+        return transcriptGroups[0].fullTranscript;
+    }
+
+    return transcriptGroups
+        .sort((a, b) => a.groupNumber - b.groupNumber)
+        .map((group) => `Group ${group.groupNumber}\n${group.fullTranscript}`)
+        .join('\n\n');
+}
+
 export function PromptModal({ isOpen, onClose, onSave, initialData = null, categories = [] }) {
-    const [formData, setFormData] = useState(createEmptyFormState());
+    const { teacherProfile, user } = useAuth();
+    const authenticatedAuthorEmail = teacherProfile?.email || user?.email || '';
+    const [formData, setFormData] = useState(() => ({
+        ...createEmptyFormState(),
+        authorName: authenticatedAuthorEmail
+    }));
     const [testSource, setTestSource] = useState('custom');
     const [testTranscript, setTestTranscript] = useState('');
     const [testResult, setTestResult] = useState(null);
     const [testError, setTestError] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [historySessions, setHistorySessions] = useState([]);
-    const [historyGroups, setHistoryGroups] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyError, setHistoryError] = useState('');
     const [selectedSessionCode, setSelectedSessionCode] = useState('');
-    const [selectedGroupNumber, setSelectedGroupNumber] = useState('');
 
     useEffect(() => {
         if (initialData) {
@@ -87,7 +115,10 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                 tags: initialData.tags ? initialData.tags.join(', ') : ''
             });
         } else {
-            setFormData(createEmptyFormState());
+            setFormData({
+                ...createEmptyFormState(),
+                authorName: authenticatedAuthorEmail
+            });
         }
 
         setTestSource('custom');
@@ -95,11 +126,9 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
         setTestResult(null);
         setTestError('');
         setHistorySessions([]);
-        setHistoryGroups([]);
         setHistoryError('');
         setSelectedSessionCode('');
-        setSelectedGroupNumber('');
-    }, [initialData, isOpen]);
+    }, [authenticatedAuthorEmail, initialData, isOpen]);
 
     useEffect(() => {
         setTestResult(null);
@@ -108,14 +137,40 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
 
     useEffect(() => {
         setHistorySessions([]);
-        setHistoryGroups([]);
         setHistoryError('');
         setSelectedSessionCode('');
-        setSelectedGroupNumber('');
         if (testSource === 'history') {
             setTestTranscript('');
         }
     }, [formData.mode, testSource]);
+
+    useEffect(() => {
+        if (!isOpen || testSource !== 'history' || historyLoading || historySessions.length > 0) {
+            return;
+        }
+
+        void loadHistorySessions();
+    }, [historyLoading, historySessions.length, isOpen, testSource]);
+
+    useEffect(() => {
+        if (testSource !== 'history' || historyLoading || historySessions.length === 0) {
+            return;
+        }
+
+        const hasCurrentSelection = historySessions.some((session) => session.code === selectedSessionCode);
+        const nextSessionCode = hasCurrentSelection ? selectedSessionCode : historySessions[0]?.code;
+
+        if (!nextSessionCode) {
+            return;
+        }
+
+        if (nextSessionCode === selectedSessionCode && testTranscript.trim()) {
+            return;
+        }
+
+        setSelectedSessionCode(nextSessionCode);
+        void loadHistorySessionDetail(nextSessionCode);
+    }, [historyLoading, historySessions, selectedSessionCode, testSource, testTranscript]);
 
     const categorySuggestions = useMemo(() => {
         return ['General', ...categories]
@@ -123,6 +178,13 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
             .filter(Boolean)
             .filter((category, index, values) => values.indexOf(category) === index);
     }, [categories]);
+
+    const categorySelectValue = useMemo(() => {
+        if (!formData.category) {
+            return '';
+        }
+        return categorySuggestions.includes(formData.category) ? formData.category : '__custom__';
+    }, [categorySuggestions, formData.category]);
 
     const checkboxCriteriaPreview = useMemo(
         () => formData.mode === 'checkbox' ? buildCheckboxCriteriaPreview(formData.content) : [],
@@ -161,17 +223,27 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
         }));
     };
 
+    const handleCategorySelect = (event) => {
+        const nextValue = event.target.value;
+        setFormData((prev) => ({
+            ...prev,
+            category: nextValue === '__custom__' ? '' : nextValue
+        }));
+    };
+
     const loadHistorySessions = async () => {
         try {
             setHistoryLoading(true);
             setHistoryError('');
-            const response = await fetch(`/api/history/sessions?limit=20&mode=${formData.mode}`);
+            const response = await fetch('/api/history/sessions?limit=50');
             if (!response.ok) {
                 throw new Error(`Failed to load history (${response.status})`);
             }
 
             const data = await response.json();
-            setHistorySessions(Array.isArray(data.sessions) ? data.sessions : []);
+            const sessionsWithTranscripts = (Array.isArray(data.sessions) ? data.sessions : [])
+                .filter((session) => Number(session?.totalTranscripts || 0) > 0);
+            setHistorySessions(sessionsWithTranscripts);
         } catch (err) {
             console.error('Failed to load history sessions:', err);
             setHistoryError(err.message || 'Failed to load history sessions');
@@ -191,22 +263,10 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
             }
 
             const data = await response.json();
-            const groups = Array.isArray(data.groups) ? data.groups : [];
-            setHistoryGroups(groups);
-
-            if (groups.length > 0) {
-                const firstGroup = groups[0];
-                setSelectedGroupNumber(String(firstGroup.groupNumber));
-                setTestTranscript(String(firstGroup.fullTranscript || ''));
-            } else {
-                setSelectedGroupNumber('');
-                setTestTranscript('');
-            }
+            setTestTranscript(buildHistoryTranscript(data.groups));
         } catch (err) {
             console.error('Failed to load history session detail:', err);
             setHistoryError(err.message || 'Failed to load transcript');
-            setHistoryGroups([]);
-            setSelectedGroupNumber('');
             setTestTranscript('');
         } finally {
             setHistoryLoading(false);
@@ -216,8 +276,6 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
     const handleSelectHistorySession = async (event) => {
         const nextCode = event.target.value;
         setSelectedSessionCode(nextCode);
-        setHistoryGroups([]);
-        setSelectedGroupNumber('');
         setTestTranscript('');
 
         if (!nextCode) {
@@ -225,13 +283,6 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
         }
 
         await loadHistorySessionDetail(nextCode);
-    };
-
-    const handleSelectHistoryGroup = (event) => {
-        const nextGroupNumber = event.target.value;
-        setSelectedGroupNumber(nextGroupNumber);
-        const selectedGroup = historyGroups.find((group) => String(group.groupNumber) === String(nextGroupNumber));
-        setTestTranscript(String(selectedGroup?.fullTranscript || ''));
     };
 
     const handleRunTest = async () => {
@@ -270,7 +321,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent size="xl">
+            <DialogContent size="xl" className="prompt-editor-modal">
                 <DialogHeader>
                     <DialogTitle>{initialData ? 'Edit prompt' : 'Create prompt'}</DialogTitle>
                     <DialogDescription>
@@ -279,7 +330,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                 </DialogHeader>
 
                 <form id="promptForm" onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <Field label="Title" htmlFor="title">
                             <Input
                                 type="text"
@@ -291,19 +342,20 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                 placeholder="e.g., Physics Lab Discussion"
                             />
                         </Field>
-                        <Field label="Author name" htmlFor="authorName">
+                        <Field label="Author email" htmlFor="authorName" hint="Filled automatically from your teacher account.">
                             <Input
                                 type="text"
                                 name="authorName"
                                 id="authorName"
                                 value={formData.authorName}
                                 onChange={handleChange}
-                                placeholder="Your name"
+                                placeholder="Filled automatically from your account"
+                                readOnly={Boolean(authenticatedAuthorEmail)}
                             />
                         </Field>
                     </div>
 
-                    <Field label="Description" htmlFor="description">
+                    <Field label="Description" htmlFor="description" hint="Optional. Add a short note about what this prompt is for.">
                         <Textarea
                             name="description"
                             id="description"
@@ -314,25 +366,34 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                         />
                     </Field>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <Field
                             label="Category"
                             htmlFor="category"
-                            hint="Choose an existing category or type a new one."
+                            hint="Choose a saved category from the list, or type a new one below."
                         >
-                            <Input
-                                name="category"
-                                id="category"
-                                value={formData.category}
-                                onChange={handleChange}
-                                list="prompt-category-suggestions"
-                                placeholder="e.g., Assessment"
-                            />
-                            <datalist id="prompt-category-suggestions">
-                                {categorySuggestions.map((category) => (
-                                    <option key={category} value={category} />
-                                ))}
-                            </datalist>
+                            <div className="space-y-3">
+                                <Select
+                                    id="existingCategory"
+                                    value={categorySelectValue}
+                                    onChange={handleCategorySelect}
+                                >
+                                    <option value="">Select an existing category</option>
+                                    {categorySuggestions.map((category) => (
+                                        <option key={category} value={category}>
+                                            {category}
+                                        </option>
+                                    ))}
+                                    <option value="__custom__">Type a new category</option>
+                                </Select>
+                                <Input
+                                    name="category"
+                                    id="category"
+                                    value={formData.category}
+                                    onChange={handleChange}
+                                    placeholder="Type a new category if needed"
+                                />
+                            </div>
                         </Field>
                         <Field label="Mode" htmlFor="mode">
                             <Select
@@ -392,7 +453,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                             </Button>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                             <Field label="Transcript source" htmlFor="testSource">
                                 <Select
                                     id="testSource"
@@ -406,7 +467,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
 
                             {testSource === 'history' ? (
                                 <Field label="History transcripts" htmlFor="historySession">
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row">
                                         <Select
                                             id="historySession"
                                             value={selectedSessionCode}
@@ -426,39 +487,26 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                             size="sm"
                                             onClick={loadHistorySessions}
                                             disabled={historyLoading}
+                                            className="w-full sm:w-auto"
                                         >
                                             {historyLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
-                                            Load
+                                            Refresh
                                         </Button>
                                     </div>
                                 </Field>
                             ) : null}
                         </div>
 
-                        {testSource === 'history' ? (
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                <Field label="Group" htmlFor="historyGroup" hint="Choose which group transcript to test against.">
-                                    <Select
-                                        id="historyGroup"
-                                        value={selectedGroupNumber}
-                                        onChange={handleSelectHistoryGroup}
-                                        disabled={historyGroups.length === 0}
-                                    >
-                                        <option value="">Select a group</option>
-                                        {historyGroups.map((group) => (
-                                            <option key={group._id} value={group.groupNumber}>
-                                                Group {group.groupNumber}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </Field>
+                        {testSource === 'history' && !historyLoading && historySessions.length === 0 && !historyError ? (
+                            <Alert tone="warning">
+                                <p>No saved session transcripts were found yet. Once a session has transcript segments in History, it will appear here automatically.</p>
+                            </Alert>
+                        ) : null}
 
-                                <div className="flex items-end">
-                                    <p className="text-sm copy-muted">
-                                        Loaded transcripts can still be edited below before you run the test.
-                                    </p>
-                                </div>
-                            </div>
+                        {testSource === 'history' ? (
+                            <p className="text-sm copy-muted">
+                                The selected session transcript loads here automatically. If the session had multiple groups, their transcripts are combined in order.
+                            </p>
                         ) : null}
 
                         {historyError ? (
@@ -480,7 +528,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                 value={testTranscript}
                                 onChange={(event) => setTestTranscript(event.target.value)}
                                 placeholder={testSource === 'history'
-                                    ? 'Select a session and group from History to load a transcript here.'
+                                    ? 'Select a past session to load its transcript here.'
                                     : 'Paste a transcript here to test the prompt...'}
                             />
                         </Field>
@@ -531,7 +579,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                         ) : null}
                     </div>
 
-                    <Field label="Tags" htmlFor="tags" hint="Separate tags with commas.">
+                    <Field label="Tags" htmlFor="tags" hint="Optional. Separate tags with commas.">
                         <Input
                             type="text"
                             name="tags"

@@ -183,7 +183,10 @@ try {
   );
   await promptsPage.getByRole("button", { name: "Create Prompt" }).click();
   await promptsPage.locator("#title").fill(promptTitle);
-  await promptsPage.locator("#authorName").fill("Browser E2E");
+  const authorNameInput = promptsPage.locator("#authorName");
+  if (!(await authorNameInput.evaluate((element) => element.hasAttribute("readonly")))) {
+    await authorNameInput.fill("Browser E2E");
+  }
   await promptsPage.locator("#description").fill(promptDescription);
   await promptsPage.locator("#content").fill(promptContent);
   await promptsPage.locator("#tags").fill("e2e, browser");
