@@ -3,6 +3,7 @@ import { FlaskConical, HelpCircle, History, RefreshCw } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Input, Select, Textarea } from '../../../components/ui/field.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import {
     Dialog,
     DialogContent,
@@ -544,8 +545,8 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                             <div className="space-y-3">
                                 <h4 className="text-sm font-semibold text-[var(--text)]">Test result</h4>
                                 {testResult.mode === 'summary' ? (
-                                    <div className="ui-code-block text-sm whitespace-pre-wrap">
-                                        {testResult.summary || 'No summary returned.'}
+                                    <div className="ui-code-block text-sm">
+                                        <MarkdownContent content={testResult.summary || 'No summary returned.'} />
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
@@ -565,11 +566,13 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                                     </div>
                                                     {match.quote ? (
                                                         <div className="checklist-item__quote mt-3 text-xs text-[var(--text)]">
-                                                            "{match.quote}"
+                                                            <MarkdownContent content={match.quote} />
                                                         </div>
                                                     ) : null}
                                                     {match.why ? (
-                                                        <p className="mt-2 text-xs copy-muted">{match.why}</p>
+                                                        <div className="mt-2 text-xs copy-muted">
+                                                            <MarkdownContent content={match.why} />
+                                                        </div>
                                                     ) : null}
                                                 </div>
                                             );

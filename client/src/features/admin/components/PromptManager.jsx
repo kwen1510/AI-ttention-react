@@ -4,6 +4,7 @@ import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Textarea } from '../../../components/ui/field.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import {
     DEFAULT_SUMMARY_PROMPT,
     getSummaryPromptPreview,
@@ -17,6 +18,7 @@ export function PromptManager({
     onTest,
     onReset,
     feedback,
+    testResult,
     onOpenLibrary,
     isLibraryLoading
 }) {
@@ -94,6 +96,12 @@ export function PromptManager({
                                 <p>{feedback.message}</p>
                             </Alert>
                         )}
+
+                        {testResult ? (
+                            <div className="ui-code-block text-sm">
+                                <MarkdownContent content={testResult} />
+                            </div>
+                        ) : null}
                     </div>
                 </div>
             )}

@@ -44,6 +44,7 @@
     "isomorphic-dompurify": "^2.36.0",
     "lucide": "^0.471.0",
     "lucide-react": "^0.471.0",
+    "marked": "^18.0.0",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3",
     "qrcode": "^1.5.4",

@@ -16,6 +16,7 @@ import { Alert } from "@/components/ui/alert.jsx";
 import { Badge, StatusBadge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { useAuth } from "@/components/AuthContext.jsx";
+import { MarkdownContent } from "@/components/ui/markdown.jsx";
 import {
   Dialog,
   DialogContent,
@@ -272,8 +273,8 @@ function GroupHistoryPanel({ sessionMode, group }) {
           icon={MessageSquare}
         >
           {group.latestSummary ? (
-            <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)] whitespace-pre-wrap">
-              {group.latestSummary}
+            <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)]">
+              <MarkdownContent content={group.latestSummary} />
             </div>
           ) : (
             <p className="text-sm">No summary stored for this group yet.</p>
@@ -290,9 +291,7 @@ function GroupHistoryPanel({ sessionMode, group }) {
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
                     Up to segment {entry.segment_cursor}
                   </p>
-                  <p className="mt-2 text-sm leading-6 whitespace-pre-wrap text-[var(--text)]">
-                    {entry.summary_text}
-                  </p>
+                  <MarkdownContent content={entry.summary_text} className="mt-2 text-sm text-[var(--text)]" />
                 </div>
               ))}
             </div>
@@ -322,12 +321,12 @@ function GroupHistoryPanel({ sessionMode, group }) {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-[var(--text)]">{criterion.description}</p>
                     {criterion.rubric ? (
-                      <p className="mt-1 text-sm whitespace-pre-wrap">{criterion.rubric}</p>
+                      <MarkdownContent content={criterion.rubric} className="mt-1 text-sm" />
                     ) : null}
                     {criterion.quote ? (
-                      <p className="ui-panel ui-panel--subtle ui-panel--pad-sm mt-3 text-xs whitespace-pre-wrap text-[var(--text)]">
-                        {criterion.quote}
-                      </p>
+                      <div className="ui-panel ui-panel--subtle ui-panel--pad-sm mt-3 text-xs text-[var(--text)]">
+                        <MarkdownContent content={criterion.quote} />
+                      </div>
                     ) : null}
                   </div>
                   <CriterionStatus status={criterion.status} />

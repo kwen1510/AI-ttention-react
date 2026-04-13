@@ -8,6 +8,7 @@ export function usePromptManager(sessionCode, socket) {
     const [isLibraryLoading, setIsLibraryLoading] = useState(false);
     const [libraryError, setLibraryError] = useState(null);
     const [feedback, setFeedback] = useState(null);
+    const [testResult, setTestResult] = useState(null);
 
     const showFeedback = (message, type = 'info') => {
         setFeedback({ message, type });
@@ -77,6 +78,7 @@ export function usePromptManager(sessionCode, socket) {
         if (!text.trim()) return;
         try {
             setIsLoading(true);
+            setTestResult(null);
             showFeedback('Testing prompt...', 'info');
 
             const sampleText = "Student A: I think renewable energy is really important for our future. Student B: Yeah, but what about the costs? Solar panels are expensive. Student C: True, but they save money in the long run. Teacher: Great points! What about government incentives? Student A: Oh right, there are tax credits that help reduce the initial cost. Student B: That makes it more affordable then. Student C: Plus think about the environmental benefits - reduced carbon emissions, cleaner air. Teacher: Excellent discussion on the economic and environmental aspects of renewable energy.";
@@ -89,11 +91,14 @@ export function usePromptManager(sessionCode, socket) {
 
             const data = await res.json();
             if (res.ok) {
-                showFeedback(`Test successful! Output: "${data.summary}"`, 'success');
+                setTestResult(String(data.summary || '').trim() || 'No summary returned.');
+                showFeedback('Test successful. Review the rendered output below.', 'success');
             } else {
+                setTestResult(null);
                 showFeedback(`Test failed: ${data.error}`, 'error');
             }
         } catch (err) {
+            setTestResult(null);
             showFeedback('Error testing prompt', 'error');
         } finally {
             setIsLoading(false);
@@ -159,6 +164,7 @@ export function usePromptManager(sessionCode, socket) {
         isLibraryLoading,
         libraryError,
         feedback,
+        testResult,
         loadSessionPrompt,
         savePrompt,
         testPrompt,

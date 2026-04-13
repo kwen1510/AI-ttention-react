@@ -1,6 +1,7 @@
 import React, { useId, useState } from 'react';
 import { CheckCircle, Circle, ChevronDown, ChevronUp, Send, Check, ClipboardList } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Badge, StatusBadge } from '../../../components/ui/badge.jsx';
 import {
@@ -85,10 +86,13 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease, canRelease = t
                                                 {getChecklistStatusLabel(checkbox.status)}
                                             </span>
                                         </div>
-                                        <p className="text-xs copy-muted">Rubric: {checkbox.rubric}</p>
+                                        <div className="text-xs copy-muted">
+                                            <span className="font-medium">Rubric:</span>{' '}
+                                            <MarkdownContent content={checkbox.rubric} inline />
+                                        </div>
                                         {checkbox.quote ? (
                                             <div className="checklist-item__quote text-xs text-[var(--text)]">
-                                                "{checkbox.quote}"
+                                                <MarkdownContent content={checkbox.quote} />
                                             </div>
                                         ) : null}
                                     </div>

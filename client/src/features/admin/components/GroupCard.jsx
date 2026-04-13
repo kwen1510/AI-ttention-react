@@ -1,20 +1,13 @@
 import React, { useId, useState } from 'react';
 import { ChevronDown, ChevronUp, MessageSquare, ScrollText, UploadCloud, Send, Check } from 'lucide-react';
 import { Button } from '../../../components/ui/button.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { StatusBadge, Badge } from '../../../components/ui/badge.jsx';
 
 export function GroupCard({ groupNumber, data, onRelease }) {
     const [isExpanded, setIsExpanded] = useState(false);
     const transcriptPanelId = useId();
-
-    // Format summary text with HTML-like structure
-    const formatSummary = (text) => {
-        if (!text) return null;
-        return text.split('\n').map((line, i) => (
-            <p key={i} className="mb-2">{line}</p>
-        ));
-    };
 
     const formatClockTime = (timestamp) => {
         if (!timestamp) return '';
@@ -106,7 +99,7 @@ export function GroupCard({ groupNumber, data, onRelease }) {
                     </div>
                     {data.summary ? (
                         <div className="surface-list__item space-y-2 text-sm text-[var(--text)]">
-                            {formatSummary(data.summary.text)}
+                            <MarkdownContent content={data.summary.text} />
                         </div>
                     ) : (
                         <div className="surface-list__item text-sm">No summary available yet.</div>

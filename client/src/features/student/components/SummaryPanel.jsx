@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles, Clock, Lock } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 
 export function SummaryPanel({ summary, isReleased }) {
@@ -31,7 +32,7 @@ export function SummaryPanel({ summary, isReleased }) {
                     />
                 ) : (
                     <div className="ui-panel ui-panel--subtle ui-panel--pad-lg h-full">
-                        <div className="copy-strong leading-relaxed whitespace-pre-line">{summary}</div>
+                        <MarkdownContent content={summary} className="copy-strong text-sm" />
                     </div>
                 )}
             </div>

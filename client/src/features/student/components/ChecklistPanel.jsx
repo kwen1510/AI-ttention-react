@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckSquare, Clock, CheckCircle, Circle } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
+import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import {
     getChecklistItemClassName,
@@ -90,13 +91,14 @@ export function ChecklistPanel({ checklist, isReleased }) {
                                     </span>
                                 </div>
                                 {item.rubric && (
-                                    <p className="text-xs copy-muted italic">
-                                        Rubric: {item.rubric}
-                                    </p>
+                                    <div className="text-xs copy-muted italic">
+                                        <span className="font-medium">Rubric:</span>{' '}
+                                        <MarkdownContent content={item.rubric} inline />
+                                    </div>
                                 )}
                                 {item.quote && (
                                     <div className="checklist-item__quote text-xs text-[var(--text)]">
-                                        "{item.quote}"
+                                        <MarkdownContent content={item.quote} />
                                     </div>
                                 )}
                             </div>

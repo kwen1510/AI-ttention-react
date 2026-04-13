@@ -32,6 +32,7 @@ function AdminDashboard() {
     savePrompt,
     testPrompt,
     feedback,
+    testResult,
     loadSessionPrompt,
     loadLibrary,
     applyLibraryPrompt,
@@ -301,6 +302,7 @@ function AdminDashboard() {
           onTest={testPrompt}
           onReset={() => setCurrentPrompt(DEFAULT_SUMMARY_PROMPT)}
           feedback={feedback}
+          testResult={testResult}
           onOpenLibrary={handleOpenPromptLibrary}
           isLibraryLoading={isLibraryLoading}
         />
