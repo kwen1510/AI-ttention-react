@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createPersistentAuthStorage } from '../lib/authSession.js';
 
 let supabaseInstance = null;
 
@@ -48,7 +49,14 @@ export function getSupabaseClient() {
     if (!url || !anonKey) {
       throw new Error('Supabase client requires SUPABASE_URL and SUPABASE_ANON_KEY');
     }
-    supabaseInstance = createClient(url, anonKey);
+    supabaseInstance = createClient(url, anonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        storage: createPersistentAuthStorage(),
+      },
+    });
   }
   return supabaseInstance;
 }

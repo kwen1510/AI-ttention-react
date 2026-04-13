@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button.jsx";
 import { Field, Input } from "../components/ui/field.jsx";
 import { Badge } from "../components/ui/badge.jsx";
 import { Panel } from "../components/ui/panel.jsx";
+import FullScreenLoader from "../components/FullScreenLoader.jsx";
 
 function LoginPage() {
   const { user, loading, isTeacher } = useAuth();
@@ -40,6 +41,10 @@ function LoginPage() {
     }
     return () => clearInterval(interval);
   }, [cooldown]);
+
+  if (loading || user) {
+    return <FullScreenLoader />;
+  }
 
   const handleSendOtp = async (e) => {
     e.preventDefault();

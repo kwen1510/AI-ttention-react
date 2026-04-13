@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getSupabaseClient, getSupabaseConfig } from '../config/supabaseClient.js';
+import { getSessionWithRefresh, refreshSessionIfPossible } from '../lib/authSession.js';
 import {
   createStagingBypassHeaders,
   createStagingBypassTeacherProfile,
@@ -53,6 +54,20 @@ export function AuthProvider({ children }) {
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [fetchReady, setFetchReady] = useState(typeof window === 'undefined');
   const accessTokenRef = useRef(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const applySessionState = (nextSession) => {
+    accessTokenRef.current = nextSession?.access_token ?? null;
+    setSession(nextSession ?? null);
+    setUser(nextSession?.user ?? null);
+  };
 
   useEffect(() => {
     if (isStagingBypass) {
@@ -73,13 +88,11 @@ export function AuthProvider({ children }) {
 
     async function loadSession() {
       try {
-        const { data } = await supabase.auth.getSession();
+        const nextSession = await getSessionWithRefresh(supabase, { refreshIfMissing: true });
         if (!isMounted) return;
-        setSession(data.session ?? null);
-        setUser(data.session?.user ?? null);
-        accessTokenRef.current = data.session?.access_token ?? null;
-        if (data.session) {
-          console.log('✅ Supabase session loaded:', data.session.user?.email);
+        applySessionState(nextSession);
+        if (nextSession) {
+          console.log('✅ Supabase session loaded:', nextSession.user?.email);
         } else {
           console.warn('⚠️ No Supabase session found - user may need to log in');
         }
@@ -94,14 +107,33 @@ export function AuthProvider({ children }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!isMounted) return;
       const previousAccessToken = accessTokenRef.current;
       const nextAccessToken = nextSession?.access_token ?? null;
-      accessTokenRef.current = nextAccessToken;
 
-      setSession(nextSession ?? null);
-      setUser(nextSession?.user ?? null);
+      if (!nextAccessToken && previousAccessToken && event !== 'SIGNED_OUT') {
+        void (async () => {
+          const recoveredSession = await refreshSessionIfPossible(supabase);
+          if (!isMounted) return;
+
+          if (recoveredSession?.access_token) {
+            applySessionState(recoveredSession);
+            if (recoveredSession.access_token !== previousAccessToken) {
+              setTeacherLoading(true);
+            }
+            return;
+          }
+
+          applySessionState(null);
+          setIsTeacher(false);
+          setTeacherProfile(null);
+          setTeacherLoading(false);
+        })();
+        return;
+      }
+
+      applySessionState(nextSession);
 
       if (!nextAccessToken) {
         setIsTeacher(false);
@@ -214,7 +246,7 @@ export function AuthProvider({ children }) {
           console.log('🧪 Staging bypass attached to request:', typeof input === 'string' ? input : input?.url);
         } else {
           try {
-            const currentSession = session ?? (await supabase.auth.getSession()).data.session;
+            let currentSession = session ?? (await getSessionWithRefresh(supabase, { refreshIfMissing: true }));
             if (currentSession?.access_token) {
               const headers = new Headers(
                 init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
@@ -230,7 +262,25 @@ export function AuthProvider({ children }) {
           }
         }
       }
-      return originalFetch(input, init);
+
+      let response = await originalFetch(input, init);
+
+      if (!isStagingBypass && needsAuth(input) && (response.status === 401 || response.status === 403)) {
+        const refreshedSession = await refreshSessionIfPossible(supabase);
+        if (refreshedSession?.access_token) {
+          const headers = new Headers(
+            init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
+          );
+          headers.set('Authorization', `Bearer ${refreshedSession.access_token}`);
+          response = await originalFetch(input, { ...init, headers });
+
+          if (mountedRef.current) {
+            setTeacherLoading(true);
+          }
+        }
+      }
+
+      return response;
     };
 
     setFetchReady(true);
