@@ -3,6 +3,7 @@ import { supabase } from "../db/supabaseClient.js";
 let authTestOverrides = null;
 let stagingBypassTeacherPromise = null;
 const STAGING_BYPASS_HEADER = "x-staging-auth-bypass";
+const TEACHER_ACCESS_COLUMNS = "user_id,email,role,active,created_at,updated_at";
 
 function createAuthError(message, status = 401) {
     const error = new Error(message);
@@ -10,12 +11,36 @@ function createAuthError(message, status = 401) {
     return error;
 }
 
+export function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+export function isAdminRole(role) {
+    return normalizeEmail(role) === "admin";
+}
+
+export function isAdminUser(user) {
+    return isAdminRole(user?.role || user?.teacherAccess?.role);
+}
+
 function parseCsvValues(...sources) {
     return sources
         .filter(Boolean)
-        .flatMap((source) => String(source).split(','))
+        .flatMap((source) => String(source).split(","))
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean);
+}
+
+function normalizeTeacherAccessRecord(record) {
+    if (!record) {
+        return null;
+    }
+
+    return {
+        ...record,
+        email: normalizeEmail(record.email),
+        role: normalizeEmail(record.role) || "teacher"
+    };
 }
 
 export function getTeacherAccessConfig() {
@@ -30,7 +55,7 @@ export function getTeacherAccessConfig() {
     );
 
     return {
-        allowedDomains: allowedDomains.length ? allowedDomains : ['ri.edu.sg'],
+        allowedDomains: allowedDomains.length ? allowedDomains : ["ri.edu.sg"],
         allowedEmails
     };
 }
@@ -44,7 +69,7 @@ export function isLegacyTeacherAllowlistEnabled() {
 }
 
 export function isTeacherUser(user, config = getTeacherAccessConfig()) {
-    const email = user?.email ? String(user.email).trim().toLowerCase() : '';
+    const email = normalizeEmail(user?.email);
     if (!email) {
         return false;
     }
@@ -62,57 +87,231 @@ export async function authenticateUserFromToken(token) {
     }
 
     if (!token) {
-        throw createAuthError('Missing bearer token', 401);
+        throw createAuthError("Missing bearer token", 401);
     }
 
     const { data, error } = await supabase.auth.getUser(token);
     if (error) {
-        throw createAuthError(error.message || 'Invalid token', 401);
+        throw createAuthError(error.message || "Invalid token", 401);
     }
     if (!data?.user) {
-        throw createAuthError('User not found for token', 401);
+        throw createAuthError("User not found for token", 401);
     }
     return data.user;
 }
 
-export async function lookupTeacherAccessRecord(user) {
-    if (authTestOverrides?.lookupTeacherAccessRecord) {
-        return authTestOverrides.lookupTeacherAccessRecord(user);
+export async function lookupTeacherAccessRecordByUserId(userId) {
+    if (authTestOverrides?.lookupTeacherAccessRecordByUserId) {
+        return normalizeTeacherAccessRecord(await authTestOverrides.lookupTeacherAccessRecordByUserId(userId));
+    }
+
+    if (!userId) {
+        return null;
     }
 
     const { data, error } = await supabase
         .from("teacher_access")
-        .select("user_id,email,role,active,created_at,updated_at")
-        .eq("user_id", user.id)
+        .select(TEACHER_ACCESS_COLUMNS)
+        .eq("user_id", userId)
         .maybeSingle();
 
     if (error) {
         throw error;
     }
 
-    return data;
+    return normalizeTeacherAccessRecord(data);
 }
 
-function buildTeacherPrincipal(user, accessRecord) {
+export async function lookupTeacherAccessRecordByEmail(email) {
+    if (authTestOverrides?.lookupTeacherAccessRecordByEmail) {
+        return normalizeTeacherAccessRecord(await authTestOverrides.lookupTeacherAccessRecordByEmail(email));
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from("teacher_access")
+        .select(TEACHER_ACCESS_COLUMNS)
+        .ilike("email", normalizedEmail)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return normalizeTeacherAccessRecord(data);
+}
+
+export async function lookupTeacherAccessRecord(user) {
+    if (authTestOverrides?.lookupTeacherAccessRecord) {
+        return normalizeTeacherAccessRecord(await authTestOverrides.lookupTeacherAccessRecord(user));
+    }
+
+    return lookupTeacherAccessRecordByUserId(user?.id);
+}
+
+export async function lookupTeacherAccessRecordsByUserIds(userIds = []) {
+    if (authTestOverrides?.lookupTeacherAccessRecordsByUserIds) {
+        const records = await authTestOverrides.lookupTeacherAccessRecordsByUserIds(userIds);
+        return Array.isArray(records) ? records.map(normalizeTeacherAccessRecord).filter(Boolean) : [];
+    }
+
+    const ids = [...new Set((userIds || []).filter(Boolean))];
+    if (!ids.length) {
+        return [];
+    }
+
+    const { data, error } = await supabase
+        .from("teacher_access")
+        .select(TEACHER_ACCESS_COLUMNS)
+        .in("user_id", ids);
+
+    if (error) {
+        throw error;
+    }
+
+    return (data || []).map(normalizeTeacherAccessRecord).filter(Boolean);
+}
+
+export async function syncTeacherAccessRecord(record, user, matchField = "email") {
+    if (authTestOverrides?.syncTeacherAccessRecord) {
+        return normalizeTeacherAccessRecord(await authTestOverrides.syncTeacherAccessRecord(record, user, matchField));
+    }
+
+    if (!record) {
+        return null;
+    }
+
+    const normalizedRecord = normalizeTeacherAccessRecord(record);
+    const normalizedEmail = normalizeEmail(user?.email || normalizedRecord.email);
+    const nextUserId = user?.id || normalizedRecord.user_id || null;
+    const patch = {};
+
+    if (normalizedEmail && normalizedRecord.email !== normalizedEmail) {
+        patch.email = normalizedEmail;
+    }
+
+    if (nextUserId && normalizedRecord.user_id !== nextUserId) {
+        patch.user_id = nextUserId;
+    }
+
+    if (!Object.keys(patch).length) {
+        return normalizedRecord;
+    }
+
+    const { data, error } = await supabase
+        .from("teacher_access")
+        .update({
+            ...patch,
+            updated_at: new Date().toISOString()
+        })
+        .eq(matchField, matchField === "email" ? normalizedRecord.email : normalizedRecord.user_id)
+        .select(TEACHER_ACCESS_COLUMNS)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return normalizeTeacherAccessRecord(data || { ...normalizedRecord, ...patch });
+}
+
+export async function findAuthUserByEmail(email) {
+    if (authTestOverrides?.findAuthUserByEmail) {
+        return authTestOverrides.findAuthUserByEmail(email);
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+        return null;
+    }
+
+    let page = 1;
+    while (page <= 10) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) {
+            throw error;
+        }
+
+        const match = data?.users?.find((user) => normalizeEmail(user.email) === normalizedEmail);
+        if (match) {
+            return match;
+        }
+
+        if (!data?.nextPage || page >= Number(data.lastPage || 0)) {
+            break;
+        }
+
+        page = data.nextPage;
+    }
+
+    return null;
+}
+
+export async function listAuthUsersByIds(userIds = []) {
+    if (authTestOverrides?.listAuthUsersByIds) {
+        return authTestOverrides.listAuthUsersByIds(userIds);
+    }
+
+    const remainingIds = new Set((userIds || []).filter(Boolean));
+    const usersById = new Map();
+    if (!remainingIds.size) {
+        return usersById;
+    }
+
+    let page = 1;
+    while (page <= 10 && remainingIds.size > 0) {
+        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) {
+            throw error;
+        }
+
+        for (const user of data?.users || []) {
+            if (remainingIds.has(user.id)) {
+                usersById.set(user.id, user);
+                remainingIds.delete(user.id);
+            }
+        }
+
+        if (!data?.nextPage || page >= Number(data.lastPage || 0)) {
+            break;
+        }
+
+        page = data.nextPage;
+    }
+
+    return usersById;
+}
+
+function buildTeacherPrincipal(user, accessRecord, source = "legacy") {
+    const record = normalizeTeacherAccessRecord(accessRecord);
+    const role = record?.role || "teacher";
+    const email = normalizeEmail(record?.email || user?.email);
+
     return {
         ...user,
-        role: accessRecord?.role || "teacher",
-        teacherAccess: accessRecord
+        email,
+        role,
+        isAdmin: isAdminRole(role),
+        teacherAccess: record
             ? {
-                user_id: accessRecord.user_id,
-                email: accessRecord.email,
-                role: accessRecord.role,
-                active: accessRecord.active,
-                created_at: accessRecord.created_at,
-                updated_at: accessRecord.updated_at,
-                source: "table"
+                user_id: record.user_id || user.id,
+                email,
+                role,
+                active: record.active,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+                source
             }
             : {
                 user_id: user.id,
-                email: user.email,
+                email,
                 role: "teacher",
                 active: true,
-                source: "legacy"
+                source
             }
     };
 }
@@ -121,25 +320,44 @@ function canUseLegacyTeacherFallback(user) {
     return isLegacyTeacherAllowlistEnabled() && isTeacherUser(user);
 }
 
+async function safelySyncTeacherAccessRecord(record, user, matchField) {
+    try {
+        return await syncTeacherAccessRecord(record, user, matchField);
+    } catch (error) {
+        console.warn("⚠️ Failed to sync teacher_access identity:", error.message);
+        return normalizeTeacherAccessRecord(record);
+    }
+}
+
 export async function authorizeTeacherUser(user) {
     try {
-        const accessRecord = await lookupTeacherAccessRecord(user);
+        const accessByUserId = await lookupTeacherAccessRecordByUserId(user?.id);
+        if (accessByUserId) {
+            if (accessByUserId.active === false) {
+                throw createAuthError("Teacher access required", 403);
+            }
 
-        if (accessRecord?.active) {
-            return buildTeacherPrincipal(user, accessRecord);
+            const syncedRecord = await safelySyncTeacherAccessRecord(accessByUserId, user, "user_id");
+            return buildTeacherPrincipal(user, syncedRecord, "table-user");
         }
 
-        if (accessRecord && accessRecord.active === false) {
-            throw createAuthError("Teacher access required", 403);
+        const accessByEmail = await lookupTeacherAccessRecordByEmail(user?.email);
+        if (accessByEmail) {
+            if (accessByEmail.active === false) {
+                throw createAuthError("Teacher access required", 403);
+            }
+
+            const syncedRecord = await safelySyncTeacherAccessRecord(accessByEmail, user, "email");
+            return buildTeacherPrincipal(user, syncedRecord, "table-email");
         }
     } catch (error) {
-        if (canUseLegacyTeacherFallback(user)) {
-            console.warn("⚠️ Falling back to legacy teacher allowlist:", error.message);
-            return buildTeacherPrincipal(user, null);
+        if (error?.status === 403) {
+            throw error;
         }
 
-        if (error?.status) {
-            throw error;
+        if (canUseLegacyTeacherFallback(user)) {
+            console.warn("⚠️ Falling back to legacy teacher allowlist:", error.message);
+            return buildTeacherPrincipal(user, null, "legacy");
         }
 
         console.error("❌ Failed to resolve teacher_access record:", error);
@@ -147,7 +365,7 @@ export async function authorizeTeacherUser(user) {
     }
 
     if (canUseLegacyTeacherFallback(user)) {
-        return buildTeacherPrincipal(user, null);
+        return buildTeacherPrincipal(user, null, "legacy");
     }
 
     throw createAuthError("Teacher access required", 403);
@@ -176,34 +394,6 @@ function readHeaderValue(headers, name) {
         return value[0] || "";
     }
     return String(value || "");
-}
-
-async function findAuthUserByEmail(email) {
-    const normalizedEmail = String(email || "").trim().toLowerCase();
-    if (!normalizedEmail) {
-        return null;
-    }
-
-    let page = 1;
-    while (page <= 10) {
-        const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
-        if (error) {
-            throw error;
-        }
-
-        const match = data?.users?.find((user) => String(user.email || "").trim().toLowerCase() === normalizedEmail);
-        if (match) {
-            return match;
-        }
-
-        if (!data?.nextPage || page >= Number(data.lastPage || 0)) {
-            break;
-        }
-
-        page = data.nextPage;
-    }
-
-    return null;
 }
 
 async function resolveStagingBypassTeacherIdentity() {
@@ -278,9 +468,10 @@ export async function createStagingBypassTeacherPrincipal() {
         id: identity.id,
         email: identity.email,
         role: "teacher",
+        isAdmin: false,
         teacherAccess: {
             user_id: identity.id,
-            email: identity.email,
+            email: normalizeEmail(identity.email),
             role: "teacher",
             active: true,
             source: "staging-bypass"

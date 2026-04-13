@@ -45,7 +45,7 @@ export function PromptsList({ prompts, onView }) {
                 const viewCount = Number(prompt.views) || 0;
                 const usageCount = Number(prompt.usage_count) || 0;
                 const hasEngagement = viewCount > 0 || usageCount > 0;
-                const authorLabel = prompt.authorName || 'Anonymous Teacher';
+                const authorLabel = prompt.createdByEmail || prompt.authorName || 'Anonymous Teacher';
 
                 return (
                     <Panel

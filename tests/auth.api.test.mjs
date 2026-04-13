@@ -59,6 +59,56 @@ test("teacher auth middleware enforces 401, 403, and 200 states", async () => {
     assert.equal(teacher.id, "teacher-1");
     assert.equal(teacher.email, "teacher@example.com");
     assert.equal(teacher.role, "teacher");
+
+    const adminTeacher = await authenticateTeacher({
+      headers: {
+        authorization: "Bearer admin-token"
+      }
+    });
+    assert.equal(adminTeacher.id, "admin-1");
+    assert.equal(adminTeacher.role, "admin");
+    assert.equal(adminTeacher.isAdmin, true);
+    assert.equal(adminTeacher.teacherAccess?.user_id, "admin-1");
+    assert.equal(adminTeacher.teacherAccess?.source, "table-email");
+  } finally {
+    __setAuthTestOverrides(null);
+  }
+});
+
+test("teacher auth middleware blocks explicit inactive records even for allowed domains", async () => {
+  applyBaseTestEnv(10000);
+
+  const {
+    __setAuthTestOverrides,
+    authenticateTeacher
+  } = await import(`../server/middleware/auth.js?test=inactive-access-${Date.now()}`);
+
+  __setAuthTestOverrides({
+    authenticateUserFromToken() {
+      return { id: "teacher-9", email: "teacher-9@ri.edu.sg" };
+    },
+    lookupTeacherAccessRecordByUserId() {
+      return null;
+    },
+    lookupTeacherAccessRecordByEmail() {
+      return {
+        user_id: null,
+        email: "teacher-9@ri.edu.sg",
+        role: "teacher",
+        active: false
+      };
+    }
+  });
+
+  try {
+    await assert.rejects(
+      authenticateTeacher({
+        headers: {
+          authorization: "Bearer inactive-token"
+        }
+      }),
+      /teacher access required/i
+    );
   } finally {
     __setAuthTestOverrides(null);
   }

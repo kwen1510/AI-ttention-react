@@ -71,7 +71,9 @@ const COLLECTION_META = {
     timestampFields: ['created_at', 'updated_at', 'last_viewed', 'last_used'],
     fieldMap: {
       authorName: 'author_name',
-      isPublic: 'is_public'
+      isPublic: 'is_public',
+      createdByUserId: 'created_by_user_id',
+      createdByEmail: 'created_by_email'
     }
   },
   mindmap_nodes: {
@@ -85,6 +87,7 @@ const COLLECTION_META = {
 };
 
 const DEFAULT_TIMESTAMP_FIELDS = [];
+let dbTestOverrides = null;
 
 const noop = async () => ({ acknowledged: true });
 
@@ -558,6 +561,9 @@ class SupabaseCollection {
 
 class SupabaseDatabase {
   collection(name) {
+    if (dbTestOverrides?.collection) {
+      return dbTestOverrides.collection(name);
+    }
     return new SupabaseCollection(name);
   }
 }
@@ -567,6 +573,10 @@ export function createSupabaseDb() {
 }
 
 export const db = createSupabaseDb();
+
+export function __setDbTestOverrides(overrides) {
+  dbTestOverrides = overrides || null;
+}
 
 export async function seedDefaultPrompts() {
   try {

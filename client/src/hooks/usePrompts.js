@@ -95,12 +95,10 @@ export function usePrompts() {
         }
     };
 
-    const clonePrompt = async (id, authorName) => {
+    const clonePrompt = async (id) => {
         try {
             const response = await fetch(`/api/prompts/${id}/clone`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ authorName })
+                method: 'POST'
             });
             if (!response.ok) throw new Error('Failed to clone prompt');
             await fetchPrompts();

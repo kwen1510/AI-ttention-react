@@ -41,44 +41,93 @@ export async function jsonRequest(baseUrl, pathname, options = {}) {
 }
 
 export function createAuthOverrides() {
+  const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+  const usersByToken = new Map([
+    ["teacher-token", { id: "teacher-1", email: "teacher@example.com" }],
+    ["teacher-b-token", { id: "teacher-2", email: "teacher-b@example.com" }],
+    ["admin-token", { id: "admin-1", email: "kuangwen.chan@ri.edu.sg" }],
+    ["student-token", { id: "student-1", email: "student@example.com" }],
+    ["domain-teacher-token", { id: "teacher-3", email: "teacher-c@ri.edu.sg" }]
+  ]);
+
+  const accessRecordsByUserId = new Map([
+    ["teacher-1", {
+      user_id: "teacher-1",
+      email: "teacher@example.com",
+      role: "teacher",
+      active: true
+    }],
+    ["teacher-2", {
+      user_id: "teacher-2",
+      email: "teacher-b@example.com",
+      role: "teacher",
+      active: true
+    }]
+  ]);
+
+  const accessRecordsByEmail = new Map([
+    ["teacher@example.com", accessRecordsByUserId.get("teacher-1")],
+    ["teacher-b@example.com", accessRecordsByUserId.get("teacher-2")],
+    ["kuangwen.chan@ri.edu.sg", {
+      user_id: null,
+      email: "kuangwen.chan@ri.edu.sg",
+      role: "admin",
+      active: true
+    }]
+  ]);
+
+  const authUsersByEmail = new Map(
+    Array.from(usersByToken.values()).map((user) => [normalizeEmail(user.email), user])
+  );
+
   return {
     authenticateUserFromToken(token) {
-      if (token === "teacher-token") {
-        return { id: "teacher-1", email: "teacher@example.com" };
-      }
-
-      if (token === "teacher-b-token") {
-        return { id: "teacher-2", email: "teacher-b@example.com" };
-      }
-
-      if (token === "student-token") {
-        return { id: "student-1", email: "student@example.com" };
+      if (usersByToken.has(token)) {
+        return usersByToken.get(token);
       }
 
       const error = new Error("Invalid token");
       error.status = 401;
       throw error;
     },
+    lookupTeacherAccessRecordByUserId(userId) {
+      return accessRecordsByUserId.get(userId) || null;
+    },
+    lookupTeacherAccessRecordByEmail(email) {
+      return accessRecordsByEmail.get(normalizeEmail(email)) || null;
+    },
     lookupTeacherAccessRecord(user) {
-      if (user.id === "teacher-1") {
-        return {
-          user_id: "teacher-1",
-          email: user.email,
-          role: "teacher",
-          active: true
-        };
+      return accessRecordsByUserId.get(user.id) || null;
+    },
+    lookupTeacherAccessRecordsByUserIds(userIds = []) {
+      return userIds.map((userId) => accessRecordsByUserId.get(userId)).filter(Boolean);
+    },
+    syncTeacherAccessRecord(record, user) {
+      const nextRecord = {
+        ...record,
+        user_id: user.id,
+        email: normalizeEmail(user.email)
+      };
+
+      accessRecordsByEmail.set(nextRecord.email, nextRecord);
+      if (nextRecord.user_id) {
+        accessRecordsByUserId.set(nextRecord.user_id, nextRecord);
       }
 
-      if (user.id === "teacher-2") {
-        return {
-          user_id: "teacher-2",
-          email: user.email,
-          role: "teacher",
-          active: true
-        };
+      return nextRecord;
+    },
+    findAuthUserByEmail(email) {
+      return authUsersByEmail.get(normalizeEmail(email)) || null;
+    },
+    listAuthUsersByIds(userIds = []) {
+      const usersById = new Map();
+      for (const userId of userIds) {
+        const match = Array.from(authUsersByEmail.values()).find((user) => user.id === userId);
+        if (match) {
+          usersById.set(userId, match);
+        }
       }
-
-      return null;
+      return usersById;
     }
   };
 }

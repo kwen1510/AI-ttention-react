@@ -112,6 +112,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
             setFormData({
                 ...createEmptyFormState(),
                 ...initialData,
+                authorName: initialData.createdByEmail || initialData.authorName || authenticatedAuthorEmail,
                 tags: initialData.tags ? initialData.tags.join(', ') : ''
             });
         } else {
@@ -342,7 +343,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                 placeholder="e.g., Physics Lab Discussion"
                             />
                         </Field>
-                        <Field label="Author email" htmlFor="authorName" hint="Filled automatically from your teacher account.">
+                        <Field label="Creator email" htmlFor="authorName" hint="Set from the authenticated account and kept as the prompt owner.">
                             <Input
                                 type="text"
                                 name="authorName"
@@ -350,7 +351,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                                 value={formData.authorName}
                                 onChange={handleChange}
                                 placeholder="Filled automatically from your account"
-                                readOnly={Boolean(authenticatedAuthorEmail)}
+                                readOnly
                             />
                         </Field>
                     </div>

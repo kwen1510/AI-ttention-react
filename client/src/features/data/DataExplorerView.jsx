@@ -15,6 +15,7 @@ import {
 import { Alert } from "@/components/ui/alert.jsx";
 import { Badge, StatusBadge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { useAuth } from "@/components/AuthContext.jsx";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import { Field, Select } from "@/components/ui/field.jsx";
+import { Field, Input, Select } from "@/components/ui/field.jsx";
 import { Panel, SectionHeader } from "@/components/ui/panel.jsx";
 import { getChecklistStatusLabel, getChecklistTone } from "@/lib/statusTone.js";
 
@@ -131,7 +132,7 @@ function CheckboxPreview({ data }) {
   );
 }
 
-function SessionCard({ session, onSelect }) {
+function SessionCard({ session, onSelect, showOwner = false }) {
   const meta = getModeMeta(session.mode);
   const Icon = meta.icon;
 
@@ -148,6 +149,9 @@ function SessionCard({ session, onSelect }) {
               <ModeBadge mode={session.mode} />
               <span>{formatDate(session.created_at)}</span>
             </div>
+            {showOwner && session.owner?.email ? (
+              <div className="mt-2 text-xs copy-muted">Owner {session.owner.email}</div>
+            ) : null}
           </div>
         </div>
         <div className="text-right">
@@ -367,7 +371,7 @@ function GroupHistoryPanel({ sessionMode, group }) {
   );
 }
 
-function SessionModal({ selectedSession, onClose }) {
+function SessionModal({ selectedSession, onClose, showOwner = false }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -451,6 +455,11 @@ function SessionModal({ selectedSession, onClose }) {
           <div className="cluster">
             <ModeBadge mode={session?.mode} />
             <CompletionBadge active={session?.active} />
+            {showOwner && session?.owner?.email ? (
+              <Badge tone="neutral" size="sm">
+                Owner {session.owner.email}
+              </Badge>
+            ) : null}
           </div>
           <div className="cluster">
             <Button
@@ -527,7 +536,9 @@ function SessionModal({ selectedSession, onClose }) {
 }
 
 export default function DataExplorerView() {
+  const { isAdmin } = useAuth();
   const [modeFilter, setModeFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
   const [limit, setLimit] = useState(20);
   const [offset, setOffset] = useState(0);
   const [sessions, setSessions] = useState([]);
@@ -548,6 +559,9 @@ export default function DataExplorerView() {
         if (modeFilter) {
           params.set("mode", modeFilter);
         }
+        if (isAdmin && ownerFilter.trim()) {
+          params.set("owner", ownerFilter.trim());
+        }
 
         const response = await fetch(`/api/history/sessions?${params.toString()}`, { signal });
         if (!response.ok) {
@@ -567,7 +581,7 @@ export default function DataExplorerView() {
         setLoading(false);
       }
     },
-    [limit, modeFilter, offset],
+    [isAdmin, limit, modeFilter, offset, ownerFilter],
   );
 
   const handleRetry = useCallback(() => {
@@ -607,7 +621,7 @@ export default function DataExplorerView() {
       />
 
       <Panel padding="lg" tone="subtle">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[14rem_12rem_auto]">
+        <div className={isAdmin ? "grid grid-cols-1 gap-4 md:grid-cols-[14rem_16rem_12rem_auto]" : "grid grid-cols-1 gap-4 md:grid-cols-[14rem_12rem_auto]"}>
           <Field label="Mode">
             <Select
               value={modeFilter}
@@ -621,6 +635,20 @@ export default function DataExplorerView() {
               <option value="checkbox">Checkbox</option>
             </Select>
           </Field>
+
+          {isAdmin ? (
+            <Field label="Owner email">
+              <Input
+                type="email"
+                placeholder="teacher@ri.edu.sg"
+                value={ownerFilter}
+                onChange={(event) => {
+                  setOwnerFilter(event.target.value);
+                  setOffset(0);
+                }}
+              />
+            </Field>
+          ) : null}
 
           <Field label="Results per page">
             <Select
@@ -661,7 +689,7 @@ export default function DataExplorerView() {
         <EmptyState
           icon={Database}
           title="No sessions found"
-          description="No teacher-owned sessions match your current filters."
+          description={isAdmin ? "No sessions match the current owner and mode filters." : "No teacher-owned sessions match your current filters."}
         />
       ) : null}
 
@@ -673,6 +701,7 @@ export default function DataExplorerView() {
                 key={session._id ?? session.code}
                 session={session}
                 onSelect={setSelectedSession}
+                showOwner={isAdmin}
               />
             ))}
           </div>
@@ -706,7 +735,7 @@ export default function DataExplorerView() {
       ) : null}
 
       {selectedSession ? (
-        <SessionModal selectedSession={selectedSession} onClose={() => setSelectedSession(null)} />
+        <SessionModal selectedSession={selectedSession} onClose={() => setSelectedSession(null)} showOwner={isAdmin} />
       ) : null}
       </div>
     </div>

@@ -61,14 +61,19 @@ function PromptsPage() {
   };
 
   const handleClone = async (promptRecord) => {
-    const authorName = window.prompt('Enter your name for the cloned prompt:', 'Anonymous Teacher');
-    if (authorName) {
-      const success = await clonePrompt(promptRecord._id, authorName);
-      if (success) {
-        setIsViewModalOpen(false);
-        setSelectedPrompt(null);
-      }
+    const success = await clonePrompt(promptRecord._id);
+    if (success) {
+      setIsViewModalOpen(false);
+      setSelectedPrompt(null);
     }
+  };
+
+  const handleEditRequest = (prompt) => {
+    if (!prompt?.canEdit) {
+      return;
+    }
+
+    openEdit(prompt);
   };
 
   const handleUse = async (id) => {
@@ -243,7 +248,7 @@ function PromptsPage() {
         prompt={selectedPrompt}
         onClose={() => setIsViewModalOpen(false)}
         onUse={handleUse}
-        onEdit={openEdit}
+        onEdit={handleEditRequest}
         onClone={handleClone}
         onDelete={handleDelete}
       />

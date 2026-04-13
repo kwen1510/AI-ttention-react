@@ -13,6 +13,8 @@ const AuthContext = createContext({
   user: null,
   loading: true,
   isTeacher: false,
+  isAdmin: false,
+  role: null,
   isStagingBypass: false,
   teacherLoading: true,
   teacherProfile: null,
@@ -54,7 +56,10 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (isStagingBypass) {
-      const teacherProfile = createStagingBypassTeacherProfile();
+      const teacherProfile = {
+        ...createStagingBypassTeacherProfile(),
+        isAdmin: false,
+      };
       setSession(null);
       setUser(teacherProfile);
       setTeacherProfile(teacherProfile);
@@ -118,7 +123,10 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (isStagingBypass) {
-      const teacherProfile = createStagingBypassTeacherProfile();
+      const teacherProfile = {
+        ...createStagingBypassTeacherProfile(),
+        isAdmin: false,
+      };
       setTeacherProfile(teacherProfile);
       setIsTeacher(true);
       setTeacherLoading(false);
@@ -149,8 +157,17 @@ export function AuthProvider({ children }) {
 
         if (response.ok) {
           const data = await response.json();
+          const resolvedRole = data.user?.role || 'teacher';
           setIsTeacher(Boolean(data.teacher));
-          setTeacherProfile(data.user ?? null);
+          setTeacherProfile(
+            data.user
+              ? {
+                  ...data.user,
+                  role: resolvedRole,
+                  isAdmin: Boolean(data.isAdmin || data.user?.isAdmin || resolvedRole === 'admin'),
+                }
+              : null
+          );
           return;
         }
 
@@ -232,6 +249,8 @@ export function AuthProvider({ children }) {
       user,
       loading: sessionLoading || teacherLoading || !fetchReady,
       isTeacher,
+      role: teacherProfile?.role || null,
+      isAdmin: Boolean(teacherProfile?.isAdmin || teacherProfile?.role === 'admin'),
       isStagingBypass,
       teacherLoading,
       teacherProfile,

@@ -33,7 +33,7 @@ export function PromptViewModal({
                 <DialogHeader>
                     <DialogTitle>{prompt.title}</DialogTitle>
                     <DialogDescription>
-                        By {prompt.authorName || 'Anonymous Teacher'}
+                        Created by {prompt.createdByEmail || prompt.authorName || 'Anonymous Teacher'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -92,15 +92,21 @@ export function PromptViewModal({
 
                 <DialogFooter className="justify-between">
                     <div className="cluster">
-                        <Button type="button" onClick={() => onEdit(prompt)} variant="secondary" size="sm">
-                            <Edit className="h-4 w-4" /> Edit
-                        </Button>
-                        <Button type="button" onClick={() => onClone(prompt)} variant="secondary" size="sm">
-                            <Copy className="h-4 w-4" /> Clone
-                        </Button>
-                        <Button type="button" onClick={() => onDelete(prompt._id)} variant="danger" size="sm">
-                            <Trash2 className="h-4 w-4" /> Delete
-                        </Button>
+                        {prompt.canEdit ? (
+                            <Button type="button" onClick={() => onEdit(prompt)} variant="secondary" size="sm">
+                                <Edit className="h-4 w-4" /> Edit
+                            </Button>
+                        ) : null}
+                        {prompt.canClone !== false ? (
+                            <Button type="button" onClick={() => onClone(prompt)} variant="secondary" size="sm">
+                                <Copy className="h-4 w-4" /> Clone
+                            </Button>
+                        ) : null}
+                        {prompt.canDelete ? (
+                            <Button type="button" onClick={() => onDelete(prompt._id)} variant="danger" size="sm">
+                                <Trash2 className="h-4 w-4" /> Delete
+                            </Button>
+                        ) : null}
                     </div>
 
                     <Button type="button" onClick={() => onUse(prompt._id)} variant="primary">

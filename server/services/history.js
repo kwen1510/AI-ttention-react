@@ -1,5 +1,13 @@
 import { db } from "../db/db.js";
 import {
+    findAuthUserByEmail,
+    isAdminUser,
+    lookupTeacherAccessRecordByEmail,
+    lookupTeacherAccessRecordsByUserIds,
+    normalizeEmail,
+    listAuthUsersByIds
+} from "../middleware/auth.js";
+import {
     buildFullTranscript,
     getSummarySnapshots,
     getTranscriptBundle,
@@ -125,7 +133,91 @@ function buildCheckboxPreview(criteria = [], groups = [], checkboxSession = null
     };
 }
 
-async function buildSessionListItem(session) {
+function buildOwnerMetadata(ownerId, accessRecord, authUser) {
+    if (!ownerId) {
+        return null;
+    }
+
+    const email = normalizeEmail(accessRecord?.email || authUser?.email);
+    const role = accessRecord?.role || (authUser?.email ? "teacher" : null);
+
+    if (!email && !role) {
+        return {
+            id: ownerId,
+            email: null,
+            role: null
+        };
+    }
+
+    return {
+        id: ownerId,
+        email: email || null,
+        role
+    };
+}
+
+async function buildOwnerMetadataMap(ownerIds = []) {
+    const ids = [...new Set((ownerIds || []).filter(Boolean))];
+    const owners = new Map();
+    if (!ids.length) {
+        return owners;
+    }
+
+    let accessRecordsById = new Map();
+    try {
+        const accessRecords = await lookupTeacherAccessRecordsByUserIds(ids);
+        accessRecordsById = new Map(accessRecords.map((record) => [record.user_id, record]));
+    } catch (error) {
+        console.warn("⚠️ Failed to load teacher_access owner metadata:", error.message);
+    }
+
+    let authUsersById = new Map();
+    try {
+        authUsersById = await listAuthUsersByIds(ids);
+    } catch (error) {
+        console.warn("⚠️ Failed to load auth owner metadata:", error.message);
+    }
+
+    ids.forEach((ownerId) => {
+        owners.set(
+            ownerId,
+            buildOwnerMetadata(ownerId, accessRecordsById.get(ownerId), authUsersById.get(ownerId))
+        );
+    });
+
+    return owners;
+}
+
+async function resolveOwnerIdsForEmail(email) {
+    const normalizedOwnerEmail = normalizeEmail(email);
+    if (!normalizedOwnerEmail) {
+        return [];
+    }
+
+    const ownerIds = new Set();
+
+    try {
+        const accessRecord = await lookupTeacherAccessRecordByEmail(normalizedOwnerEmail);
+        if (accessRecord?.user_id) {
+            ownerIds.add(accessRecord.user_id);
+        }
+    } catch (error) {
+        console.warn("⚠️ Failed to resolve teacher_access owner filter:", error.message);
+    }
+
+    try {
+        const authUser = await findAuthUserByEmail(normalizedOwnerEmail);
+        if (authUser?.id) {
+            ownerIds.add(authUser.id);
+        }
+    } catch (error) {
+        console.warn("⚠️ Failed to resolve auth owner filter:", error.message);
+    }
+
+    return [...ownerIds];
+}
+
+async function buildSessionListItem(session, ownerMetadata = null) {
     const groups = await getSortedGroups(session._id);
     const transcriptBundles = await Promise.all(
         groups.map((group) => getTranscriptBundle(session._id, group._id))
@@ -147,7 +239,8 @@ async function buildSessionListItem(session) {
         end_time: toTimestamp(session.end_time),
         duration: computeSessionDuration(session),
         totalStudents: groups.length,
-        totalTranscripts
+        totalTranscripts,
+        owner: ownerMetadata
     };
 
     if ((session.mode || "summary") === "checkbox") {
@@ -206,7 +299,7 @@ async function buildGroupHistory(session, group, checkboxBundle = null) {
     };
 }
 
-function buildSessionEnvelope(session, groups, modeSpecificData = null) {
+function buildSessionEnvelope(session, groups, modeSpecificData = null, ownerMetadata = null) {
     return {
         _id: session._id,
         code: session.code,
@@ -219,28 +312,64 @@ function buildSessionEnvelope(session, groups, modeSpecificData = null) {
         duration: computeSessionDuration(session),
         totalStudents: groups.length,
         totalTranscripts: groups.reduce((sum, group) => sum + group.segments.length, 0),
-        modeSpecificData
+        modeSpecificData,
+        owner: ownerMetadata
     };
 }
 
-export async function getOwnedSessionOrThrow(teacherId, sessionCode) {
+export function canAccessHistorySession(teacher, session) {
+    if (!teacher || !session) {
+        return false;
+    }
+
+    return isAdminUser(teacher) || session.owner_id === teacher.id;
+}
+
+function normalizePaginationValue(value, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.min(Math.max(parsed, min), max);
+}
+
+export async function getHistorySessionOrThrow(teacher, sessionCode) {
     const session = await db.collection("sessions").findOne({ code: sessionCode });
     if (!session) {
         throw createHttpError("Session not found", 404);
     }
-    if (session.owner_id !== teacherId) {
+    if (!canAccessHistorySession(teacher, session)) {
         throw createHttpError("Forbidden", 403);
     }
     return session;
 }
 
-export async function listOwnedHistorySessions({ teacherId, mode = "", offset = 0, limit = 20 }) {
-    const normalizedOffset = Math.max(Number(offset) || 0, 0);
-    const normalizedLimit = Math.max(Math.min(Number(limit) || 20, 100), 1);
-    const filter = { owner_id: teacherId };
+export async function listHistorySessions({ teacher, mode = "", owner = "", offset = 0, limit = 20 }) {
+    const normalizedOffset = normalizePaginationValue(offset, 0);
+    const normalizedLimit = normalizePaginationValue(limit, 20, { min: 1, max: 100 });
+    const filter = {};
 
     if (mode) {
         filter.mode = mode;
+    }
+
+    if (isAdminUser(teacher)) {
+        const normalizedOwner = normalizeEmail(owner);
+        if (normalizedOwner) {
+            const ownerIds = await resolveOwnerIdsForEmail(normalizedOwner);
+            if (!ownerIds.length) {
+                return {
+                    sessions: [],
+                    pagination: buildPagination(0, normalizedOffset, normalizedLimit, 0)
+                };
+            }
+            filter.owner_id = ownerIds.length === 1 ? ownerIds[0] : { $in: ownerIds };
+        }
+    } else {
+        if (normalizeEmail(owner)) {
+            throw createHttpError("Forbidden", 403);
+        }
+        filter.owner_id = teacher.id;
     }
 
     const total = await db.collection("sessions").countDocuments(filter);
@@ -251,7 +380,10 @@ export async function listOwnedHistorySessions({ teacherId, mode = "", offset = 
         .limit(normalizedLimit)
         .toArray();
 
-    const items = await Promise.all(sessions.map(buildSessionListItem));
+    const ownerMap = await buildOwnerMetadataMap(sessions.map((session) => session.owner_id));
+    const items = await Promise.all(
+        sessions.map((session) => buildSessionListItem(session, ownerMap.get(session.owner_id) || null))
+    );
 
     return {
         sessions: items,
@@ -281,9 +413,15 @@ export async function buildHistorySessionDetail(session) {
     const historyGroups = await Promise.all(
         groups.map((group) => buildGroupHistory(session, group, checkboxBundle))
     );
+    const ownerMap = await buildOwnerMetadataMap([session.owner_id]);
 
     return {
-        session: buildSessionEnvelope(session, historyGroups, sessionModeSpecificData),
+        session: buildSessionEnvelope(
+            session,
+            historyGroups,
+            sessionModeSpecificData,
+            ownerMap.get(session.owner_id) || null
+        ),
         groups: historyGroups
     };
 }
@@ -316,4 +454,17 @@ export async function buildSegmentsHistoryExport(session) {
             transcriptStats: group.transcriptStats
         }))
     };
+}
+
+export async function getOwnedSessionOrThrow(teacherId, sessionCode) {
+    return getHistorySessionOrThrow({ id: teacherId, role: "teacher" }, sessionCode);
+}
+
+export async function listOwnedHistorySessions({ teacherId, mode = "", offset = 0, limit = 20 }) {
+    return listHistorySessions({
+        teacher: { id: teacherId, role: "teacher" },
+        mode,
+        offset,
+        limit
+    });
 }

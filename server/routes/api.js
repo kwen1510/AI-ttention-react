@@ -45,9 +45,15 @@ import {
     buildCombinedHistoryExport,
     buildHistorySessionDetail,
     buildSegmentsHistoryExport,
-    getOwnedSessionOrThrow,
-    listOwnedHistorySessions
+    getHistorySessionOrThrow,
+    listHistorySessions
 } from "../services/history.js";
+import {
+    canTeacherManagePrompt,
+    decoratePromptForTeacher,
+    insertTeacherPrompt,
+    normalizePromptRecord
+} from "../services/prompts.js";
 import { isSummaryReleased } from "../services/summaryRelease.js";
 
 const router = express.Router();
@@ -224,10 +230,7 @@ async function listAllPrompts() {
         .sort({ updated_at: -1, created_at: -1 })
         .toArray();
 
-    return prompts.map((prompt) => ({
-        ...prompt,
-        tags: Array.isArray(prompt.tags) ? prompt.tags : []
-    }));
+    return prompts.map((prompt) => normalizePromptRecord(prompt));
 }
 
 function filterPrompts(prompts, { search = "", category = "", mode = "" } = {}) {
@@ -251,6 +254,7 @@ function filterPrompts(prompts, { search = "", category = "", mode = "" } = {}) 
             prompt.description,
             prompt.content,
             prompt.authorName,
+            prompt.createdByEmail,
             ...(Array.isArray(prompt.tags) ? prompt.tags : [])
         ]
             .filter(Boolean)
@@ -314,10 +318,12 @@ router.get("/auth/me", async (req, res) => {
 
     res.json({
         teacher: true,
+        isAdmin: Boolean(teacher.isAdmin || teacher.role === "admin"),
         user: {
             id: teacher.id,
             email: teacher.email,
-            role: teacher.role || teacher.teacherAccess?.role || "teacher"
+            role: teacher.role || teacher.teacherAccess?.role || "teacher",
+            isAdmin: Boolean(teacher.isAdmin || teacher.role === "admin")
         }
     });
 });
@@ -773,7 +779,9 @@ router.get("/prompts", async (req, res) => {
 
         const limit = Math.max(Math.min(Number(req.query.limit) || 20, 100), 1);
         const offset = Math.max(Number(req.query.offset) || 0, 0);
-        const page = filteredPrompts.slice(offset, offset + limit);
+        const page = filteredPrompts
+            .slice(offset, offset + limit)
+            .map((prompt) => decoratePromptForTeacher(prompt, teacher));
         const categories = [...new Set(prompts.map((prompt) => prompt.category).filter(Boolean))].sort();
 
         res.json({
@@ -810,6 +818,8 @@ router.post("/prompts", express.json(), async (req, res) => {
             tags: Array.isArray(req.body?.tags) ? req.body.tags.filter(Boolean) : [],
             isPublic: req.body?.isPublic !== false,
             authorName: String(req.body?.authorName || teacher.email || "Anonymous Teacher").trim(),
+            createdByUserId: teacher.id,
+            createdByEmail: teacher.email,
             created_at: now,
             updated_at: now,
             views: 0,
@@ -822,8 +832,8 @@ router.post("/prompts", express.json(), async (req, res) => {
             return res.status(400).json({ error: "Title and content are required" });
         }
 
-        const created = await db.collection("teacher_prompts").insertOne(payload);
-        res.status(201).json(created.inserted);
+        const created = await insertTeacherPrompt(payload);
+        res.status(201).json(decoratePromptForTeacher(created.inserted, teacher));
     } catch (err) {
         console.error("❌ Failed to create prompt:", err);
         res.status(500).json({ error: "Failed to create prompt" });
@@ -835,30 +845,33 @@ router.put("/prompts/:id", express.json(), async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const existing = await db.collection("teacher_prompts").findOne({ _id: req.params.id });
-        if (!existing) {
+        const existingPrompt = normalizePromptRecord(await db.collection("teacher_prompts").findOne({ _id: req.params.id }));
+        if (!existingPrompt) {
             return res.status(404).json({ error: "Prompt not found" });
+        }
+        if (!canTeacherManagePrompt(existingPrompt, teacher)) {
+            return res.status(403).json({ error: "Forbidden" });
         }
 
         const updated = await db.collection("teacher_prompts").findOneAndUpdate(
             { _id: req.params.id },
             {
                 $set: {
-                    title: String(req.body?.title || existing.title || "").trim(),
-                    description: String(req.body?.description || existing.description || "").trim(),
-                    content: String(req.body?.content || existing.content || "").trim(),
-                    category: String(req.body?.category || existing.category || "General").trim() || "General",
+                    title: String(req.body?.title || existingPrompt.title || "").trim(),
+                    description: String(req.body?.description || existingPrompt.description || "").trim(),
+                    content: String(req.body?.content || existingPrompt.content || "").trim(),
+                    category: String(req.body?.category || existingPrompt.category || "General").trim() || "General",
                     mode: req.body?.mode === "checkbox" ? "checkbox" : "summary",
-                    tags: Array.isArray(req.body?.tags) ? req.body.tags.filter(Boolean) : (existing.tags || []),
+                    tags: Array.isArray(req.body?.tags) ? req.body.tags.filter(Boolean) : (existingPrompt.tags || []),
                     isPublic: req.body?.isPublic !== false,
-                    authorName: String(req.body?.authorName || existing.authorName || teacher.email || "Anonymous Teacher").trim(),
+                    authorName: String(existingPrompt.authorName || existingPrompt.createdByEmail || teacher.email || "Anonymous Teacher").trim(),
                     updated_at: Date.now()
                 }
             },
             { upsert: false }
         );
 
-        res.json(updated);
+        res.json(decoratePromptForTeacher(updated, teacher));
     } catch (err) {
         console.error("❌ Failed to update prompt:", err);
         res.status(500).json({ error: "Failed to update prompt" });
@@ -869,6 +882,14 @@ router.delete("/prompts/:id", async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
+
+        const existingPrompt = normalizePromptRecord(await db.collection("teacher_prompts").findOne({ _id: req.params.id }));
+        if (!existingPrompt) {
+            return res.status(404).json({ error: "Prompt not found" });
+        }
+        if (!canTeacherManagePrompt(existingPrompt, teacher)) {
+            return res.status(403).json({ error: "Forbidden" });
+        }
 
         const result = await db.collection("teacher_prompts").deleteOne({ _id: req.params.id });
         if (!result.deletedCount) {
@@ -887,17 +908,20 @@ router.post("/prompts/:id/clone", express.json(), async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const source = await db.collection("teacher_prompts").findOne({ _id: req.params.id });
-        if (!source) {
+        const sourcePrompt = normalizePromptRecord(await db.collection("teacher_prompts").findOne({ _id: req.params.id }));
+        if (!sourcePrompt) {
             return res.status(404).json({ error: "Prompt not found" });
         }
 
+        const { creatorEmail: _creatorEmail, ...sourceFields } = sourcePrompt;
         const now = Date.now();
         const cloned = {
-            ...source,
+            ...sourceFields,
             _id: uuid(),
-            title: `${source.title} (Copy)`,
-            authorName: String(req.body?.authorName || teacher.email || "Anonymous Teacher").trim(),
+            title: `${sourcePrompt.title} (Copy)`,
+            authorName: String(teacher.email || "Anonymous Teacher").trim(),
+            createdByUserId: teacher.id,
+            createdByEmail: teacher.email,
             created_at: now,
             updated_at: now,
             views: 0,
@@ -906,8 +930,8 @@ router.post("/prompts/:id/clone", express.json(), async (req, res) => {
             last_used: null
         };
 
-        const inserted = await db.collection("teacher_prompts").insertOne(cloned);
-        res.status(201).json(inserted.inserted);
+        const inserted = await insertTeacherPrompt(cloned);
+        res.status(201).json(decoratePromptForTeacher(inserted.inserted, teacher));
     } catch (err) {
         console.error("❌ Failed to clone prompt:", err);
         res.status(500).json({ error: "Failed to clone prompt" });
@@ -1792,9 +1816,10 @@ router.get("/history/sessions", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const result = await listOwnedHistorySessions({
-            teacherId: teacher.id,
+        const result = await listHistorySessions({
+            teacher,
             mode: typeof req.query.mode === "string" ? req.query.mode : "",
+            owner: typeof req.query.owner === "string" ? req.query.owner : "",
             offset: req.query.offset,
             limit: req.query.limit
         });
@@ -1811,7 +1836,7 @@ router.get("/history/sessions/:code", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const session = await getOwnedSessionOrThrow(teacher.id, req.params.code);
+        const session = await getHistorySessionOrThrow(teacher, req.params.code);
         const detail = await buildHistorySessionDetail(session);
         res.json(detail);
     } catch (err) {
@@ -1825,7 +1850,7 @@ router.get("/history/sessions/:code/export/combined", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const session = await getOwnedSessionOrThrow(teacher.id, req.params.code);
+        const session = await getHistorySessionOrThrow(teacher, req.params.code);
         const payload = await buildCombinedHistoryExport(session);
         sendJsonDownload(res, `session-${session.code}-combined.json`, payload);
     } catch (err) {
@@ -1839,7 +1864,7 @@ router.get("/history/sessions/:code/export/segments", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const session = await getOwnedSessionOrThrow(teacher.id, req.params.code);
+        const session = await getHistorySessionOrThrow(teacher, req.params.code);
         const payload = await buildSegmentsHistoryExport(session);
         sendJsonDownload(res, `session-${session.code}-segments.json`, payload);
     } catch (err) {

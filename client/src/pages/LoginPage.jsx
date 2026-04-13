@@ -50,7 +50,7 @@ function LoginPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          shouldCreateUser: false,
+          shouldCreateUser: true,
           emailRedirectTo: window.location.origin + "/admin",
         },
       });
