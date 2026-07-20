@@ -88,6 +88,10 @@ function CheckboxDashboard() {
         const data = await res.json();
         setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
         setSessionEnded(false);
+        setIsRecording(Boolean(data.active));
+        if (data.active && data.startTime) {
+          setElapsedTime(Math.max(0, Math.floor((Date.now() - Date.parse(data.startTime)) / 1000)));
+        }
         joinSession(data.code, data.realtime?.teacherTopic, data.realtime?.accessToken);
       } catch (err) {
         if (disposed || controller.signal.aborted || err?.name === 'AbortError' || err?.message === 'Failed to fetch') {

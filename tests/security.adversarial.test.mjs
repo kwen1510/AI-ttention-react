@@ -174,15 +174,35 @@ test("teacher identity owns created sessions and traversal paths cannot expose f
     assert.equal(malformedBody.error, "Malformed request body");
     assert.equal(JSON.stringify(malformedBody).includes(malformedMarker), false);
 
-    const created = await jsonRequest(baseUrl, "/api/new-session?mode=summary", {
+    const createSummary = () => jsonRequest(baseUrl, "/api/new-session?mode=summary", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
       body: JSON.stringify({ owner_id: "teacher-2", active: true, ended_reason: null })
     });
+    const [created, concurrent] = await Promise.all([createSummary(), createSummary()]);
     assert.equal(created.response.status, 200);
+    assert.equal(concurrent.response.status, 200);
+    assert.equal(concurrent.body.code, created.body.code);
     const stored = dbOverrides.dump("sessions")[0];
     assert.equal(stored.owner_id, "teacher-1");
     assert.equal(stored.active, false);
+
+    const repeated = await jsonRequest(baseUrl, "/api/new-session?mode=summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" }
+    });
+    assert.equal(repeated.response.status, 200);
+    assert.equal(repeated.body.code, created.body.code);
+    assert.equal(repeated.body.reused, true);
+    assert.equal(dbOverrides.dump("sessions").length, 1);
+
+    const checkbox = await jsonRequest(baseUrl, "/api/new-session?mode=checkbox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" }
+    });
+    assert.equal(checkbox.response.status, 200);
+    assert.notEqual(checkbox.body.code, created.body.code);
+    assert.equal(dbOverrides.dump("sessions").length, 2);
 
     const traversal = await fetch(`${baseUrl}/assets/%2e%2e/%2e%2e/.env`);
     const traversalBody = await traversal.text();

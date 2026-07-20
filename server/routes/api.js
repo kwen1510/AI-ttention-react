@@ -86,6 +86,9 @@ const FINAL_UPLOAD_GRACE_MS = 15_000;
 const DEFAULT_CLASSROOM_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ASYNC_MAX_SEGMENTS_PER_GROUP = 20;
 const DEFAULT_ASYNC_MAX_TRANSCRIPT_CHARS_PER_GROUP = 50_000;
+// ponytail: per-process lock is sufficient for the single App Platform instance;
+// move this invariant into Postgres before horizontally scaling the web service.
+const sessionInitializationPromises = new Map();
 
 router.use(optionalTeacherContext);
 
@@ -266,6 +269,77 @@ async function ensureSessionRecord({
     }
 }
 
+function restoreSessionRuntimeState(session) {
+    const code = String(session.code || "").trim().toUpperCase();
+    const existing = activeSessions.get(code);
+    const expiresAt = Number(session.expires_at || 0);
+    const state = {
+        ...(existing || {}),
+        id: session._id,
+        code,
+        ownerId: session.owner_id,
+        active: Boolean(session.active),
+        interval: session.interval_ms || 30000,
+        startTime: session.start_time || null,
+        created_at: session.created_at || Date.now(),
+        persisted: true,
+        expiresAt,
+        mode: session.mode || "summary",
+        groups: existing?.groups || new Map()
+    };
+    activeSessions.set(code, state);
+    scheduleClassroomExpiry(code, expiresAt);
+    return state;
+}
+
+async function getOrCreateTeacherClassroomSession({ teacherId, mode }) {
+    const lockKey = `${teacherId}:${mode}`;
+    const pending = sessionInitializationPromises.get(lockKey);
+    if (pending) return pending;
+
+    const initialization = (async () => {
+        const now = Date.now();
+        const candidates = await db.collection("sessions")
+            .find({ owner_id: teacherId, mode })
+            .sort({ created_at: -1 })
+            .limit(20)
+            .toArray();
+        const reusable = candidates.find((session) => (
+            !session.ended_reason
+            && !session.end_time
+            && Number(session.expires_at || 0) > now
+        ));
+
+        if (reusable) {
+            restoreSessionRuntimeState(reusable);
+            return { session: reusable, reused: true };
+        }
+
+        const code = await generateUniqueSessionCode();
+        const expiresAt = now + getClassroomSessionTtlMs();
+        const session = await ensureSessionRecord({
+            code,
+            teacherId,
+            mode,
+            intervalMs: 30000,
+            createdAt: now,
+            active: false,
+            expiresAt
+        });
+        restoreSessionRuntimeState(session);
+        return { session, reused: false };
+    })();
+
+    sessionInitializationPromises.set(lockKey, initialization);
+    try {
+        return await initialization;
+    } finally {
+        if (sessionInitializationPromises.get(lockKey) === initialization) {
+            sessionInitializationPromises.delete(lockKey);
+        }
+    }
+}
+
 async function ensureGroupRecord(sessionId, groupNumber) {
     let group = await db.collection("groups").findOne({
         session_id: sessionId,
@@ -334,20 +408,7 @@ async function resolveStudentSessionContext({
     }
 
     if (!sessionState && session) {
-        sessionState = {
-            id: session._id,
-            code: normalizedCode,
-            ownerId: session.owner_id,
-            active: Boolean(session.active),
-            interval: session.interval_ms || 30000,
-            startTime: session.start_time || null,
-            created_at: session.created_at || Date.now(),
-            expiresAt: session.expires_at || null,
-            persisted: true,
-            mode: session.mode || "summary",
-            groups: new Map()
-        };
-        activeSessions.set(normalizedCode, sessionState);
+        sessionState = restoreSessionRuntimeState(session);
     }
 
     const nextState = sessionState || activeSessions.get(normalizedCode);
@@ -1611,37 +1672,17 @@ router.post("/new-session", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const mode = req.query.mode === "checkbox" ? "checkbox" : "summary";
-        const code = await generateUniqueSessionCode();
-        const createdAt = Date.now();
-        const expiresAt = createdAt + getClassroomSessionTtlMs();
-        const persistedSession = await ensureSessionRecord({
-            code,
-            teacherId: teacher.id,
-            mode,
-            intervalMs: 30000,
-            createdAt,
-            active: false,
-            expiresAt
-        });
-
-        activeSessions.set(code, {
-            id: persistedSession._id,
-            code,
-            ownerId: teacher.id,
-            active: false,
-            interval: 30000,
-            startTime: null,
-            created_at: createdAt,
-            persisted: true,
-            expiresAt,
-            mode,
-            groups: new Map()
-        });
-        scheduleClassroomExpiry(code, expiresAt);
         if (!req.teacherSupabaseAccessToken && process.env.NODE_ENV === "production") {
             throw createHttpError("A refreshable Supabase teacher session is required", 401);
         }
+        const mode = req.query.mode === "checkbox" ? "checkbox" : "summary";
+        const { session, reused } = await getOrCreateTeacherClassroomSession({
+            teacherId: teacher.id,
+            mode
+        });
+        const code = session.code;
+        const createdAt = Number(session.created_at || Date.now());
+        const expiresAt = Number(session.expires_at || createdAt + getClassroomSessionTtlMs());
         await grantRealtimeTopics({
             userId: teacher.id,
             sessionCode: code,
@@ -1653,9 +1694,12 @@ router.post("/new-session", async (req, res) => {
         res.json({
             code,
             mode,
-            interval: 30000,
+            interval: session.interval_ms || 30000,
+            active: Boolean(session.active),
+            startTime: session.start_time ? new Date(session.start_time).toISOString() : null,
             createdAt: new Date(createdAt).toISOString(),
             expiresAt: new Date(expiresAt).toISOString(),
+            reused,
             realtime: {
                 teacherTopic: buildSessionRealtimeTopic(code),
                 accessToken: req.teacherSupabaseAccessToken || null
