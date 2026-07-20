@@ -96,6 +96,17 @@ try {
   if (!/<!doctype html>/i.test(homeHtml)) {
     throw new Error("/ returned an unexpected body");
   }
+  const versionMeta = homeHtml.match(/<meta name="app-version" content="([0-9a-f]{7})">/i);
+  const versionSpan = homeHtml.match(/<span id="app-version" data-version="([0-9a-f]{7})" hidden/i);
+  if (!versionMeta || !versionSpan || versionMeta[1] !== versionSpan[1]) {
+    throw new Error("Built index.html is missing a consistent app version marker");
+  }
+
+  const versionResponse = await ensureHeaderIncludes("/version.json", "cache-control", "no-store");
+  const versionInfo = await versionResponse.json();
+  if (!/^[0-9a-f]{40}$/i.test(versionInfo.commit) || versionInfo.shortCommit !== versionMeta[1]) {
+    throw new Error("version.json does not match the HTML app version marker");
+  }
 
   const assetPaths = extractAssetPaths(homeHtml);
   if (assetPaths.length === 0) {

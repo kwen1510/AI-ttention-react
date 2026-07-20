@@ -48,9 +48,10 @@ if (!staticDir) {
         setHeaders(res, filePath) {
             const relativePath = path.relative(staticDir, filePath);
             const isIndexFile = path.basename(filePath) === "index.html";
+            const isVersionFile = path.basename(filePath) === "version.json";
             const topLevelDir = relativePath.split(path.sep)[0];
 
-            if (isIndexFile) {
+            if (isIndexFile || isVersionFile) {
                 res.setHeader("Cache-Control", INDEX_CACHE_CONTROL);
                 return;
             }

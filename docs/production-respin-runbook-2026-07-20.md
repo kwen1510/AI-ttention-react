@@ -211,16 +211,19 @@ Run it twice and use different outputs.
 
 1. Commit and push the reviewed source to the intended GitHub branch.
 2. Point DigitalOcean at that exact commit and deploy with the encrypted variables above.
-3. Confirm `/health` and production security headers.
-4. Teacher OTP: request a code, verify it, close/reopen the browser, and confirm automatic restoration. Confirm no Supabase Auth token exists in Local Storage or Session Storage and the app cookie is HttpOnly/Secure/Strict.
-5. Create a class. Confirm created/expiry time is displayed and defaults to four hours.
-6. Join with two clean student browser profiles. Confirm distinct anonymous Auth user IDs.
-7. Attempt teacher-topic and cross-group subscriptions from a student; both must return channel authorization failure.
-8. Record/upload from both groups and confirm each receives only its own transcript/summary/checklist updates.
-9. Tamper with the group number on an upload/event request; it must return 403. Tamper with, expire, or forge join/user tokens; requests must fail without internal error details.
-10. End the class. Both student UIs must stop, membership rows must be revoked, later events must fail, and only an already-recorded final chunk may use the 15-second grace path.
-11. Test natural expiry with a short non-production TTL.
-12. Run the retention function on schedule (for example daily with Supabase Cron after enabling `pg_cron`):
+3. Read `/version.json` and confirm its `commit` is the exact deployed GitHub commit. The same
+   seven-character value is embedded in the page as `meta[name="app-version"]` and the hidden
+   `#app-version` span. This marker is generated automatically during every build.
+4. Confirm `/health` and production security headers.
+5. Teacher OTP: request a code, verify it, close/reopen the browser, and confirm automatic restoration. Confirm no Supabase Auth token exists in Local Storage or Session Storage and the app cookie is HttpOnly/Secure/Strict.
+6. Create a class. Confirm created/expiry time is displayed and defaults to four hours.
+7. Join with two clean student browser profiles. Confirm distinct anonymous Auth user IDs.
+8. Attempt teacher-topic and cross-group subscriptions from a student; both must return channel authorization failure.
+9. Record/upload from both groups and confirm each receives only its own transcript/summary/checklist updates.
+10. Tamper with the group number on an upload/event request; it must return 403. Tamper with, expire, or forge join/user tokens; requests must fail without internal error details.
+11. End the class. Both student UIs must stop, membership rows must be revoked, later events must fail, and only an already-recorded final chunk may use the 15-second grace path.
+12. Test natural expiry with a short non-production TTL.
+13. Run the retention function on schedule (for example daily with Supabase Cron after enabling `pg_cron`):
 
 ```sql
 select private.cleanup_aittention_ephemeral_data(7, 30);
@@ -235,6 +238,7 @@ npm run test:unit
 npm test
 npm run test:realtime:multi
 npm run test:browser:security
+npm run db:verify:student-boundary
 npm audit --omit=dev --audit-level=high
 ```
 

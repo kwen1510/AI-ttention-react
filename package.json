@@ -21,6 +21,7 @@
     "db:archive:verify": "node scripts/verify-archive.mjs",
     "db:archive:restore": "node scripts/restore-archive.mjs",
     "db:verify:async": "node scripts/verify-async-migration.mjs",
+    "db:verify:student-boundary": "node scripts/verify-production-student-boundary.mjs",
     "test": "npm run build && npm run test:smoke",
     "test:unit": "node --test --test-concurrency=1 tests/*.test.mjs",
     "test:async": "node --test --test-concurrency=1 tests/async.api.test.mjs",
