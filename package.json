@@ -10,10 +10,24 @@
     "client:dev": "vite",
     "client:build": "vite build",
     "client:preview": "vite preview",
+    "db:migrate:async": "node scripts/apply-async-migration.mjs",
+    "db:migrate:realtime": "node scripts/apply-native-realtime-migration.mjs",
+    "db:preflight:archive": "node scripts/preflight-environment.mjs archive",
+    "deploy:preflight": "node scripts/preflight-environment.mjs deployment",
+    "db:migrate:production": "node scripts/migrate-production.mjs",
+    "db:reset:production": "node scripts/reset-production.mjs",
+    "db:rollback:production": "node scripts/rollback-production.mjs",
+    "db:archive:production": "node scripts/archive-production.mjs",
+    "db:archive:verify": "node scripts/verify-archive.mjs",
+    "db:archive:restore": "node scripts/restore-archive.mjs",
+    "db:verify:async": "node scripts/verify-async-migration.mjs",
     "test": "npm run build && npm run test:smoke",
     "test:unit": "node --test --test-concurrency=1 tests/*.test.mjs",
-    "test:e2e": "NODE_ENV=test node scripts/socket-e2e-test.mjs",
+    "test:async": "node --test --test-concurrency=1 tests/async.api.test.mjs",
+    "test:e2e": "npm run test:realtime:multi",
+    "test:realtime:multi": "node scripts/realtime-multigroup-e2e.mjs",
     "test:browser": "node scripts/browser-e2e-test.mjs",
+    "test:browser:security": "node scripts/browser-security-e2e.mjs",
     "test:browser:summary": "node scripts/browser-summary-verification.mjs",
     "test:smoke": "NODE_ENV=test node scripts/smoke-test.mjs",
     "build": "npm run client:build"
@@ -28,37 +42,28 @@
   "author": "Smart Classroom Team",
   "license": "MIT",
   "dependencies": {
-    "@elevenlabs/elevenlabs-js": "^2.4.1",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",
-    "@supabase/supabase-js": "^2.76.1",
+    "@supabase/supabase-js": "2.110.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.3.3",
     "dotenv": "^16",
     "express": "^5.1.0",
     "express-rate-limit": "^8.3.2",
-    "form-data": "^4.0.0",
-    "groq-sdk": "^0.34.0",
     "helmet": "^8.1.0",
     "isomorphic-dompurify": "^2.36.0",
-    "lucide": "^0.471.0",
     "lucide-react": "^0.471.0",
     "marked": "^18.0.0",
-    "multer": "^1.4.5-lts.1",
-    "node-fetch": "^3",
+    "multer": "2.2.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.14.0",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0",
-    "uuid": "^9"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",
-    "@tailwindcss/line-clamp": "^0.4.4",
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.4.22",
     "nodemon": "^3.1.10",
@@ -67,10 +72,7 @@
     "tailwindcss": "^3.4.14",
     "vite": "^6.4.2"
   },
-  "overrides": {
-    "socket.io-parser": "^4.2.6"
-  },
   "engines": {
-    "node": ">=18.0.0 <21.0.0"
+    "node": "24.x"
   }
 }

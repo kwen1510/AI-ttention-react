@@ -30,16 +30,12 @@ export function getJoinTokenSecret() {
         return process.env.SESSION_JOIN_SECRET;
     }
 
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        return process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (process.env.NODE_ENV === "production") {
+        throw createJoinTokenError("SESSION_JOIN_SECRET is not configured", 500);
     }
 
     if (process.env.STAGING_AUTH_BYPASS === "true") {
         return DEV_JOIN_SECRET;
-    }
-
-    if (process.env.NODE_ENV === "production") {
-        throw createJoinTokenError("SESSION_JOIN_SECRET is not configured", 500);
     }
 
     return DEV_JOIN_SECRET;
@@ -143,6 +139,11 @@ export function assertJoinableSessionState(sessionCode, sessionState, sessionRec
         allowUploadGrace &&
         Number.isFinite(Number(sessionState?.acceptUploadsUntil)) &&
         Number(sessionState.acceptUploadsUntil) >= now;
+
+    const expiresAt = Number(sessionRecord?.expires_at || sessionState?.expiresAt || 0);
+    if (expiresAt && expiresAt <= now) {
+        throw createJoinTokenError("Session expired", 410);
+    }
 
     const isActive = Boolean(sessionRecord?.active || sessionState?.active || hasUploadGrace);
     if (!isActive) {

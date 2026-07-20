@@ -83,9 +83,9 @@ export function PromptViewModal({
                     <div className="flex flex-wrap items-center justify-between gap-3 text-sm copy-muted">
                         <span>Created: {new Date(prompt.created_at).toLocaleString()}</span>
                         {prompt.isPublic ? (
-                            <Badge tone="success" icon={Globe}>Public</Badge>
+                            <Badge tone="success" icon={Globe}>Global</Badge>
                         ) : (
-                            <Badge tone="neutral" icon={Lock}>Private</Badge>
+                            <Badge tone="neutral" icon={Lock}>Local</Badge>
                         )}
                     </div>
                 </div>

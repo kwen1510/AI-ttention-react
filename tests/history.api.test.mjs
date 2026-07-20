@@ -31,6 +31,15 @@ test("history services scope sessions by role and expose owner metadata", async 
         active: false,
         created_at: 3000,
         updated_at: 4000
+      },
+      {
+        _id: "session-3",
+        code: "ROOM3",
+        owner_id: "guest-1",
+        mode: "summary",
+        active: false,
+        created_at: 5000,
+        updated_at: 6000
       }
     ],
     groups: [],
@@ -42,16 +51,26 @@ test("history services scope sessions by role and expose owner metadata", async 
   try {
     const teacher = await authModule.authenticateTeacherFromToken("teacher-token");
     const admin = await authModule.authenticateTeacherFromToken("admin-token");
+    const guest = await authModule.authenticateTeacherFromToken("guest-token");
 
     const teacherList = await historyModule.listHistorySessions({ teacher });
     assert.equal(teacherList.sessions.length, 1);
     assert.equal(teacherList.sessions[0].code, "ROOM1");
 
     const adminList = await historyModule.listHistorySessions({ teacher: admin });
-    assert.equal(adminList.sessions.length, 2);
+    assert.equal(adminList.sessions.length, 3);
     assert.deepEqual(
       adminList.sessions.map((session) => session.owner?.email).sort(),
-      ["teacher-b@example.com", "teacher@example.com"]
+      ["guest@example.com", "teacher-b@example.com", "teacher@example.com"]
+    );
+
+    const guestList = await historyModule.listHistorySessions({ teacher: guest });
+    assert.equal(guestList.sessions.length, 1);
+    assert.equal(guestList.sessions[0].code, "ROOM3");
+
+    await assert.rejects(
+      () => historyModule.getHistorySessionOrThrow(guest, "ROOM1"),
+      /forbidden/i
     );
 
     const filteredAdminList = await historyModule.listHistorySessions({

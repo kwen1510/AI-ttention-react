@@ -1,10 +1,10 @@
 # AI(ttention) – Architecture, Auth, and Realtime Flow
 
-This document summarizes the authentication model, realtime (Socket.IO) + keep‑alive flow, and the main features/logic across `index.js` and the HTML UIs.
+This document summarizes the authentication model, Supabase Realtime flow, and the main features/logic across the server and React UIs.
 
 ## Contents
 - Auth Logic (client + server)
-- WebSocket + Keep‑Alive
+- Supabase Realtime Flow
 - Features and Per‑File Walkthrough
 - Key REST APIs and Flows
 - Frontend Build & Dev Scripts
@@ -63,66 +63,46 @@ The legacy HTML/JS controllers now live under `client/src/templates` (markup sna
   - Protected endpoints call `requireTeacher(req, res)` and compare `session.owner_id` to `teacher.id` for authorization.
 
 Notes
-- Server uses `SUPABASE_SERVICE_ROLE_KEY` and never persists browser keys.
+- Server uses a new `sb_secret_...` key; browsers use only `sb_publishable_...` and Supabase-issued user JWTs.
 - Auth is enforced on REST APIs; socket events are unprotected by JWT but scoped to session codes/rooms.
 
 ---
 
-## WebSocket + Keep‑Alive
+## Supabase Realtime Flow
 
-Socket.IO powers realtime rooms for a session and per‑group subrooms:
-- Rooms: `code` for the whole session, and `code-<groupNumber>` for a group.
+Supabase Realtime Broadcast now powers live classroom fan-out. The Node server remains responsible for REST APIs, audio ingestion, STT, AI processing, and persistence, but teacher/student UIs subscribe to Supabase Realtime topics rather than opening app-owned Socket.IO rooms.
+
+- Topics:
+  - Session-wide: `classroom:<SESSION_CODE>`
+  - Group-specific: `classroom:<SESSION_CODE>:group:<GROUP_NUMBER>`
 - Key events:
-  - Admin: `admin_join` (join session room), `admin_heartbeat`/`admin_heartbeat_ack`.
-  - Student: `join` (session+group), `heartbeat`/`heartbeat_ack`, `record_now`, `stop_recording`, `transcription_and_summary`, `checklist_state`.
+  - Session topic: `record_now`, `stop_recording`, `admin_update`, `student_joined`, `student_left`, `upload_status`, `upload_error`
+  - Group topic: `transcription_and_summary`, `summary_state`, `checklist_state`
+- Students do not log in. They join by session code or signed join URL, then receive the Realtime topic names from `POST /api/session/:code/student-join`.
+- The legacy Socket.IO/WebSocket server and client paths have been removed; all live classroom fan-out uses private Supabase Broadcast.
 
-Client heartbeat (student):
+Student join and heartbeat now use REST:
 ```js
-// client/src/scripts/student_inline_original.js
-heartbeatInterval = setInterval(() => {
-  if (socket.connected && currentSession && currentGroup) {
-    socket.emit('heartbeat', { session: currentSession, group: currentGroup });
-  }
-}, 10000);
-// Ack handler
-socket.on('heartbeat_ack', () => { lastHeartbeatTime = Date.now(); });
-```
-
-Server heartbeat handlers and ack:
-```js
-// index.js (socket flow)
-io.on('connection', (socket) => {
-  socket.on('heartbeat', ({ session, group }) => {
-    socket.emit('heartbeat_ack');
-    const mem = activeSessions.get(session);
-    if (mem) {
-      if (!mem.groups) mem.groups = new Map();
-      const st = mem.groups.get(parseInt(group)) || {};
-      st.joined = true; st.lastAck = Date.now();
-      if (mem.active) st.recording = true;
-      mem.groups.set(parseInt(group), st);
-      activeSessions.set(session, mem);
-    }
-  });
-  socket.on('admin_heartbeat', ({ sessionCode }) => {
-    socket.emit('admin_heartbeat_ack');
-  });
+await fetch(`/api/session/${code}/student-join`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ group })
 });
 ```
 
-Start/ack reliability cycle:
-- When a teacher starts a session (`POST /api/session/:code/start`), the server marks memory state active and repeatedly emits `record_now` to any groups that have joined until each group sends `recording_started` or 30s elapses.
-
+Server fan-out uses `publishRealtimeEvent`:
 ```js
-// index.js (excerpt)
-socket.on('recording_started', ({ session, group }) => {
-  const mem = activeSessions.get(session);
-  const st = (mem.groups?.get(parseInt(group)) || {});
-  st.joined = true; st.recording = true; st.lastAck = Date.now();
-  mem.groups.set(parseInt(group), st);
-  activeSessions.set(session, mem);
+await publishRealtimeEvent({
+  sessionCode,
+  groupNumber,
+  event: REALTIME_EVENTS.TRANSCRIPTION_AND_SUMMARY,
+  audience: 'group',
+  payload
 });
 ```
+
+Start flow:
+- When a teacher starts a session (`POST /api/session/:code/start`), the server marks memory state active and broadcasts `record_now` on the session Realtime topic.
 
 ---
 
@@ -131,8 +111,8 @@ socket.on('recording_started', ({ session, group }) => {
 - Server: `index.js`
   - Session lifecycle (in‑memory + persisted):
     - `GET /api/new-session` creates an in‑memory session (code, interval, owner).
-    - `POST /api/session/:code/start` persists if first start, marks active, begins auto-summary timers (for summary mode), and emits `record_now` retries until ack.
-    - `POST /api/session/:code/stop` marks inactive, updates duration, emits `stop_recording`.
+    - `POST /api/session/:code/start` persists if first start, marks active, begins auto-summary timers (for summary mode), and publishes `record_now`.
+    - `POST /api/session/:code/stop` marks inactive, updates duration, and publishes `stop_recording`.
     - `GET /api/session/:code/status` returns memory/DB state for the owner.
   - Audio ingestion and processing:
     - Summary mode: `POST /api/transcribe-chunk`
@@ -188,6 +168,16 @@ socket.on('recording_started', ({ session, group }) => {
   - Protected by `guard-admin.js`.
   - Defines scenario + rubric criteria, controls start/stop, and releases the checklist to students.
 
+- Async discussion (teacher): `client/src/pages/AsyncDashboard.jsx`
+  - Protected teacher workspace for creating an asynchronous discussion activity.
+  - Generates an obfuscated `/async/j/:shareId` student link instead of exposing a classroom code.
+  - Shows group reports with summaries, feedback, timestamped ideas formed/rejected, decisions, and open questions.
+
+- Async discussion (student): `client/src/pages/AsyncStudentView.jsx`
+  - Public share-link page for group phone recording outside class.
+  - Students join by group number, record with the microphone, and upload to `/api/async/join/:shareId/upload`.
+  - Shows the latest transcript plus summary/process feedback after analysis.
+
 - Prompt Library (teacher): `client/src/pages/PromptsPage.jsx`
   - View/search/create/edit/delete prompts across modes; leverages the REST prompt endpoints.
 
@@ -206,8 +196,8 @@ socket.on('recording_started', ({ session, group }) => {
 
 - Summary Mode (teacher + students)
   1) Teacher creates session (`/api/new-session`), shares code.
-  2) Students `join` via Socket.IO; when teacher starts (`/start`), server emits `record_now` until `recording_started` acks.
-  3) Students upload periodic chunks (`/api/transcribe-chunk`). Server STT → append → summarise → emit `transcription_and_summary` to group + `admin_update` to teacher.
+  2) Students join through `POST /api/session/:code/student-join`; when teacher starts (`/start`), server broadcasts `record_now` through Supabase Realtime.
+  3) Students upload periodic chunks (`/api/transcribe-chunk`). Server STT → append → summarise → publish `transcription_and_summary` to the group topic + `admin_update` to the session topic.
 
 - Mindmap Mode
   1) Teacher creates mindmap session and sets topic.
@@ -215,51 +205,82 @@ socket.on('recording_started', ({ session, group }) => {
 
 - Checkbox Mode
   1) Teacher seeds scenario/criteria and starts the session.
-  2) Live chunks analyzed against rubric; progress respects locking rules; teacher can `release_checklist` to students → server emits `checklist_state` for the group.
+  2) Live chunks analyzed against rubric; progress respects locking rules; teacher can release checklists to students → server publishes `checklist_state` for the group.
+
+- Async Mode
+  1) Teacher creates an async activity through `POST /api/async/sessions`, with instructions and a feedback/process prompt.
+  2) Server stores a teacher-owned `async_sessions` row and returns a high-entropy share URL at `/async/j/:shareId`.
+  3) Students open the link, join a group via `POST /api/async/join/:shareId/groups`, and upload recordings through `POST /api/async/join/:shareId/upload`.
+  4) Server STT → transcript segment persistence → summary/process analysis → `async_group_reports` update.
+
+Security planning for async mode is tracked in [`docs/async-mode-security-plan.md`](docs/async-mode-security-plan.md).
+
+Apply the async Supabase tables before using this mode against a real project:
+```bash
+DATABASE_URL="postgresql://..." npm run db:migrate:async
+```
+Or paste `server/db/migrations/20260601_async_mode.sql` into the Supabase SQL editor.
+After applying it, verify the REST schema cache can see the tables:
+```bash
+set -a && source .env && set +a
+npm run db:verify:async
+```
 
 ---
 
 ## Representative Snippets
 
-Emit results to clients after transcription (summary mode):
+Publish results to clients after transcription (summary mode):
 ```js
-// index.js (after saving transcript and summary)
-io.to(`${sessionCode}-${groupNumber}`).emit('transcription_and_summary', {
-  transcription: { text, cumulativeText, words, duration, wordCount },
-  summary,
-  isLatestSegment: true
+await publishRealtimeEvent({
+  sessionCode,
+  groupNumber,
+  event: REALTIME_EVENTS.TRANSCRIPTION_AND_SUMMARY,
+  audience: 'group',
+  payload: {
+    transcription: { text, words, duration, wordCount },
+    summary,
+    isLatestSegment: true
+  }
 });
-io.to(sessionCode).emit('admin_update', {
-  group: groupNumber,
-  latestTranscript: text,
-  cumulativeTranscript: cumulativeText,
-  transcriptDuration: duration,
-  transcriptWordCount: wordCount,
-  summary,
-  stats
+await publishRealtimeEvent({
+  sessionCode,
+  groupNumber,
+  event: REALTIME_EVENTS.ADMIN_UPDATE,
+  audience: 'session',
+  payload: { group: groupNumber, latestTranscript: text, summary, stats }
 });
 ```
 
 Checklist release to students (teacher → server → everyone in session):
 ```js
-// index.js (socket 'release_checklist')
 const checklistData = { groupNumber, criteria: /* from DB + cache */, isReleased: true, sessionCode };
-io.to(sessionCode).emit('checklist_state', checklistData);
-io.to(`${sessionCode}-${groupNumber}`).emit('checklist_state', checklistData);
+await publishRealtimeEvent({
+  sessionCode,
+  groupNumber,
+  event: REALTIME_EVENTS.CHECKLIST_STATE,
+  audience: 'both',
+  payload: checklistData
+});
 ```
 
 ---
 
 ## Environment
 
-- Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (server), and browser `window.SUPABASE_URL` + `window.SUPABASE_ANON_KEY` (client).
+- Supabase: `SUPABASE_URL`, server-only `SUPABASE_SECRET_KEY`, and browser `SUPABASE_PUBLISHABLE_KEY`. No JWT signing secret is used by the app.
+- Authentication/session security: server-only `AUTH_COOKIE_SECRET` and `SESSION_JOIN_SECRET` (independent random values, at least 32 characters), `AUTH_COOKIE_TTL_SECONDS` (default 30 days), and `CLASSROOM_SESSION_TTL_MINUTES` (default 240 minutes).
+- Secure archive, migration, deployment, ES256 rotation, validation, and rollback: see `docs/production-respin-runbook-2026-07-20.md`.
+- Secure Auth Lab invariant mapping and residual gates: see `docs/secure-auth-lab-control-mapping-2026-07-20.md`.
+- Requirement-by-requirement proof and remaining production gates: see `docs/completion-evidence-matrix-2026-07-20.md`.
 - STT: `ELEVENLABS_KEY` for ElevenLabs Speech‑to‑Text.
 - LLM: `OPENAI_API_KEY` (or `OPENAI_KEY`) for summaries and mindmap generation/expansion.
 
 ---
 
 ## Notes and Considerations
-- Socket events currently rely on session codes, not JWT; REST APIs are owner‑validated via Supabase.
+- Student access remains form-free but uses a short-lived anonymous Supabase Auth identity plus session code or signed join link.
+- Supabase Realtime topics are private and authorized by database membership keyed to `auth.uid()`.
 - Audio ingestion validates headers (esp. WebM) and sizes; errors are surfaced to admin and students with retry/backoff.
 - Transcript storage is incremental per group with trimming to bound history size.
 - Mindmap API is disabled if `OPENAI_API_KEY` (or `OPENAI_KEY`) is unset; UI reflects that via error messaging.

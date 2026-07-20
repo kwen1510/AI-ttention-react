@@ -2,15 +2,19 @@ import 'dotenv/config';
 import express from "express";
 import helmet from "helmet";
 import { createServer } from "http";
-import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import { supabase } from "./server/db/supabaseClient.js";
 import { seedDefaultPrompts } from "./server/db/db.js";
+import {
+  assertProductionRequestBoundary,
+  createUnsafeRequestOriginGuard
+} from "./server/middleware/originGuard.js";
 import { apiLimiter } from "./server/middleware/rateLimit.js";
-import { initSocket } from "./server/services/socket.js";
 import apiRouter from "./server/routes/api.js";
 import viewsRouter from "./server/routes/views.js";
+import { assertTeacherSessionCookieConfigured } from "./server/services/teacherSessionCookie.js";
+import { buildSessionRealtimeTopic } from "./server/services/realtime.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,8 +32,7 @@ function parseCsvList(...values) {
 function buildAllowedOrigins() {
   const configured = parseCsvList(
     process.env.APP_ORIGINS,
-    process.env.APP_PUBLIC_ORIGIN,
-    process.env.RENDER_EXTERNAL_URL
+    process.env.APP_PUBLIC_ORIGIN
   );
 
   if (process.env.NODE_ENV !== "production") {
@@ -47,50 +50,53 @@ function buildAllowedOrigins() {
   return new Set(configured);
 }
 
-function normalizeHostValue(value) {
-  return String(value || "").trim().toLowerCase();
+function buildSupabaseConnectSources() {
+  const sources = [];
+
+  for (const value of parseCsvList(process.env.SUPABASE_URL)) {
+    try {
+      const url = new URL(value);
+      sources.push(url.origin);
+
+      if (url.protocol === "https:") {
+        sources.push(`wss://${url.host}`);
+      } else if (url.protocol === "http:") {
+        sources.push(`ws://${url.host}`);
+      }
+    } catch {
+      // Invalid environment values are handled by the Supabase client during startup.
+    }
+  }
+
+  return sources;
 }
 
-function extractOriginHost(origin) {
-  if (!origin) {
-    return null;
-  }
+function buildHelmetOptions() {
+  const productionCsp = process.env.NODE_ENV === "production"
+    ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          connectSrc: ["'self'", ...buildSupabaseConnectSources()],
+          fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+          imgSrc: ["'self'", "data:", "blob:"],
+          mediaSrc: ["'self'", "blob:"],
+          objectSrc: ["'none'"],
+          scriptSrc: ["'self'"],
+          scriptSrcAttr: ["'none'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          workerSrc: ["'self'", "blob:"],
+          upgradeInsecureRequests: []
+        }
+      }
+    : false;
 
-  try {
-    return normalizeHostValue(new URL(origin).host);
-  } catch {
-    return null;
-  }
-}
-
-function extractRequestHosts(headers = {}) {
-  return parseCsvList(headers["x-forwarded-host"], headers.host)
-    .map(normalizeHostValue)
-    .filter(Boolean);
-}
-
-export function isSocketOriginAllowed(origin, allowedOrigins, headers = {}) {
-  if (!origin) {
-    return true;
-  }
-
-  if (allowedOrigins.has(origin)) {
-    return true;
-  }
-
-  const originHost = extractOriginHost(origin);
-  if (!originHost) {
-    return false;
-  }
-
-  const requestHosts = extractRequestHosts(headers);
-  return requestHosts.includes(originHost);
-}
-
-function createSocketAllowRequestValidator(allowedOrigins) {
-  return (req, callback) => {
-    const allowed = isSocketOriginAllowed(req.headers.origin, allowedOrigins, req.headers);
-    callback(null, allowed);
+  return {
+    contentSecurityPolicy: productionCsp,
+    crossOriginEmbedderPolicy: false,
+    referrerPolicy: { policy: "no-referrer" }
   };
 }
 
@@ -99,28 +105,9 @@ const app = express();
 app.set("trust proxy", 1);
 const http = createServer(app);
 const allowedOrigins = buildAllowedOrigins();
-const io = new Server(http, {
-  cors: {
-    origin: true,
-    methods: ["GET", "POST"]
-  },
-  pingInterval: 25000,
-  pingTimeout: 60000,
-  connectTimeout: 20000,
-  allowRequest: createSocketAllowRequestValidator(allowedOrigins)
-});
-
-// Make io available to routes
-app.set('io', io);
-
-// Initialize Socket.IO services
-initSocket(io);
 
 // Middleware
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
+app.use(helmet(buildHelmetOptions()));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
@@ -133,13 +120,18 @@ app.get("/favicon.ico", (_req, res) => {
 });
 
 // API Routes
-app.use('/api', apiLimiter, apiRouter);
+app.use('/api', apiLimiter, createUnsafeRequestOriginGuard(allowedOrigins, {
+  enforceHost: process.env.NODE_ENV === "production"
+}), apiRouter);
 
 // View Routes (Static & SPA)
 app.use('/', viewsRouter);
 
 app.use((err, _req, res, _next) => {
-  const status = Number.isInteger(err?.status)
+  const malformedBody = err?.type === "entity.parse.failed";
+  const status = malformedBody
+    ? 400
+    : Number.isInteger(err?.status)
     ? err.status
     : err?.code === "LIMIT_FILE_SIZE"
       ? 413
@@ -152,7 +144,9 @@ app.use((err, _req, res, _next) => {
   }
 
   res.status(status).json({
-    error: status >= 500
+    error: malformedBody
+      ? "Malformed request body"
+      : status >= 500
       ? "Internal server error"
       : err?.message || "Request failed"
   });
@@ -161,6 +155,12 @@ app.use((err, _req, res, _next) => {
 // Database Connection & Server Start
 async function startServer({ exitOnFailure = isDirectRun } = {}) {
   try {
+    assertTeacherSessionCookieConfigured();
+    assertProductionRequestBoundary({
+      nodeEnv: process.env.NODE_ENV,
+      allowedOrigins
+    });
+    buildSessionRealtimeTopic("STARTUP-CHECK");
     if (shouldSkipBootstrap) {
       console.log('🧪 Skipping Supabase bootstrap checks');
     } else {
@@ -213,4 +213,4 @@ if (isDirectRun) {
   startServer();
 }
 
-export { app, http, io, startServer };
+export { app, http, startServer };

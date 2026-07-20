@@ -1,9 +1,11 @@
 import express from "express";
 import { randomInt } from "crypto";
 import { v4 as uuid } from "uuid";
-import { upload } from "../middleware/upload.js";
-import { optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
-import { aiLimiter, aiUploadLimiter } from "../middleware/rateLimit.js";
+import { isLikelySupportedAudioBuffer, upload } from "../middleware/upload.js";
+import { authenticateUserFromToken, authorizeTeacherUser, extractBearerToken, isTeacherEmailAllowedForLogin, normalizeEmail, optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
+import { aiLimiter, aiUploadLimiter, asyncJoinLimiter, asyncUploadLimiter, authLimiter } from "../middleware/rateLimit.js";
+import { createSupabaseAuthClient, supabase } from "../db/supabaseClient.js";
+import { clearTeacherSessionCookie, setTeacherSessionCookie } from "../services/teacherSessionCookie.js";
 import { createSupabaseDb } from "../db/db.js";
 import { isIgnorableTranscriptionText, transcribe } from "../services/elevenlabs.js";
 import { cleanTranscriptChunk, summarise } from "../services/openai.js";
@@ -14,13 +16,14 @@ import {
     getJoinTokenTtlSeconds,
     verifyJoinToken
 } from "../services/joinTokens.js";
-import { activeSessions, latestChecklistState } from "../services/state.js";
+import { activeSessions, latestChecklistState, sessionTimers } from "../services/state.js";
 import {
     appendTranscriptSegment,
     countTranscriptWords,
     createSummaryUpdateFields,
     createTranscriptRecord,
     getTranscriptBundle,
+    hasTranscriptSegment,
     persistSummarySnapshot
 } from "../services/transcript.js";
 import {
@@ -49,17 +52,40 @@ import {
     listHistorySessions
 } from "../services/history.js";
 import {
+    canTeacherCreatePrompt,
     canTeacherManagePrompt,
+    canTeacherViewPrompt,
     decoratePromptForTeacher,
     insertTeacherPrompt,
     normalizePromptRecord
 } from "../services/prompts.js";
-import { isSummaryReleased } from "../services/summaryRelease.js";
+import { isSummaryReleased, recordSummaryRelease } from "../services/summaryRelease.js";
+import {
+    analyzeAsyncDiscussion,
+    buildAsyncJoinUrl,
+    generateAsyncShareId,
+    isAsyncSessionOpen,
+    normalizeAsyncGroupNumber,
+    normalizeAsyncShareId
+} from "../services/asyncMode.js";
+import {
+    REALTIME_EVENTS,
+    buildGroupRealtimeTopic,
+    buildSessionRealtimeTopic,
+    buildStudentRealtimeTopic,
+    normalizeGroupNumber,
+    normalizeSessionCode,
+    publishRealtimeEvent
+} from "../services/realtime.js";
+import { assertStudentRealtimeMembership, grantRealtimeTopics, revokeSessionRealtimeMemberships } from "../services/realtimeMemberships.js";
 
 const router = express.Router();
 const db = createSupabaseDb();
 const SESSION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const FINAL_UPLOAD_GRACE_MS = 15_000;
+const DEFAULT_CLASSROOM_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_ASYNC_MAX_SEGMENTS_PER_GROUP = 20;
+const DEFAULT_ASYNC_MAX_TRANSCRIPT_CHARS_PER_GROUP = 50_000;
 
 router.use(optionalTeacherContext);
 
@@ -75,6 +101,13 @@ function createHttpError(message, status = 400) {
     return error;
 }
 
+function sendRouteError(res, error, fallbackMessage) {
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    return res.status(status).json({
+        error: status >= 500 && error?.expose !== true ? fallbackMessage : (error?.message || fallbackMessage)
+    });
+}
+
 function isUniqueViolation(error) {
     return String(error?.code || "") === "23505" || /duplicate key/i.test(String(error?.message || ""));
 }
@@ -85,6 +118,70 @@ function normalizeIntervalMs(value, fallback = 30000) {
         return fallback;
     }
     return parsed;
+}
+
+function normalizePositiveInteger(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        return fallback;
+    }
+    return parsed;
+}
+
+function getClassroomSessionTtlMs() {
+    const configured = Number(process.env.CLASSROOM_SESSION_TTL_MINUTES);
+    if (!Number.isFinite(configured) || configured < 15) return DEFAULT_CLASSROOM_SESSION_TTL_MS;
+    return Math.min(Math.floor(configured), 12 * 60) * 60 * 1000;
+}
+
+function isClassroomSessionExpired(session, memory, now = Date.now()) {
+    const expiresAt = Number(session?.expires_at || memory?.expiresAt || 0);
+    return Boolean(expiresAt && expiresAt <= now);
+}
+
+async function expireClassroomSession(code, expiresAt) {
+    const now = Date.now();
+    const acceptUploadsUntil = now + FINAL_UPLOAD_GRACE_MS;
+    const session = await db.collection("sessions").findOne({ code });
+    if (!session || Number(session.expires_at || expiresAt) > now || session.ended_reason) return;
+
+    await db.collection("sessions").updateOne({ _id: session._id }, {
+        $set: { active: false, end_time: now, ended_reason: "expired" }
+    });
+    const memory = activeSessions.get(code);
+    if (memory) {
+        activeSessions.set(code, { ...memory, active: false, stopRequestedAt: now, acceptUploadsUntil });
+    }
+    await publishRealtimeEvent({
+        sessionCode: code,
+        event: REALTIME_EVENTS.STOP_RECORDING,
+        audience: "all",
+        payload: { reason: "expired" }
+    });
+    await revokeSessionRealtimeMemberships(code);
+    const terminalTimer = setTimeout(() => {
+        void publishRealtimeEvent({
+            sessionCode: code,
+            event: REALTIME_EVENTS.SESSION_ENDED,
+            audience: "all",
+            payload: { reason: "expired", endedAt: now }
+        });
+    }, FINAL_UPLOAD_GRACE_MS);
+    terminalTimer.unref?.();
+}
+
+function scheduleClassroomExpiry(code, expiresAt) {
+    const previous = sessionTimers.get(code);
+    if (previous) clearTimeout(previous);
+    const delay = Math.max(0, Number(expiresAt) - Date.now());
+    const timer = setTimeout(() => {
+        sessionTimers.delete(code);
+        void expireClassroomSession(code, expiresAt).catch((error) => {
+            console.error(`❌ Failed to expire classroom session ${code}:`, error);
+        });
+    }, Math.min(delay, 2_147_483_647));
+    timer.unref?.();
+    sessionTimers.set(code, timer);
 }
 
 function generateSessionCode() {
@@ -131,7 +228,8 @@ async function ensureSessionRecord({
     createdAt,
     active = false,
     startTime = null,
-    strictness = undefined
+    strictness = undefined,
+    expiresAt = undefined
 }) {
     try {
         const inserted = await db.collection("sessions").insertOne({
@@ -145,6 +243,8 @@ async function ensureSessionRecord({
             created_at: createdAt,
             start_time: startTime,
             end_time: null,
+            expires_at: expiresAt,
+            ended_reason: null,
             total_duration_seconds: null
         });
         return inserted.inserted;
@@ -185,14 +285,452 @@ async function ensureGroupRecord(sessionId, groupNumber) {
     return group;
 }
 
+async function resolveStudentSessionContext({
+    sessionCode,
+    joinToken,
+    groupNumber,
+    requireActive = false,
+    allowUploadGrace = false
+} = {}) {
+    const parsedGroup = normalizeGroupNumber(groupNumber);
+    if (!parsedGroup) {
+        throw createHttpError("Invalid group number", 400);
+    }
+
+    let normalizedCode = normalizeSessionCode(sessionCode);
+    let tokenPayload = null;
+    if (joinToken) {
+        tokenPayload = verifyJoinToken(joinToken, {
+            expectedSessionCode: normalizedCode || undefined
+        });
+        normalizedCode = tokenPayload.sessionCode;
+    }
+
+    if (!normalizedCode) {
+        throw createHttpError("Session not found", 404);
+    }
+
+    let sessionState = activeSessions.get(normalizedCode);
+    let session = null;
+    if (!sessionState || sessionState.persisted) {
+        session = await db.collection("sessions").findOne({ code: normalizedCode });
+    }
+
+    if (!sessionState && !session) {
+        throw createHttpError("Session not found", 404);
+    }
+
+    if (isClassroomSessionExpired(session, sessionState)) {
+        throw createHttpError("Session expired", 410);
+    }
+
+    const hasFinalizationGrace = Number(sessionState?.acceptUploadsUntil || 0) >= Date.now();
+    if ((session?.ended_reason || session?.end_time) && (!allowUploadGrace || !hasFinalizationGrace)) {
+        throw createHttpError("Session ended", 404);
+    }
+
+    if (requireActive) {
+        assertJoinableSessionState(normalizedCode, sessionState, session, { allowUploadGrace });
+    }
+
+    if (!sessionState && session) {
+        sessionState = {
+            id: session._id,
+            code: normalizedCode,
+            ownerId: session.owner_id,
+            active: Boolean(session.active),
+            interval: session.interval_ms || 30000,
+            startTime: session.start_time || null,
+            created_at: session.created_at || Date.now(),
+            expiresAt: session.expires_at || null,
+            persisted: true,
+            mode: session.mode || "summary",
+            groups: new Map()
+        };
+        activeSessions.set(normalizedCode, sessionState);
+    }
+
+    const nextState = sessionState || activeSessions.get(normalizedCode);
+    if (nextState && !nextState.groups) {
+        nextState.groups = new Map();
+    }
+
+    let group = null;
+    if (session?._id) {
+        group = await ensureGroupRecord(session._id, parsedGroup);
+    }
+
+    return {
+        code: normalizedCode,
+        groupNumber: parsedGroup,
+        tokenPayload,
+        session,
+        sessionState: nextState,
+        group,
+        mode: session?.mode || nextState?.mode || "summary",
+        interval: session?.interval_ms || nextState?.interval || 30000,
+        active: Boolean(session?.active || nextState?.active)
+    };
+}
+
+async function authenticateAnonymousStudent(req) {
+    const token = extractBearerToken(req.headers.authorization || "");
+    const user = await authenticateUserFromToken(token);
+    if (user?.is_anonymous !== true) {
+        throw createHttpError("Anonymous student authentication required", 403);
+    }
+    return { token, user };
+}
+
+async function authorizeStudentGroupRequest(req, sessionCode, groupNumber) {
+    const identity = await authenticateAnonymousStudent(req);
+    await assertStudentRealtimeMembership({
+        userId: identity.user.id,
+        sessionCode,
+        groupNumber
+    });
+    return identity;
+}
+
+async function buildStudentJoinState(context, realtimeUser) {
+    const { code, groupNumber, session, sessionState, mode, interval, active } = context;
+    const status = active ? "recording" : "waiting";
+    const payload = {
+        code,
+        group: groupNumber,
+        mode,
+        status,
+        interval,
+        expiresAt: session?.expires_at || sessionState?.expiresAt || null,
+        realtime: {
+            studentTopic: buildStudentRealtimeTopic(code),
+            groupTopic: buildGroupRealtimeTopic(code, groupNumber)
+        }
+    };
+    await grantRealtimeTopics({
+        userId: realtimeUser.id,
+        sessionCode: code,
+        topics: [payload.realtime.studentTopic, payload.realtime.groupTopic],
+        audience: "student",
+        groupNumber,
+        expiresAt: payload.expiresAt || Date.now() + getClassroomSessionTtlMs()
+    });
+    if (mode === "summary") {
+        const released = await isSummaryReleased({
+            sessionCode: code,
+            sessionId: session?._id || sessionState?.id || null,
+            groupNumber
+        });
+        let latestSummary = null;
+        if (released && session?._id) {
+            const group = await db.collection("groups").findOne({
+                session_id: session._id,
+                number: groupNumber
+            });
+            if (group) {
+                const summaryRecord = await db.collection("summaries").findOne({ group_id: group._id });
+                latestSummary = summaryRecord?.text || null;
+            }
+        }
+
+        payload.summaryState = {
+            sessionCode: code,
+            groupNumber,
+            isReleased: released,
+            summary: released ? latestSummary : null,
+            timestamp: Date.now()
+        };
+    } else if (mode === "checkbox") {
+        const cachedChecklist = latestChecklistState.get(`${code}-${groupNumber}`);
+        if (cachedChecklist) {
+            payload.checklistState = cachedChecklist;
+        }
+    }
+
+    return payload;
+}
+
+async function publishStudentPresence(context, event, extra = {}) {
+    const { code, groupNumber } = context;
+    await publishRealtimeEvent({
+        sessionCode: code,
+        groupNumber,
+        event,
+        audience: "session",
+        payload: {
+            group: groupNumber,
+            groupNumber,
+            ...extra
+        }
+    });
+}
+
 function resolveAppOrigin(req) {
     return process.env.APP_PUBLIC_ORIGIN || `${req.protocol}://${req.get("host")}`;
+}
+
+function normalizeNullableTimestamp(value) {
+    if (!value) {
+        return null;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sanitizeShortText(value, fallback, maxLength = 160) {
+    const normalized = String(value || "").trim().replace(/\s+/g, " ");
+    return (normalized || fallback).slice(0, maxLength);
+}
+
+function sanitizeLongText(value, fallback = "", maxLength = 4000) {
+    const normalized = String(value || "").trim();
+    return (normalized || fallback).slice(0, maxLength);
+}
+
+async function generateUniqueAsyncShareId() {
+    for (let attempt = 0; attempt < 25; attempt++) {
+        const shareId = generateAsyncShareId();
+        const existing = await db.collection("async_sessions").findOne({ share_id: shareId });
+        if (!existing) {
+            return shareId;
+        }
+    }
+
+    throw createHttpError("Failed to generate a unique async share link", 500);
+}
+
+async function getOwnedAsyncSessionOrThrow(sessionId, teacherId) {
+    const session = await db.collection("async_sessions").findOne({ _id: sessionId });
+    if (!session) {
+        throw createHttpError("Async session not found", 404);
+    }
+
+    if (session.owner_id !== teacherId) {
+        throw createHttpError("Forbidden", 403);
+    }
+
+    return session;
+}
+
+async function getAsyncSessionByShareIdOrThrow(shareId) {
+    const normalizedShareId = normalizeAsyncShareId(shareId);
+    if (!normalizedShareId) {
+        throw createHttpError("Async activity not found", 404);
+    }
+
+    const session = await db.collection("async_sessions").findOne({ share_id: normalizedShareId });
+    if (!session) {
+        throw createHttpError("Async activity not found", 404);
+    }
+
+    return session;
+}
+
+async function ensureAsyncGroup(asyncSessionId, groupNumber, displayName = "") {
+    let group = await db.collection("async_groups").findOne({
+        async_session_id: asyncSessionId,
+        group_number: groupNumber
+    });
+
+    const normalizedDisplayName = sanitizeShortText(displayName, `Group ${groupNumber}`, 100);
+    if (!group) {
+        const created = await db.collection("async_groups").insertOne({
+            _id: uuid(),
+            async_session_id: asyncSessionId,
+            group_number: groupNumber,
+            display_name: normalizedDisplayName,
+            created_at: Date.now(),
+            updated_at: Date.now()
+        });
+        return created.inserted;
+    }
+
+    if (displayName && group.display_name !== normalizedDisplayName) {
+        group = await db.collection("async_groups").findOneAndUpdate(
+            { _id: group._id },
+            {
+                $set: {
+                    display_name: normalizedDisplayName,
+                    updated_at: Date.now()
+                }
+            }
+        );
+    }
+
+    return group;
+}
+
+function buildAsyncSessionEnvelope(req, session, { includeInternal = false } = {}) {
+    const envelope = {
+        id: includeInternal ? session._id : undefined,
+        shareId: includeInternal ? session.share_id : undefined,
+        title: session.title,
+        instructions: session.instructions,
+        feedbackPrompt: includeInternal ? session.feedback_prompt || "" : undefined,
+        status: session.status,
+        maxGroupNumber: session.max_group_number || 12,
+        createdAt: session.created_at,
+        updatedAt: session.updated_at,
+        expiresAt: session.expires_at || null,
+        isOpen: isAsyncSessionOpen(session),
+        joinUrl: includeInternal ? buildAsyncJoinUrl(resolveAppOrigin(req), session.share_id) : undefined
+    };
+
+    return Object.fromEntries(Object.entries(envelope).filter(([, value]) => value !== undefined));
+}
+
+async function loadAsyncSessionGroups(asyncSessionId) {
+    const groups = await db.collection("async_groups")
+        .find({ async_session_id: asyncSessionId })
+        .sort({ group_number: 1 })
+        .toArray();
+
+    const reports = await db.collection("async_group_reports")
+        .find({ async_session_id: asyncSessionId })
+        .sort({ updated_at: -1 })
+        .toArray();
+    const reportsByGroup = new Map(reports.map((report) => [report.async_group_id, report]));
+
+    return groups.map((group) => {
+        const report = reportsByGroup.get(group._id) || null;
+        return {
+            id: group._id,
+            groupNumber: group.group_number,
+            displayName: group.display_name || `Group ${group.group_number}`,
+            createdAt: group.created_at,
+            updatedAt: group.updated_at,
+            report: report ? {
+                summary: report.summary || "",
+                feedback: report.feedback || "",
+                process: report.process || {},
+                segmentCount: report.segment_count || 0,
+                updatedAt: report.updated_at
+            } : null
+        };
+    });
+}
+
+function getAsyncMaxSegmentsPerGroup() {
+    return normalizePositiveInteger(
+        process.env.ASYNC_MAX_SEGMENTS_PER_GROUP,
+        DEFAULT_ASYNC_MAX_SEGMENTS_PER_GROUP
+    );
+}
+
+function getAsyncMaxTranscriptCharsPerGroup() {
+    return normalizePositiveInteger(
+        process.env.ASYNC_MAX_TRANSCRIPT_CHARS_PER_GROUP,
+        DEFAULT_ASYNC_MAX_TRANSCRIPT_CHARS_PER_GROUP
+    );
+}
+
+async function loadAsyncGroupSegments(groupId) {
+    return db.collection("async_segments")
+        .find({ async_group_id: groupId })
+        .sort({ created_at: 1 })
+        .toArray();
+}
+
+function getAsyncTranscriptCharCount(segments = []) {
+    return segments.reduce((total, segment) => total + String(segment.text || "").length, 0);
+}
+
+async function assertAsyncGroupCanAcceptUpload(group) {
+    const previousSegments = await loadAsyncGroupSegments(group._id);
+
+    if (previousSegments.length >= getAsyncMaxSegmentsPerGroup()) {
+        throw createHttpError("This group has reached the upload limit for this activity", 429);
+    }
+
+    if (getAsyncTranscriptCharCount(previousSegments) >= getAsyncMaxTranscriptCharsPerGroup()) {
+        throw createHttpError("This group has reached the transcript limit for this activity", 429);
+    }
+
+    return previousSegments;
+}
+
+async function buildAsyncGroupReport({ session, group, latestText, latestDuration, chunkId = null, previousSegments = null }) {
+    const existingSegments = previousSegments || (await loadAsyncGroupSegments(group._id));
+    const now = Date.now();
+    const cleanedText = await cleanTranscriptChunk(latestText, {
+        previousSegments: existingSegments
+    });
+    const finalText = cleanedText || latestText;
+    if (getAsyncTranscriptCharCount(existingSegments) + finalText.length > getAsyncMaxTranscriptCharsPerGroup()) {
+        throw createHttpError("This group has reached the transcript limit for this activity", 429);
+    }
+
+    const wordCount = countTranscriptWords(finalText);
+    const segmentNumber = existingSegments.length + 1;
+    const created = await db.collection("async_segments").insertOne({
+        _id: uuid(),
+        async_session_id: session._id,
+        async_group_id: group._id,
+        segment_number: segmentNumber,
+        text: finalText,
+        word_count: wordCount,
+        duration_seconds: latestDuration,
+        client_chunk_id: chunkId,
+        created_at: now
+    });
+
+    const segments = [...existingSegments, created.inserted];
+    const transcriptText = segments.map((segment) => segment.text).join("\n\n");
+    const analysis = await analyzeAsyncDiscussion({
+        transcriptText,
+        segments,
+        instructions: session.instructions,
+        feedbackPrompt: session.feedback_prompt || ""
+    });
+
+    const report = await db.collection("async_group_reports").findOneAndUpdate(
+        { async_group_id: group._id },
+        {
+            $set: {
+                _id: uuid(),
+                async_session_id: session._id,
+                async_group_id: group._id,
+                summary: analysis.summary,
+                feedback: analysis.feedback,
+                process: analysis.process,
+                segment_count: segments.length,
+                created_at: now,
+                updated_at: now
+            }
+        },
+        { upsert: true }
+    );
+
+    return {
+        transcript: finalText,
+        segment: created.inserted,
+        report
+    };
 }
 
 export function validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber }) {
     const normalizedSessionCode = String(sessionCode || "").trim().toUpperCase();
     if (!file || (!joinToken && !normalizedSessionCode) || !Number.isFinite(groupNumber) || groupNumber <= 0) {
         throw createHttpError("Missing file, session code, or group number", 400);
+    }
+}
+
+function allowMockAudioPayloads() {
+    return process.env.ALLOW_DEV_TEST === "true" && process.env.MOCK_AI_SERVICES === "true";
+}
+
+export function validateAudioUploadPayload(file) {
+    if (!file?.buffer?.length) {
+        throw createHttpError("Missing audio file", 400);
+    }
+
+    if (allowMockAudioPayloads()) {
+        return;
+    }
+
+    if (!isLikelySupportedAudioBuffer(file.buffer, file.mimetype)) {
+        throw createHttpError("Invalid or unsupported audio file", 400);
     }
 }
 
@@ -223,6 +761,292 @@ function extractTranscriptMetrics(transcription) {
         duration
     };
 }
+
+router.post("/session/:code/student-join", express.json(), async (req, res) => {
+    try {
+        const { user: realtimeUser } = await authenticateAnonymousStudent(req);
+        const context = await resolveStudentSessionContext({
+            sessionCode: req.params.code,
+            joinToken: req.body?.token || req.query?.token,
+            groupNumber: req.body?.group ?? req.query?.group
+        });
+
+        const mem = context.sessionState || activeSessions.get(context.code);
+        if (mem) {
+            if (!mem.groups) mem.groups = new Map();
+            mem.groups.set(context.groupNumber, {
+                ...(mem.groups.get(context.groupNumber) || {}),
+                joined: true,
+                recording: Boolean(mem.active),
+                lastAck: Date.now()
+            });
+            activeSessions.set(context.code, mem);
+        }
+
+        const payload = await buildStudentJoinState(context, realtimeUser);
+        await publishStudentPresence(context, REALTIME_EVENTS.STUDENT_JOINED, {
+            summaryReleased: payload.summaryState?.isReleased
+        });
+
+        res.json(payload);
+    } catch (err) {
+        console.error("❌ Failed to join student session:", err);
+        sendRouteError(res, err, "Failed to join session");
+    }
+});
+
+router.post("/session/:code/student-event", express.json(), async (req, res) => {
+    try {
+        const event = String(req.body?.event || "").trim();
+        const context = await resolveStudentSessionContext({
+            sessionCode: req.params.code,
+            joinToken: req.body?.token,
+            groupNumber: req.body?.group ?? req.body?.groupNumber
+        });
+        await authorizeStudentGroupRequest(req, context.code, context.groupNumber);
+
+        const mem = context.sessionState || activeSessions.get(context.code);
+        if (mem) {
+            if (!mem.groups) mem.groups = new Map();
+            const currentGroupState = mem.groups.get(context.groupNumber) || {};
+            mem.groups.set(context.groupNumber, {
+                ...currentGroupState,
+                joined: true,
+                recording: event === "recording_started" ? true : currentGroupState.recording,
+                lastAck: Date.now()
+            });
+            activeSessions.set(context.code, mem);
+        }
+
+        if (event === REALTIME_EVENTS.UPLOAD_STATUS || event === "upload_status") {
+            await publishRealtimeEvent({
+                sessionCode: context.code,
+                groupNumber: context.groupNumber,
+                event: REALTIME_EVENTS.UPLOAD_STATUS,
+                audience: "session",
+                payload: {
+                    group: context.groupNumber,
+                    ...req.body?.payload
+                }
+            });
+        } else if (event === REALTIME_EVENTS.UPLOAD_ERROR || event === "upload_error") {
+            await publishRealtimeEvent({
+                sessionCode: context.code,
+                groupNumber: context.groupNumber,
+                event: REALTIME_EVENTS.UPLOAD_ERROR,
+                audience: "session",
+                payload: {
+                    group: context.groupNumber,
+                    ...req.body?.payload
+                }
+            });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("❌ Failed to process student event:", err);
+        sendRouteError(res, err, "Failed to process student event");
+    }
+});
+
+router.post("/session/:code/student-leave", express.json(), async (req, res) => {
+    try {
+        const context = await resolveStudentSessionContext({
+            sessionCode: req.params.code,
+            joinToken: req.body?.token,
+            groupNumber: req.body?.group ?? req.body?.groupNumber
+        });
+        await authorizeStudentGroupRequest(req, context.code, context.groupNumber);
+
+        const mem = context.sessionState || activeSessions.get(context.code);
+        if (mem?.groups) {
+            mem.groups.delete(context.groupNumber);
+            activeSessions.set(context.code, mem);
+        }
+
+        await publishStudentPresence(context, REALTIME_EVENTS.STUDENT_LEFT);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("❌ Failed to leave student session:", err);
+        sendRouteError(res, err, "Failed to leave session");
+    }
+});
+
+router.post("/session/:code/release-summary", express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const code = normalizeSessionCode(req.params.code);
+        const groupNumber = normalizeGroupNumber(req.body?.groupNumber ?? req.body?.group);
+        if (!groupNumber) {
+            throw createHttpError("Invalid group number", 400);
+        }
+
+        const { session, memory } = await getOwnedSessionContext(code, teacher.id);
+        const sessionId = session?._id || memory?.id || null;
+        const summaryRelease = await recordSummaryRelease({
+            sessionCode: code,
+            sessionId,
+            groupNumber,
+            isReleased: req.body?.isReleased !== false
+        });
+
+        let latestSummary = null;
+        if (sessionId) {
+            const group = await db.collection("groups").findOne({
+                session_id: sessionId,
+                number: groupNumber
+            });
+            if (group) {
+                const summaryRecord = await db.collection("summaries").findOne({ group_id: group._id });
+                latestSummary = summaryRecord?.text || null;
+            }
+        }
+
+        const summaryState = {
+            sessionCode: code,
+            groupNumber,
+            isReleased: summaryRelease.isReleased,
+            summary: summaryRelease.isReleased ? latestSummary : null,
+            timestamp: summaryRelease.timestamp
+        };
+
+        await publishRealtimeEvent({
+            sessionCode: code,
+            groupNumber,
+            event: REALTIME_EVENTS.SUMMARY_STATE,
+            audience: "both",
+            payload: summaryState
+        });
+
+        res.json({ success: true, summaryState });
+    } catch (err) {
+        console.error("❌ Failed to release summary:", err);
+        sendRouteError(res, err, "Failed to release summary");
+    }
+});
+
+router.post("/checkbox/:sessionCode/release", express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const sessionCode = normalizeSessionCode(req.params.sessionCode);
+        const groupNumber = normalizeGroupNumber(req.body?.groupNumber ?? req.body?.group);
+        if (!groupNumber) {
+            throw createHttpError("Invalid group number", 400);
+        }
+
+        const { session } = await getOwnedSessionContext(sessionCode, teacher.id);
+        if (!session) {
+            throw createHttpError("Persisted checkbox session required before release", 404);
+        }
+
+        const cacheKey = `${sessionCode}-${groupNumber}`;
+        const cached = latestChecklistState.get(cacheKey);
+        const existingCheckboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
+        const nowTs = Date.now();
+        const updatedCheckboxSession = {
+            ...(existingCheckboxSession || {}),
+            session_id: session._id,
+            scenario: existingCheckboxSession?.scenario ?? req.body?.scenario ?? "",
+            released_groups: {
+                ...(existingCheckboxSession?.released_groups || {}),
+                [groupNumber]: req.body?.isReleased !== false
+            },
+            release_timestamps: {
+                ...(existingCheckboxSession?.release_timestamps || {}),
+                [groupNumber]: nowTs
+            },
+            updated_at: nowTs
+        };
+
+        await db.collection("checkbox_sessions").findOneAndUpdate(
+            { session_id: session._id },
+            { $set: updatedCheckboxSession },
+            { upsert: true }
+        );
+
+        const dbCriteria = await db.collection("checkbox_criteria")
+            .find({ session_id: session._id })
+            .sort({ order_index: 1, created_at: 1 })
+            .toArray();
+        const progressDoc = await db.collection("checkbox_progress").findOne({
+            session_id: session._id,
+            group_number: groupNumber
+        });
+        const progressMap = progressDoc?.progress || {};
+        const incomingCriteria = Array.isArray(req.body?.criteria) ? req.body.criteria : [];
+
+        let finalCriteria = dbCriteria.map((criterion, index) => {
+            const progress = progressMap[String(criterion._id)];
+            return {
+                id: index,
+                dbId: criterion._id,
+                description: criterion.description,
+                rubric: criterion.rubric || "",
+                status: progress?.status || "grey",
+                completed: progress?.completed || (progress?.status === "green") || false,
+                quote: progress?.quote || null
+            };
+        });
+
+        if (finalCriteria.length === 0) {
+            finalCriteria = incomingCriteria.map((criterion, index) => ({
+                id: Number(criterion.id ?? index),
+                dbId: criterion.dbId,
+                description: criterion.description,
+                rubric: criterion.rubric || "",
+                status: criterion.status || "grey",
+                completed: criterion.status === "green" ? true : Boolean(criterion.completed),
+                quote: criterion.quote ?? null
+            }));
+        }
+
+        if (cached && Array.isArray(cached.criteria) && cached.criteria.length > 0) {
+            const cachedById = new Map(cached.criteria.map((item) => [Number(item.id), item]));
+            finalCriteria = finalCriteria.map((item) => {
+                const cachedItem = cachedById.get(Number(item.id));
+                if (!cachedItem) return item;
+                const cachedStatus = cachedItem.status || "grey";
+                const preferCached = cachedStatus === "green" || (item.status === "grey" && cachedStatus !== "grey");
+                return preferCached
+                    ? {
+                        ...item,
+                        status: cachedStatus,
+                        completed: cachedStatus === "green" ? true : item.completed,
+                        quote: cachedItem.quote && cachedItem.quote !== "null" ? cachedItem.quote : item.quote
+                    }
+                    : item;
+            });
+        }
+
+        finalCriteria = finalCriteria.slice().sort((left, right) => Number(left.id) - Number(right.id));
+        const checklistData = {
+            sessionCode,
+            groupNumber,
+            criteria: finalCriteria,
+            scenario: updatedCheckboxSession.scenario || req.body?.scenario || "",
+            timestamp: Date.now(),
+            isReleased: req.body?.isReleased !== false
+        };
+
+        await publishRealtimeEvent({
+            sessionCode,
+            groupNumber,
+            event: REALTIME_EVENTS.CHECKLIST_STATE,
+            audience: "both",
+            payload: checklistData
+        });
+        latestChecklistState.set(cacheKey, checklistData);
+
+        res.json({ success: true, checklistState: checklistData });
+    } catch (err) {
+        console.error("❌ Failed to release checklist:", err);
+        sendRouteError(res, err, "Failed to release checklist");
+    }
+});
 
 async function listAllPrompts() {
     const prompts = await db.collection("teacher_prompts")
@@ -312,6 +1136,82 @@ function buildCheckboxCriteriaForTest(lines = []) {
     }).filter((criterion) => criterion.description);
 }
 
+router.post("/auth/otp/send", authLimiter, express.json(), async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!email || !email.includes("@") || email.length > 254) {
+        return res.status(400).json({ error: "Enter a valid email address" });
+    }
+
+    try {
+        const allowed = await isTeacherEmailAllowedForLogin(email);
+        if (allowed) {
+            const redirectOrigin = process.env.APP_PUBLIC_ORIGIN || `${req.protocol}://${req.get("host")}`;
+            const { error } = await createSupabaseAuthClient().auth.signInWithOtp({
+                email,
+                options: {
+                    shouldCreateUser: true,
+                    emailRedirectTo: `${redirectOrigin.replace(/\/$/, "")}/admin`
+                }
+            });
+            if (error) throw error;
+        }
+
+        // Keep the response identical so the endpoint does not disclose approved accounts.
+        return res.json({ success: true, message: "If this address is approved, a code has been sent." });
+    } catch (error) {
+        console.error("❌ Failed to send teacher OTP:", error.message);
+        return res.status(503).json({ error: "Unable to send a login code right now" });
+    }
+});
+
+router.post("/auth/otp/verify", authLimiter, express.json(), async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const token = String(req.body?.token || "").replace(/\s+/g, "");
+    if (!email || !token || token.length > 128) {
+        return res.status(400).json({ error: "Email and verification code are required" });
+    }
+
+    try {
+        const { data, error } = await createSupabaseAuthClient().auth.verifyOtp({ email, token, type: "email" });
+        if (error || !data?.user) {
+            clearTeacherSessionCookie(res);
+            return res.status(401).json({ error: "That code is expired or invalid. Request a new code." });
+        }
+
+        const teacher = await authorizeTeacherUser(data.user);
+        if (!data.session?.access_token || !data.session?.refresh_token) {
+            throw createHttpError("Supabase did not return a refreshable teacher session", 503);
+        }
+        const cookie = setTeacherSessionCookie(res, teacher, data.session);
+        return res.json({
+            success: true,
+            expiresAt: cookie.expiresAt,
+            user: {
+                id: teacher.id,
+                email: teacher.email,
+                role: teacher.role || "teacher",
+                isAdmin: Boolean(teacher.isAdmin || teacher.role === "admin")
+            }
+        });
+    } catch (error) {
+        clearTeacherSessionCookie(res);
+        const status = error?.status === 403 ? 403 : 500;
+        return res.status(status).json({
+            error: status === 403 ? "Teacher access is not approved" : "Unable to verify the login code"
+        });
+    }
+});
+
+router.post("/auth/logout", async (req, res) => {
+    if (req.authToken) {
+        await supabase.auth.admin.signOut(req.authToken, "local").catch((error) => {
+            console.warn("⚠️ Supabase teacher sign-out failed:", error.message);
+        });
+    }
+    clearTeacherSessionCookie(res);
+    res.json({ success: true });
+});
+
 router.get("/auth/me", async (req, res) => {
     const teacher = await requireTeacher(req, res);
     if (!teacher) return;
@@ -336,12 +1236,13 @@ router.post("/test-transcription", aiLimiter, upload.single('audio'), async (req
         if (!req.file) {
             return res.status(400).json({ error: "No audio file provided" });
         }
+        validateAudioUploadPayload(req.file);
 
         const audioBuffer = req.file.buffer;
 
         // Test the transcription function
         const startTime = Date.now();
-        const transcription = await transcribe(audioBuffer);
+        const transcription = await transcribe(audioBuffer, req.file.mimetype);
         const endTime = Date.now();
 
         const debug = {
@@ -359,9 +1260,9 @@ router.post("/test-transcription", aiLimiter, upload.single('audio'), async (req
 
     } catch (err) {
         console.error("❌ Test transcription error:", err);
-        res.status(500).json({
-            error: "Transcription failed",
-            details: err.message,
+        res.status(err.status || 500).json({
+            error: err.status ? err.message : "Transcription failed",
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined,
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });
     }
@@ -399,7 +1300,7 @@ router.post("/test-summary", aiLimiter, express.json(), async (req, res) => {
         console.error("❌ Test summary error:", err);
         res.status(500).json({
             error: "Summary failed",
-            details: err.message,
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined,
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });
     }
@@ -460,13 +1361,252 @@ router.post("/test-prompt", aiLimiter, express.json(), async (req, res) => {
         console.error("❌ Test prompt error:", err);
         res.status(500).json({
             error: "Prompt test failed",
-            details: err.message,
+            details: process.env.NODE_ENV === "development" ? err.message : undefined,
             stack: process.env.NODE_ENV === "development" ? err.stack : undefined
         });
     }
 });
 
-router.get("/new-session", async (req, res) => {
+router.get("/async/sessions", async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const sessions = await db.collection("async_sessions")
+            .find({ owner_id: teacher.id })
+            .sort({ created_at: -1 })
+            .limit(30)
+            .toArray();
+
+        const payload = await Promise.all(sessions.map(async (session) => ({
+            ...buildAsyncSessionEnvelope(req, session, { includeInternal: true }),
+            groups: await loadAsyncSessionGroups(session._id)
+        })));
+
+        res.json({ sessions: payload });
+    } catch (err) {
+        console.error("❌ Failed to list async sessions:", err);
+        sendRouteError(res, err, "Failed to list async sessions");
+    }
+});
+
+router.post("/async/sessions", express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const title = sanitizeShortText(req.body?.title, "Asynchronous discussion", 140);
+        const instructions = sanitizeLongText(
+            req.body?.instructions,
+            "Record your group discussion. Explain your reasoning, alternatives, decisions, and questions.",
+            6000
+        );
+        const feedbackPrompt = sanitizeLongText(
+            req.body?.feedbackPrompt,
+            "Give concise feedback on the group's reasoning and process.",
+            4000
+        );
+        const maxGroupNumber = normalizeAsyncGroupNumber(req.body?.maxGroupNumber, 99) || 12;
+        const expiresAt = normalizeNullableTimestamp(req.body?.expiresAt);
+        const shareId = await generateUniqueAsyncShareId();
+        const now = Date.now();
+
+        const inserted = await db.collection("async_sessions").insertOne({
+            _id: uuid(),
+            owner_id: teacher.id,
+            share_id: shareId,
+            title,
+            instructions,
+            feedback_prompt: feedbackPrompt,
+            status: "open",
+            max_group_number: maxGroupNumber,
+            created_at: now,
+            updated_at: now,
+            expires_at: expiresAt,
+            closed_at: null
+        });
+
+        res.status(201).json({
+            session: {
+                ...buildAsyncSessionEnvelope(req, inserted.inserted, { includeInternal: true }),
+                groups: []
+            }
+        });
+    } catch (err) {
+        console.error("❌ Failed to create async session:", err);
+        sendRouteError(res, err, "Failed to create async session");
+    }
+});
+
+router.get("/async/sessions/:id", async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const session = await getOwnedAsyncSessionOrThrow(req.params.id, teacher.id);
+        res.json({
+            session: {
+                ...buildAsyncSessionEnvelope(req, session, { includeInternal: true }),
+                groups: await loadAsyncSessionGroups(session._id)
+            }
+        });
+    } catch (err) {
+        console.error("❌ Failed to load async session:", err);
+        sendRouteError(res, err, "Failed to load async session");
+    }
+});
+
+router.post("/async/sessions/:id/status", express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const session = await getOwnedAsyncSessionOrThrow(req.params.id, teacher.id);
+        const status = req.body?.status === "closed" ? "closed" : "open";
+        const now = Date.now();
+        const updated = await db.collection("async_sessions").findOneAndUpdate(
+            { _id: session._id },
+            {
+                $set: {
+                    status,
+                    updated_at: now,
+                    closed_at: status === "closed" ? now : null
+                }
+            }
+        );
+
+        res.json({
+            session: {
+                ...buildAsyncSessionEnvelope(req, updated, { includeInternal: true }),
+                groups: await loadAsyncSessionGroups(updated._id)
+            }
+        });
+    } catch (err) {
+        console.error("❌ Failed to update async session status:", err);
+        sendRouteError(res, err, "Failed to update async session status");
+    }
+});
+
+router.get("/async/join/:shareId", asyncJoinLimiter, async (req, res) => {
+    try {
+        const session = await getAsyncSessionByShareIdOrThrow(req.params.shareId);
+        res.json({ session: buildAsyncSessionEnvelope(req, session) });
+    } catch (err) {
+        console.error("❌ Failed to load async join link:", err);
+        sendRouteError(res, err, "Failed to load async activity");
+    }
+});
+
+router.post("/async/join/:shareId/groups", asyncJoinLimiter, express.json(), async (req, res) => {
+    try {
+        const session = await getAsyncSessionByShareIdOrThrow(req.params.shareId);
+        if (!isAsyncSessionOpen(session)) {
+            throw createHttpError("This asynchronous activity is closed", 403);
+        }
+
+        const groupNumber = normalizeAsyncGroupNumber(req.body?.groupNumber, session.max_group_number || 12);
+        if (!groupNumber) {
+            throw createHttpError("Invalid group number", 400);
+        }
+
+        const group = await ensureAsyncGroup(session._id, groupNumber, req.body?.displayName);
+        const report = await db.collection("async_group_reports").findOne({ async_group_id: group._id });
+        res.json({
+            group: {
+                groupNumber: group.group_number,
+                displayName: group.display_name || `Group ${group.group_number}`,
+                report: report ? {
+                    summary: report.summary || "",
+                    feedback: report.feedback || "",
+                    process: report.process || {},
+                    segmentCount: report.segment_count || 0,
+                    updatedAt: report.updated_at
+                } : null
+            }
+        });
+    } catch (err) {
+        console.error("❌ Failed to join async activity:", err);
+        sendRouteError(res, err, "Failed to join async activity");
+    }
+});
+
+router.post("/async/join/:shareId/upload", asyncUploadLimiter, upload.single("file"), async (req, res) => {
+    try {
+        const session = await getAsyncSessionByShareIdOrThrow(req.params.shareId);
+        if (!isAsyncSessionOpen(session)) {
+            throw createHttpError("This asynchronous activity is closed", 403);
+        }
+
+        const groupNumber = normalizeAsyncGroupNumber(req.body?.groupNumber, session.max_group_number || 12);
+        const requestedChunkId = String(req.body?.chunkId || "").trim();
+        const chunkId = /^[a-zA-Z0-9_-]{16,100}$/.test(requestedChunkId) ? requestedChunkId : null;
+        if (!req.file || !groupNumber) {
+            throw createHttpError("Missing file or group number", 400);
+        }
+        validateAudioUploadPayload(req.file);
+
+        const group = await ensureAsyncGroup(session._id, groupNumber, req.body?.displayName);
+        const previousSegments = await assertAsyncGroupCanAcceptUpload(group);
+        const duplicateSegment = chunkId
+            ? previousSegments.find((segment) => segment.client_chunk_id === chunkId)
+            : null;
+        if (duplicateSegment) {
+            const report = await db.collection("async_group_reports").findOne({ async_group_id: group._id });
+            return res.json({
+                success: true,
+                duplicate: true,
+                transcript: duplicateSegment.text,
+                report: report ? {
+                    summary: report.summary || "",
+                    feedback: report.feedback || "",
+                    process: report.process || {},
+                    segmentCount: report.segment_count || 0,
+                    updatedAt: report.updated_at
+                } : null
+            });
+        }
+        const transcription = await transcribe(req.file.buffer, req.file.mimetype);
+        const { text, duration } = extractTranscriptMetrics(transcription);
+
+        if (!text || isIgnorableTranscriptionText(text)) {
+            return res.json({ success: true, skipped: true, reason: "No speech detected", chunkId });
+        }
+
+        const { transcript, report } = await buildAsyncGroupReport({
+            session,
+            group,
+            latestText: text,
+            latestDuration: duration,
+            chunkId,
+            previousSegments
+        });
+
+        res.json({
+            success: true,
+            group: {
+                groupNumber: group.group_number,
+                displayName: group.display_name || `Group ${group.group_number}`
+            },
+            transcript,
+            report: {
+                summary: report.summary || "",
+                feedback: report.feedback || "",
+                process: report.process || {},
+                segmentCount: report.segment_count || 0,
+                updatedAt: report.updated_at
+            }
+        });
+    } catch (err) {
+        console.error("❌ Failed to process async upload:", err);
+        sendRouteError(res, err, "Failed to process async upload");
+    }
+});
+
+router.get("/new-session", (_req, res) => {
+    res.status(405).json({ error: "Use POST to create a session" });
+});
+
+router.post("/new-session", async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
@@ -474,27 +1614,56 @@ router.get("/new-session", async (req, res) => {
         const mode = req.query.mode === "checkbox" ? "checkbox" : "summary";
         const code = await generateUniqueSessionCode();
         const createdAt = Date.now();
+        const expiresAt = createdAt + getClassroomSessionTtlMs();
+        const persistedSession = await ensureSessionRecord({
+            code,
+            teacherId: teacher.id,
+            mode,
+            intervalMs: 30000,
+            createdAt,
+            active: false,
+            expiresAt
+        });
 
         activeSessions.set(code, {
+            id: persistedSession._id,
             code,
             ownerId: teacher.id,
             active: false,
             interval: 30000,
             startTime: null,
             created_at: createdAt,
-            persisted: false,
+            persisted: true,
+            expiresAt,
             mode,
             groups: new Map()
+        });
+        scheduleClassroomExpiry(code, expiresAt);
+        if (!req.teacherSupabaseAccessToken && process.env.NODE_ENV === "production") {
+            throw createHttpError("A refreshable Supabase teacher session is required", 401);
+        }
+        await grantRealtimeTopics({
+            userId: teacher.id,
+            sessionCode: code,
+            topics: [buildSessionRealtimeTopic(code)],
+            audience: "teacher",
+            expiresAt
         });
 
         res.json({
             code,
             mode,
-            interval: 30000
+            interval: 30000,
+            createdAt: new Date(createdAt).toISOString(),
+            expiresAt: new Date(expiresAt).toISOString(),
+            realtime: {
+                teacherTopic: buildSessionRealtimeTopic(code),
+                accessToken: req.teacherSupabaseAccessToken || null
+            }
         });
     } catch (err) {
         console.error("❌ Failed to create session:", err);
-        res.status(err.status || 500).json({ error: err.message || "Failed to create session" });
+        sendRouteError(res, err, "Failed to create session");
     }
 });
 
@@ -521,7 +1690,7 @@ router.post("/session/:code/join-token", async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Failed to create join token:", err);
-        res.status(err.status || 500).json({ error: err.message || "Failed to create join token" });
+        sendRouteError(res, err, "Failed to create join token");
     }
 });
 
@@ -537,6 +1706,13 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
         const createdAt = session?.created_at || memory?.created_at || Date.now();
         const startTime = Date.now();
 
+        if (isClassroomSessionExpired(session, memory, startTime)) {
+            throw createHttpError("Session expired. Create a new session.", 410);
+        }
+        if (session?.ended_reason || session?.end_time || memory?.stopRequestedAt) {
+            throw createHttpError("Session ended. Create a new session.", 409);
+        }
+
         let persistedSession = session;
         if (!persistedSession) {
             persistedSession = await ensureSessionRecord({
@@ -546,7 +1722,8 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                 intervalMs,
                 createdAt,
                 active: true,
-                startTime
+                startTime,
+                expiresAt: createdAt + getClassroomSessionTtlMs()
             });
         }
 
@@ -559,11 +1736,13 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                     active: true,
                     interval_ms: intervalMs,
                     start_time: persistedSession.start_time || startTime,
-                    end_time: null
+                    end_time: null,
+                    ended_reason: null
                 }
             }
         );
         persistedSession = await db.collection("sessions").findOne({ _id: persistedSession._id });
+        const expiresAt = Number(persistedSession.expires_at || createdAt + getClassroomSessionTtlMs());
 
         activeSessions.set(code, {
             ...(memory || {}),
@@ -578,22 +1757,30 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             mode: requestedMode,
             groups: memory?.groups || new Map(),
             checkbox: memory?.checkbox,
+            expiresAt,
             acceptUploadsUntil: null,
             stopRequestedAt: null
         });
 
-        const io = req.app.get("io");
-        io?.to(code).emit("record_now", intervalMs);
+        scheduleClassroomExpiry(code, expiresAt);
+
+        await publishRealtimeEvent({
+            sessionCode: code,
+            event: REALTIME_EVENTS.RECORD_NOW,
+            audience: "all",
+            payload: { interval: intervalMs }
+        });
 
         res.json({
             success: true,
             code,
             mode: requestedMode,
-            interval: intervalMs
+            interval: intervalMs,
+            expiresAt: new Date(expiresAt).toISOString()
         });
     } catch (err) {
         console.error("❌ Failed to start session:", err);
-        res.status(err.status || 500).json({ error: err.message || "Failed to start session" });
+        sendRouteError(res, err, "Failed to start session");
     }
 });
 
@@ -619,6 +1806,7 @@ router.post("/session/:code/stop", async (req, res) => {
                     $set: {
                         active: false,
                         end_time: endedAt,
+                        ended_reason: "teacher",
                         total_duration_seconds: totalDurationSeconds
                     }
                 }
@@ -649,13 +1837,33 @@ router.post("/session/:code/stop", async (req, res) => {
             });
         }
 
-        const io = req.app.get("io");
-        io?.to(code).emit("stop_recording");
+        await publishRealtimeEvent({
+            sessionCode: code,
+            event: REALTIME_EVENTS.STOP_RECORDING,
+            audience: "all",
+            payload: {}
+        });
+        await revokeSessionRealtimeMemberships(code);
+        const terminalTimer = setTimeout(() => {
+            void publishRealtimeEvent({
+                sessionCode: code,
+                event: REALTIME_EVENTS.SESSION_ENDED,
+                audience: "all",
+                payload: { reason: "teacher", endedAt }
+            });
+        }, FINAL_UPLOAD_GRACE_MS);
+        terminalTimer.unref?.();
 
-        res.json({ success: true, code });
+        const expiryTimer = sessionTimers.get(code);
+        if (expiryTimer) {
+            clearTimeout(expiryTimer);
+            sessionTimers.delete(code);
+        }
+
+        res.json({ success: true, code, endedAt: new Date(endedAt).toISOString() });
     } catch (err) {
         console.error("❌ Failed to stop session:", err);
-        res.status(err.status || 500).json({ error: err.message || "Failed to stop session" });
+        sendRouteError(res, err, "Failed to stop session");
     }
 });
 
@@ -757,7 +1965,9 @@ router.get("/prompt-library", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const prompts = await listAllPrompts();
+        const prompts = (await listAllPrompts())
+            .filter((prompt) => canTeacherViewPrompt(prompt, teacher))
+            .map((prompt) => decoratePromptForTeacher(prompt, teacher));
         res.json(prompts);
     } catch (err) {
         console.error("❌ Failed to load prompt library:", err);
@@ -770,7 +1980,8 @@ router.get("/prompts", async (req, res) => {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
 
-        const prompts = await listAllPrompts();
+        const prompts = (await listAllPrompts())
+            .filter((prompt) => canTeacherViewPrompt(prompt, teacher));
         const filteredPrompts = filterPrompts(prompts, {
             search: req.query.search,
             category: req.query.category,
@@ -782,7 +1993,8 @@ router.get("/prompts", async (req, res) => {
         const page = filteredPrompts
             .slice(offset, offset + limit)
             .map((prompt) => decoratePromptForTeacher(prompt, teacher));
-        const categories = [...new Set(prompts.map((prompt) => prompt.category).filter(Boolean))].sort();
+        const categories = [...new Set(prompts.map((prompt) => prompt.category).filter(Boolean))]
+            .sort((left, right) => left.localeCompare(right));
 
         res.json({
             prompts: page,
@@ -806,6 +2018,9 @@ router.post("/prompts", express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
+        if (!canTeacherCreatePrompt(teacher)) {
+            return res.status(403).json({ error: "Guests cannot create prompts" });
+        }
 
         const now = Date.now();
         const payload = {
@@ -907,9 +2122,12 @@ router.post("/prompts/:id/clone", express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
+        if (!canTeacherCreatePrompt(teacher)) {
+            return res.status(403).json({ error: "Guests cannot clone prompts" });
+        }
 
         const sourcePrompt = normalizePromptRecord(await db.collection("teacher_prompts").findOne({ _id: req.params.id }));
-        if (!sourcePrompt) {
+        if (!sourcePrompt || !canTeacherViewPrompt(sourcePrompt, teacher)) {
             return res.status(404).json({ error: "Prompt not found" });
         }
 
@@ -944,7 +2162,7 @@ router.post("/prompts/:id/use", express.json(), async (req, res) => {
         if (!teacher) return;
 
         const prompt = await db.collection("teacher_prompts").findOne({ _id: req.params.id });
-        if (!prompt) {
+        if (!prompt || !canTeacherViewPrompt(prompt, teacher)) {
             return res.status(404).json({ error: "Prompt not found" });
         }
 
@@ -973,8 +2191,19 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
         const joinToken = String(req.body?.joinToken || "").trim();
         const sessionCode = String(req.body?.sessionCode || "").trim().toUpperCase();
         const groupNumber = Number(req.body?.groupNumber);
+        const requestedChunkId = String(req.body?.chunkId || "").trim();
+        const chunkId = /^[a-zA-Z0-9_-]{16,100}$/.test(requestedChunkId) ? requestedChunkId : null;
 
         validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber });
+        validateAudioUploadPayload(file);
+
+        let authorizedSessionCode = sessionCode;
+        if (joinToken) {
+            authorizedSessionCode = verifyJoinToken(joinToken, {
+                expectedSessionCode: sessionCode || undefined
+            }).sessionCode;
+        }
+        await authorizeStudentGroupRequest(req, authorizedSessionCode, groupNumber);
 
         let session;
         let memory;
@@ -1027,14 +2256,17 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
 
         const sessionMode = session.mode || memory?.mode || "summary";
         const group = await ensureGroupRecord(session._id, groupNumber);
+        const existingTranscriptBundle = await getTranscriptBundle(session._id, group._id);
+        if (chunkId && hasTranscriptSegment(existingTranscriptBundle.segments, chunkId)) {
+            return res.json({ success: true, duplicate: true, chunkId });
+        }
         const transcription = await transcribe(file.buffer, file.mimetype);
         const { text, duration } = extractTranscriptMetrics(transcription);
 
         if (!text || isIgnorableTranscriptionText(text)) {
-            return res.json({ success: true, skipped: true });
+            return res.json({ success: true, skipped: true, reason: "No speech detected", chunkId });
         }
 
-        const existingTranscriptBundle = await getTranscriptBundle(session._id, group._id);
         const cleanedText = await cleanTranscriptChunk(text, {
             previousSegments: existingTranscriptBundle.segments
         });
@@ -1043,7 +2275,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
 
         const now = Date.now();
         const transcriptRecord = createTranscriptRecord({
-            id: uuid(),
+            id: chunkId || uuid(),
             sessionId: session._id,
             groupId: group._id,
             text: finalTranscriptText,
@@ -1060,7 +2292,6 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             segment: transcriptRecord.segment
         });
 
-        const io = req.app.get("io");
 
         if (sessionMode === "checkbox") {
             const checkboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
@@ -1075,7 +2306,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             }
 
             if (criteriaRecords.length === 0) {
-                io?.to(resolvedSessionCode).emit("checkbox_update", {
+                const checkboxUpdate = {
                     group: groupNumber,
                     latestTranscript: finalTranscriptText,
                     checkboxes: [],
@@ -1087,6 +2318,13 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                     },
                     isActive: true,
                     isReleased: false
+                };
+                await publishRealtimeEvent({
+                    sessionCode: resolvedSessionCode,
+                    groupNumber,
+                    event: REALTIME_EVENTS.CHECKBOX_UPDATE,
+                    audience: "session",
+                    payload: checkboxUpdate
                 });
 
                 return res.json({
@@ -1177,7 +2415,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 sessionCode: resolvedSessionCode
             };
 
-            io?.to(resolvedSessionCode).emit("checkbox_update", {
+            const checkboxUpdate = {
                 group: groupNumber,
                 latestTranscript: finalTranscriptText,
                 checkboxUpdates: progressUpdates,
@@ -1190,9 +2428,21 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 },
                 isActive: true,
                 isReleased
+            };
+            await publishRealtimeEvent({
+                sessionCode: resolvedSessionCode,
+                groupNumber,
+                event: REALTIME_EVENTS.CHECKBOX_UPDATE,
+                audience: "session",
+                payload: checkboxUpdate
             });
-            io?.to(resolvedSessionCode).emit("checklist_state", checklistData);
-            io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("checklist_state", checklistData);
+            await publishRealtimeEvent({
+                sessionCode: resolvedSessionCode,
+                groupNumber,
+                event: REALTIME_EVENTS.CHECKLIST_STATE,
+                audience: "both",
+                payload: checklistData
+            });
             latestChecklistState.set(`${resolvedSessionCode}-${groupNumber}`, checklistData);
 
             return res.json({
@@ -1230,7 +2480,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             groupNumber
         });
 
-        io?.to(`${resolvedSessionCode}-${groupNumber}`).emit("transcription_and_summary", {
+        const transcriptionAndSummary = {
             transcription: {
                 text: finalTranscriptText,
                 words: transcription.words,
@@ -1240,8 +2490,15 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             summary: summaryReleased ? summary : null,
             isReleased: summaryReleased,
             isLatestSegment: true
+        };
+        await publishRealtimeEvent({
+            sessionCode: resolvedSessionCode,
+            groupNumber,
+            event: REALTIME_EVENTS.TRANSCRIPTION_AND_SUMMARY,
+            audience: "group",
+            payload: transcriptionAndSummary
         });
-        io?.to(resolvedSessionCode).emit("admin_update", {
+        const adminUpdate = {
             group: groupNumber,
             isActive: true,
             latestTranscript: finalTranscriptText,
@@ -1256,6 +2513,13 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 totalDuration: stats.total_duration,
                 lastUpdate: stats.last_update || new Date(now).toISOString()
             }
+        };
+        await publishRealtimeEvent({
+            sessionCode: resolvedSessionCode,
+            groupNumber,
+            event: REALTIME_EVENTS.ADMIN_UPDATE,
+            audience: "session",
+            payload: adminUpdate
         });
 
         res.json({
@@ -1266,7 +2530,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
         });
     } catch (err) {
         console.error("❌ Failed to transcribe uploaded chunk:", err);
-        res.status(err.status || 500).json({ error: err.message || "Failed to transcribe chunk" });
+        sendRouteError(res, err, "Failed to transcribe chunk");
     }
 });
 
@@ -1284,6 +2548,7 @@ router.post("/transcribe-mindmap-chunk", aiUploadLimiter, upload.single('file'),
                 error: 'Missing file or session code'
             });
         }
+        validateAudioUploadPayload(file);
 
         const session = await db.collection("sessions").findOne({ code: sessionCode });
         if (!session) {
@@ -1298,9 +2563,9 @@ router.post("/transcribe-mindmap-chunk", aiUploadLimiter, upload.single('file'),
 
     } catch (err) {
         console.error("❌ Mindmap chunk transcription error:", err);
-        res.status(500).json({
-            error: "Internal server error during transcription",
-            details: err.message,
+        res.status(err.status || 500).json({
+            error: err.status ? err.message : "Internal server error during transcription",
+            details: process.env.NODE_ENV === "development" ? err.message : undefined,
             success: false
         });
     }
@@ -1329,7 +2594,7 @@ router.post("/mindmap/manual-update", aiLimiter, express.json(), async (req, res
 
     } catch (err) {
         console.error("❌ Failed to sync manual mindmap update:", err);
-        res.status(500).json({ error: err.message || "Failed to sync mindmap update" });
+        sendRouteError(res, err, "Failed to sync mindmap update");
     }
 });
 
@@ -1447,7 +2712,7 @@ router.post("/cleanup/:sessionCode", async (req, res) => {
         res.json({ success: true, message: `Session ${sessionCode} cleaned up` });
     } catch (err) {
         console.error(`❌ Cleanup API error:`, err);
-        res.status(err.status || 500).json({ error: err.message || "Cleanup failed" });
+        sendRouteError(res, err, "Cleanup failed");
     }
 });
 
@@ -1687,33 +2952,38 @@ router.post("/checkbox/process", express.json(), async (req, res) => {
             }
         }
 
-        // Send checkbox updates to admin via Socket.IO
-        const io = req.app.get('io');
-        if (io) {
-            io.to(sessionCode).emit("admin_update", {
-                group: groupNumber,
-                latestTranscript: transcript,
-                checkboxUpdates: progressUpdates,
-                isActive: true
-            });
+        const adminUpdate = {
+            group: groupNumber,
+            latestTranscript: transcript,
+            checkboxUpdates: progressUpdates,
+            isActive: true
+        };
+        const checkboxSessionData = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
+        const isReleased = checkboxSessionData?.released_groups?.[groupNumber] || false;
+        const checklistData = {
+            groupNumber: groupNumber,
+            criteria: buildChecklistCriteria(criteriaRecords, progressMap),
+            scenario: checkboxSessionData?.scenario ?? scenario ?? "",
+            timestamp: Date.now(),
+            isReleased: isReleased,
+            sessionCode: sessionCode
+        };
 
-            // Emit full checklist state
-            const checkboxSessionData = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
-            const isReleased = checkboxSessionData?.released_groups?.[groupNumber] || false;
-
-            const checklistData = {
-                groupNumber: groupNumber,
-                criteria: buildChecklistCriteria(criteriaRecords, progressMap),
-                scenario: checkboxSessionData?.scenario ?? scenario ?? "",
-                timestamp: Date.now(),
-                isReleased: isReleased,
-                sessionCode: sessionCode
-            };
-
-            io.to(sessionCode).emit('checklist_state', checklistData);
-            io.to(`${sessionCode}-${groupNumber}`).emit('checklist_state', checklistData);
-            latestChecklistState.set(`${sessionCode}-${groupNumber}`, checklistData);
-        }
+        await publishRealtimeEvent({
+            sessionCode,
+            groupNumber,
+            event: REALTIME_EVENTS.ADMIN_UPDATE,
+            audience: "session",
+            payload: adminUpdate
+        });
+        await publishRealtimeEvent({
+            sessionCode,
+            groupNumber,
+            event: REALTIME_EVENTS.CHECKLIST_STATE,
+            audience: "both",
+            payload: checklistData
+        });
+        latestChecklistState.set(`${sessionCode}-${groupNumber}`, checklistData);
 
         res.json({
             success: true,

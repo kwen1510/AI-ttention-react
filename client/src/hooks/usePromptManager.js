@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { DEFAULT_SUMMARY_PROMPT, normalizePromptText } from '../lib/prompts.js';
 
-export function usePromptManager(sessionCode, socket) {
+export function usePromptManager(sessionCode) {
     const [currentPrompt, setCurrentPrompt] = useState(DEFAULT_SUMMARY_PROMPT);
     const [promptLibrary, setPromptLibrary] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -50,9 +50,6 @@ export function usePromptManager(sessionCode, socket) {
         }
         try {
             setIsLoading(true);
-            // Emit via socket for immediate update
-            socket?.emit('prompt_update', { sessionCode, prompt: text });
-
             const res = await fetch(`/api/session/${sessionCode}/prompt`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -72,7 +69,7 @@ export function usePromptManager(sessionCode, socket) {
         } finally {
             setIsLoading(false);
         }
-    }, [sessionCode, socket]);
+    }, [sessionCode]);
 
     const testPrompt = useCallback(async (text) => {
         if (!text.trim()) return;

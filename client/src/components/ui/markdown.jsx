@@ -17,8 +17,7 @@ function decorateTaskLists(html) {
       .replace(/<ul>\s*<li class="ui-markdown-task-item">/g, '<ul class="ui-markdown-task-list"><li class="ui-markdown-task-item">');
   }
 
-  const doc = document.implementation.createHTMLDocument("");
-  doc.body.innerHTML = html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
 
   doc.body.querySelectorAll("li").forEach((item) => {
     const firstElement = item.firstElementChild;
@@ -33,6 +32,14 @@ function decorateTaskLists(html) {
   return doc.body.innerHTML;
 }
 
+function sanitizeMarkdownHtml(html) {
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ["checked", "disabled", "type", "class"],
+    FORBID_TAGS: ["script", "style"],
+  });
+}
+
 export function renderMarkdownToHtml(content, { inline = false } = {}) {
   const source = String(content || "").trim();
   if (!source) {
@@ -43,12 +50,9 @@ export function renderMarkdownToHtml(content, { inline = false } = {}) {
     ? marked.parseInline(source)
     : marked.parse(source, { async: false });
 
-  const withTaskClasses = decorateTaskLists(String(rendered || ""));
-
-  return DOMPurify.sanitize(withTaskClasses, {
-    USE_PROFILES: { html: true },
-    ADD_ATTR: ["checked", "disabled", "type", "class", "target", "rel"],
-  });
+  const sanitized = sanitizeMarkdownHtml(String(rendered || ""));
+  const withTaskClasses = decorateTaskLists(sanitized);
+  return sanitizeMarkdownHtml(withTaskClasses);
 }
 
 export function MarkdownContent({ content, className, inline = false }) {
@@ -66,6 +70,8 @@ export function MarkdownContent({ content, className, inline = false }) {
   return (
     <Component
       className={cn("ui-markdown", inline && "ui-markdown--inline", className)}
+      // DOMPurify is applied before decoration and again immediately before this audited sink.
+      // nosemgrep: typescript.react.security.audit.react-dangerouslysetinnerhtml.react-dangerouslysetinnerhtml
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

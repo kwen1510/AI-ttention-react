@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { callOpenAIChat, parseJsonFromText } from "./openai.js";
 import { createSupabaseDb } from "../db/db.js";
-import { transcribe } from "./elevenlabs.js";
+import { isIgnorableTranscriptionText, transcribe } from "./elevenlabs.js";
 import { addToTranscriptHistory, getContextualTranscript } from "./transcript.js";
 
 const db = createSupabaseDb();
@@ -406,7 +406,7 @@ export async function processMindmapTranscript(sessionCode, fileBuffer, fileMime
     // Ensure we have a valid string
     transcript = String(transcript || '').trim();
 
-    if (!transcript || transcript.length === 0) {
+    if (!transcript || isIgnorableTranscriptionText(transcript)) {
         return {
             success: true,
             transcript: '',

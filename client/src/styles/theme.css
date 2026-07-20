@@ -132,6 +132,25 @@ pre,
   width: min(1380px, 100%);
 }
 
+.async-mode-page {
+  background:
+    linear-gradient(180deg, rgba(236, 248, 246, 0.92) 0%, rgba(244, 249, 249, 0.96) 44%, rgba(244, 245, 247, 0.98) 100%);
+}
+
+.async-mode-page .ui-panel {
+  border-color: rgba(30, 122, 109, 0.16);
+}
+
+.async-process-card {
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(30, 122, 109, 0.16);
+}
+
+.async-share-box {
+  background: rgba(240, 248, 247, 0.88);
+  border-color: rgba(30, 122, 109, 0.18);
+}
+
 .stack {
   display: flex;
   flex-direction: column;

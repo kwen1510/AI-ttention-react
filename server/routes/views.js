@@ -82,9 +82,23 @@ function sendTypedNotFound(res, requestPath) {
     res.send("");
 }
 
+function isSuspiciousPath(requestPath) {
+    let decoded = String(requestPath || "");
+    try {
+        decoded = decodeURIComponent(decoded);
+    } catch {
+        return true;
+    }
+    return decoded
+        .split("/")
+        .filter(Boolean)
+        .some((segment) => segment === "." || segment === ".." || segment.startsWith("."));
+}
+
 const spaRoutes = [
     '/',
     '/admin',
+    '/async',
     '/checkbox',
     '/data',
     '/history',
@@ -109,16 +123,15 @@ router.get('/{*path}', (req, res, next) => {
     const requestPath = req.path;
 
     const isApiRequest = requestPath.startsWith('/api/');
-    const isSocketRequest = requestPath.startsWith('/socket.io');
     const isHealthCheck = requestPath === '/health';
     const hasFileExtension = path.extname(requestPath) !== '';
     const isGetMethod = req.method === 'GET';
 
-    if (!isGetMethod || isApiRequest || isSocketRequest || isHealthCheck) {
+    if (!isGetMethod || isApiRequest || isHealthCheck) {
         return next();
     }
 
-    if (hasFileExtension) {
+    if (hasFileExtension || isSuspiciousPath(requestPath)) {
         return sendTypedNotFound(res, requestPath);
     }
 

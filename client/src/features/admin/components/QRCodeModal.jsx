@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { Copy, QrCode } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
@@ -15,24 +15,35 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
     const [qrImageUrl, setQrImageUrl] = useState('');
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
-    const joinUrl = useMemo(
-        () => `${window.location.origin}/s?c=${sessionCode}`,
-        [sessionCode]
-    );
+    const [joinUrl, setJoinUrl] = useState('');
 
     useEffect(() => {
-        if (!isOpen || !sessionCode || !joinUrl) {
+        if (!isOpen || !sessionCode) {
             setQrImageUrl('');
+            setJoinUrl('');
             return undefined;
         }
 
         let isCancelled = false;
         setQrImageUrl('');
         setError('');
+        setJoinUrl(`${window.location.origin}/s?c=${sessionCode}`);
 
         const renderQrCode = async () => {
             try {
-                const dataUrl = await QRCode.toDataURL(joinUrl, {
+                const tokenResponse = await fetch(`/api/session/${sessionCode}/join-token`, {
+                    method: 'POST'
+                });
+                const tokenData = await tokenResponse.json().catch(() => null);
+                const resolvedJoinUrl = tokenResponse.ok && tokenData?.url
+                    ? tokenData.url
+                    : `${window.location.origin}/s?c=${sessionCode}`;
+
+                if (!isCancelled) {
+                    setJoinUrl(resolvedJoinUrl);
+                }
+
+                const dataUrl = await QRCode.toDataURL(resolvedJoinUrl, {
                     errorCorrectionLevel: 'L',
                     margin: 1,
                     width: 200
@@ -57,7 +68,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
         return () => {
             isCancelled = true;
         };
-    }, [isOpen, joinUrl, sessionCode]);
+    }, [isOpen, sessionCode]);
 
     const copyLink = async () => {
         await navigator.clipboard.writeText(joinUrl);

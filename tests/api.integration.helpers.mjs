@@ -115,6 +115,20 @@ class InMemoryCollection {
     };
   }
 
+  async insertMany(documents = []) {
+    const insertedIds = {};
+    documents.forEach((document, index) => {
+      const inserted = clone(document);
+      this.rows.push(inserted);
+      insertedIds[index] = inserted._id ?? null;
+    });
+    return {
+      acknowledged: true,
+      insertedCount: documents.length,
+      insertedIds
+    };
+  }
+
   async findOneAndUpdate(filter, update, options = {}) {
     const index = this.rows.findIndex((row) => matchesFilter(row, filter));
     if (index === -1) {
@@ -132,6 +146,22 @@ class InMemoryCollection {
     return clone(nextRecord);
   }
 
+  async updateOne(filter, update, options = {}) {
+    const index = this.rows.findIndex((row) => matchesFilter(row, filter));
+    if (index === -1) {
+      if (options.upsert) {
+        const inserted = applyUpdateOperators(filter, update);
+        this.rows.push(inserted);
+        return { acknowledged: true, matchedCount: 0, modifiedCount: 0, upsertedCount: 1 };
+      }
+
+      return { acknowledged: true, matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
+    }
+
+    this.rows[index] = applyUpdateOperators(this.rows[index], update);
+    return { acknowledged: true, matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
+  }
+
   async deleteOne(filter = {}) {
     const index = this.rows.findIndex((row) => matchesFilter(row, filter));
     if (index === -1) {
@@ -140,6 +170,12 @@ class InMemoryCollection {
 
     this.rows.splice(index, 1);
     return { deletedCount: 1 };
+  }
+
+  async deleteMany(filter = {}) {
+    const before = this.rows.length;
+    this.rows = this.rows.filter((row) => !matchesFilter(row, filter));
+    return { deletedCount: before - this.rows.length };
   }
 }
 

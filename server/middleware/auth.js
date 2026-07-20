@@ -1,4 +1,5 @@
-import { supabase } from "../db/supabaseClient.js";
+import { createSupabaseAuthClient, supabase } from "../db/supabaseClient.js";
+import { clearTeacherSessionCookie, readTeacherSessionCookie, setTeacherSessionCookie, verifyTeacherSessionToken } from "../services/teacherSessionCookie.js";
 
 let authTestOverrides = null;
 let stagingBypassTeacherPromise = null;
@@ -21,6 +22,10 @@ export function isAdminRole(role) {
 
 export function isAdminUser(user) {
     return isAdminRole(user?.role || user?.teacherAccess?.role);
+}
+
+export function isGuestUser(user) {
+    return normalizeEmail(user?.role || user?.teacherAccess?.role) === "guest";
 }
 
 function parseCsvValues(...sources) {
@@ -65,7 +70,7 @@ export function isLegacyTeacherAllowlistEnabled() {
         return process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST === "true";
     }
 
-    return true;
+    return process.env.NODE_ENV !== "production";
 }
 
 export function isTeacherUser(user, config = getTeacherAccessConfig()) {
@@ -371,6 +376,20 @@ export async function authorizeTeacherUser(user) {
     throw createAuthError("Teacher access required", 403);
 }
 
+export async function isTeacherEmailAllowedForLogin(email) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) return false;
+
+    try {
+        const record = await lookupTeacherAccessRecordByEmail(normalizedEmail);
+        if (record) return record.active !== false;
+    } catch (error) {
+        console.warn("⚠️ Unable to check teacher_access before OTP send:", error.message);
+    }
+
+    return isLegacyTeacherAllowlistEnabled() && isTeacherUser({ email: normalizedEmail });
+}
+
 export async function authenticateTeacherFromToken(token) {
     const user = await authenticateUserFromToken(token);
     return authorizeTeacherUser(user);
@@ -385,6 +404,10 @@ export function extractBearerToken(authHeader = "") {
 }
 
 export function isStagingAuthBypassEnabled() {
+    if (process.env.NODE_ENV === "production") {
+        return false;
+    }
+
     return process.env.STAGING_AUTH_BYPASS === "true";
 }
 
@@ -492,7 +515,44 @@ export async function authenticateStagingBypassRequest(req) {
     return createStagingBypassTeacherPrincipal();
 }
 
-export async function authenticateTeacher(req) {
+function jwtExpiresSoon(token, leewaySeconds = 60) {
+    try {
+        const payload = JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString("utf8"));
+        return !Number.isFinite(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000) + leewaySeconds;
+    } catch {
+        return true;
+    }
+}
+
+async function authenticateTeacherFromCookie(cookieClaims, res) {
+    let accessToken = cookieClaims?.access_token;
+    let session = null;
+
+    if (accessToken && jwtExpiresSoon(accessToken) && cookieClaims.refresh_token) {
+        const { data, error } = await createSupabaseAuthClient().auth.refreshSession({
+            refresh_token: cookieClaims.refresh_token
+        });
+        if (error || !data?.session) {
+            if (res) clearTeacherSessionCookie(res);
+            throw createAuthError("Teacher session expired", 401);
+        }
+        session = data.session;
+        accessToken = session.access_token;
+    }
+
+    // Tests and local staging may use identity-only cookies. Production must
+    // always be backed by a refreshable Supabase Auth session.
+    const teacher = accessToken
+        ? await authenticateTeacherFromToken(accessToken)
+        : process.env.NODE_ENV !== "production"
+            ? await authorizeTeacherUser({ id: cookieClaims.sub, email: cookieClaims.email })
+            : (() => { throw createAuthError("Teacher session expired", 401); })();
+
+    if (session && res) setTeacherSessionCookie(res, teacher, session);
+    return { teacher, accessToken };
+}
+
+export async function authenticateTeacher(req, res = null) {
     if (req.teacher) {
         return req.teacher;
     }
@@ -510,13 +570,17 @@ export async function authenticateTeacher(req) {
     }
 
     const token = req.authToken || extractBearerToken(req.headers.authorization || "");
-    if (!token) {
-        throw createAuthError("Missing bearer token", 401);
+    const cookieClaims = req.teacherSessionClaims || verifyTeacherSessionToken(readTeacherSessionCookie(req));
+    if (!token && !cookieClaims) {
+        throw createAuthError("Authentication required", 401);
     }
 
-    const teacher = await authenticateTeacherFromToken(token);
+    const cookieResult = token ? null : await authenticateTeacherFromCookie(cookieClaims, res);
+    const teacher = token ? await authenticateTeacherFromToken(token) : cookieResult.teacher;
     req.teacher = teacher;
-    req.authToken = token;
+    req.authToken = token || cookieResult?.accessToken || null;
+    req.teacherSupabaseAccessToken = req.authToken;
+    req.teacherSessionClaims = cookieClaims;
     req.teacherAuthError = null;
     return teacher;
 }
@@ -537,17 +601,22 @@ export async function optionalTeacherContext(req, _res, next) {
     }
 
     const token = extractBearerToken(req.headers.authorization || "");
+    const cookieClaims = verifyTeacherSessionToken(readTeacherSessionCookie(req));
     req.authToken = token;
+    req.teacherSessionClaims = cookieClaims;
     req.teacher = null;
     req.teacherAuthError = null;
 
-    if (!token) {
+    if (!token && !cookieClaims) {
         if (next) next();
         return;
     }
 
     try {
-        req.teacher = await authenticateTeacherFromToken(token);
+        const cookieResult = token ? null : await authenticateTeacherFromCookie(cookieClaims, _res);
+        req.teacher = token ? await authenticateTeacherFromToken(token) : cookieResult.teacher;
+        req.authToken = token || cookieResult?.accessToken || null;
+        req.teacherSupabaseAccessToken = req.authToken;
     } catch (error) {
         req.teacherAuthError = error;
     }
@@ -557,7 +626,7 @@ export async function optionalTeacherContext(req, _res, next) {
 
 export async function requireTeacher(req, res, next) {
     try {
-        const user = await authenticateTeacher(req);
+        const user = await authenticateTeacher(req, res);
         req.teacher = user;
         if (next) next();
         return user;

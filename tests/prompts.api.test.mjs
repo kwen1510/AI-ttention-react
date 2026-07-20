@@ -58,6 +58,7 @@ test("prompt helpers enforce creator-or-admin permissions and preserve clone own
   try {
     const teacher = await authModule.authenticateTeacherFromToken("teacher-token");
     const admin = await authModule.authenticateTeacherFromToken("admin-token");
+    const guest = await authModule.authenticateTeacherFromToken("guest-token");
     const promptsCollection = dbModule.db.collection("teacher_prompts");
 
     const ownPrompt = promptsModule.decoratePromptForTeacher(
@@ -79,6 +80,14 @@ test("prompt helpers enforce creator-or-admin permissions and preserve clone own
     assert.equal(promptsModule.canTeacherManagePrompt(ownPrompt, teacher), true);
     assert.equal(promptsModule.canTeacherManagePrompt(otherPrompt, teacher), false);
     assert.equal(promptsModule.canTeacherManagePrompt(otherPrompt, admin), true);
+    assert.equal(promptsModule.canTeacherManagePrompt(ownPrompt, guest), false);
+    assert.equal(promptsModule.canTeacherViewPrompt(ownPrompt, guest), true);
+    assert.equal(promptsModule.canTeacherCreatePrompt(guest), false);
+
+    const localPrompt = { ...otherPrompt, isPublic: false };
+    assert.equal(promptsModule.canTeacherViewPrompt(localPrompt, teacher), false);
+    assert.equal(promptsModule.canTeacherViewPrompt(localPrompt, admin), true);
+    assert.equal(promptsModule.canTeacherViewPrompt(localPrompt, guest), false);
 
     const createdPrompt = await promptsModule.insertTeacherPrompt({
       _id: "prompt-3",

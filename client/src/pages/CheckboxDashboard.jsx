@@ -27,10 +27,10 @@ function resolveReleaseCriteria(groupData, currentCriteria) {
 function CheckboxDashboard() {
   const [searchParams] = useSearchParams();
   const {
-    socket,
     isConnected,
     sessionCode,
     groups,
+    sessionEnded: realtimeSessionEnded,
     setGroups,
     joinSession
   } = useCheckboxSocket();
@@ -53,7 +53,7 @@ function CheckboxDashboard() {
     isLibraryLoading,
     libraryError,
     setFeedback
-  } = useCriteriaManager(sessionCode, socket);
+  } = useCriteriaManager(sessionCode);
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
@@ -61,6 +61,15 @@ function CheckboxDashboard() {
   const [showQR, setShowQR] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [applyingPromptId, setApplyingPromptId] = useState(null);
+  const [sessionTiming, setSessionTiming] = useState({ createdAt: null, expiresAt: null });
+  const [sessionEnded, setSessionEnded] = useState(false);
+
+  useEffect(() => {
+    if (realtimeSessionEnded) {
+      setIsRecording(false);
+      setSessionEnded(true);
+    }
+  }, [realtimeSessionEnded]);
 
   // Initialize session
   useEffect(() => {
@@ -70,13 +79,16 @@ function CheckboxDashboard() {
     const initSession = async () => {
       try {
         const res = await fetch('/api/new-session?mode=checkbox', {
+          method: 'POST',
           signal: controller.signal
         });
         if (!res.ok) {
           throw new Error(`Failed to create session (${res.status})`);
         }
         const data = await res.json();
-        joinSession(data.code);
+        setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
+        setSessionEnded(false);
+        joinSession(data.code, data.realtime?.teacherTopic, data.realtime?.accessToken);
       } catch (err) {
         if (disposed || controller.signal.aborted || err?.name === 'AbortError' || err?.message === 'Failed to fetch') {
           return;
@@ -238,6 +250,8 @@ function CheckboxDashboard() {
         throw new Error(`Failed to start session (${res.status})`);
       }
 
+      const data = await res.json().catch(() => ({}));
+      if (data.expiresAt) setSessionTiming((current) => ({ ...current, expiresAt: data.expiresAt }));
       setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -256,6 +270,7 @@ function CheckboxDashboard() {
       }
 
       setIsRecording(false);
+      setSessionEnded(true);
     } catch (err) {
       console.error('Failed to stop recording:', err);
     }
@@ -286,44 +301,60 @@ function CheckboxDashboard() {
     }
   };
 
-  const handleReleaseChecklist = (groupNumber) => {
-    if (socket && sessionCode) {
-      const group = groups.get(groupNumber);
-      const releaseCriteria = resolveReleaseCriteria(group, currentCriteria);
-
-      if (!releaseCriteria.length) {
-        setFeedback({
-          message: 'Save checklist criteria before releasing them to students.',
-          type: 'error'
-        });
-        return;
-      }
-
-      socket.emit('release_checklist', {
-        sessionCode,
-        groupNumber,
-        isReleased: true,
-        criteria: releaseCriteria
-      });
-
-      // Optimistic update
-      setGroups(prev => {
-        const newGroups = new Map(prev);
-        const group = newGroups.get(groupNumber);
-        if (group) {
-          newGroups.set(groupNumber, {
-            ...group,
-            isReleased: true,
-            checkboxes: group.checkboxes?.length ? group.checkboxes : releaseCriteria
-          });
-        }
-        return newGroups;
-      });
+  const handleReleaseChecklist = async (groupNumber) => {
+    if (!sessionCode) {
+      return;
     }
+
+    const group = groups.get(groupNumber);
+    const releaseCriteria = resolveReleaseCriteria(group, currentCriteria);
+
+    if (!releaseCriteria.length) {
+      setFeedback({
+        message: 'Save checklist criteria before releasing them to students.',
+        type: 'error'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/checkbox/${sessionCode}/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupNumber,
+          isReleased: true,
+          criteria: releaseCriteria
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to release checklist (${response.status})`);
+      }
+    } catch (err) {
+      console.error('Failed to release checklist:', err);
+      setFeedback({
+        message: 'Unable to release checklist. Try again.',
+        type: 'error'
+      });
+      return;
+    }
+
+    setGroups(prev => {
+      const newGroups = new Map(prev);
+      const group = newGroups.get(groupNumber);
+      if (group) {
+        newGroups.set(groupNumber, {
+          ...group,
+          isReleased: true,
+          checkboxes: group.checkboxes?.length ? group.checkboxes : releaseCriteria
+        });
+      }
+      return newGroups;
+    });
   };
 
-  const handleReleaseAllChecklists = () => {
-    if (!socket || !sessionCode) {
+  const handleReleaseAllChecklists = async () => {
+    if (!sessionCode) {
       return;
     }
 
@@ -353,14 +384,28 @@ function CheckboxDashboard() {
       return;
     }
 
-    releaseTargets.forEach(({ groupNumber, criteria }) => {
-      socket.emit('release_checklist', {
-        sessionCode,
-        groupNumber,
-        isReleased: true,
-        criteria
+    try {
+      await Promise.all(releaseTargets.map(({ groupNumber, criteria }) => fetch(`/api/checkbox/${sessionCode}/release`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupNumber,
+          isReleased: true,
+          criteria
+        })
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to release checklist (${response.status})`);
+        }
+      })));
+    } catch (err) {
+      console.error('Failed to release checklists:', err);
+      setFeedback({
+        message: 'Unable to release all checklists. Try again.',
+        type: 'error'
       });
-    });
+      return;
+    }
 
     setGroups((prev) => {
       const next = new Map(prev);
@@ -404,6 +449,9 @@ function CheckboxDashboard() {
     <div className="checkbox-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
+        createdAt={sessionTiming.createdAt}
+        expiresAt={sessionTiming.expiresAt}
+        isEnded={sessionEnded}
         isConnected={isConnected}
         isRecording={isRecording}
         elapsedTime={elapsedTime}

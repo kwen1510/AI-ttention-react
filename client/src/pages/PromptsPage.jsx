@@ -10,8 +10,11 @@ import { Alert } from '../components/ui/alert.jsx';
 import { Button } from '../components/ui/button.jsx';
 import { Field, Input, Select } from '../components/ui/field.jsx';
 import { Panel, SectionHeader } from '../components/ui/panel.jsx';
+import { useAuth } from '../components/AuthContext.jsx';
 
 function PromptsPage() {
+  const { role } = useAuth();
+  const canCreatePrompts = role !== 'guest';
   const location = useLocation();
   const navigate = useNavigate();
   const basePath = getStagingBasePath(location.pathname);
@@ -27,7 +30,7 @@ function PromptsPage() {
     updatePrompt,
     deletePrompt,
     clonePrompt,
-    usePrompt,
+    usePrompt: applyPrompt,
     handlePageChange,
     refresh
   } = usePrompts();
@@ -77,7 +80,7 @@ function PromptsPage() {
   };
 
   const handleUse = async (id) => {
-    const prompt = await usePrompt(id);
+    const prompt = await applyPrompt(id);
     if (prompt) {
       if (prompt.mode === 'checkbox') {
         // Parse scenario and criteria
@@ -141,10 +144,12 @@ function PromptsPage() {
                 <RefreshCw className="h-4 w-4" />
                 Refresh
               </Button>
-              <Button onClick={openCreate} variant="primary">
-                <Plus className="h-4 w-4" />
-                Create Prompt
-              </Button>
+              {canCreatePrompts ? (
+                <Button onClick={openCreate} variant="primary">
+                  <Plus className="h-4 w-4" />
+                  Create Prompt
+                </Button>
+              ) : null}
             </div>
           )}
         />

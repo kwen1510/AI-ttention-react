@@ -5,7 +5,8 @@ export function applyBaseTestEnv(port) {
   process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
   process.env.APP_ORIGINS = `http://127.0.0.1:${port},http://localhost:${port}`;
   process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key";
+  process.env.SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "sb_secret_test";
+  process.env.SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_test";
   process.env.SESSION_JOIN_SECRET = "test-session-join-secret";
   process.env.JOIN_TOKEN_TTL_SECONDS = "43200";
   process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST = "false";
@@ -43,11 +44,17 @@ export async function jsonRequest(baseUrl, pathname, options = {}) {
 export function createAuthOverrides() {
   const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
   const usersByToken = new Map([
-    ["teacher-token", { id: "teacher-1", email: "teacher@example.com" }],
-    ["teacher-b-token", { id: "teacher-2", email: "teacher-b@example.com" }],
-    ["admin-token", { id: "admin-1", email: "kuangwen.chan@ri.edu.sg" }],
-    ["student-token", { id: "student-1", email: "student@example.com" }],
-    ["domain-teacher-token", { id: "teacher-3", email: "teacher-c@ri.edu.sg" }]
+    ["teacher-token", { id: "teacher-1", email: "teacher@example.com", is_anonymous: false }],
+    ["teacher-b-token", { id: "teacher-2", email: "teacher-b@example.com", is_anonymous: false }],
+    ["admin-token", { id: "admin-1", email: "ri.kwmachinelearning@gmail.com", is_anonymous: false }],
+    ["guest-token", { id: "guest-1", email: "guest@example.com", is_anonymous: false }],
+    ["student-token", { id: "student-1", is_anonymous: true }],
+    ["student-token-1", { id: "student-1", is_anonymous: true }],
+    ["student-token-2", { id: "student-2", is_anonymous: true }],
+    ["student-token-3", { id: "student-3", is_anonymous: true }],
+    ["student-token-4", { id: "student-4", is_anonymous: true }],
+    ["student-token-5", { id: "student-5", is_anonymous: true }],
+    ["domain-teacher-token", { id: "teacher-3", email: "teacher-c@ri.edu.sg", is_anonymous: false }]
   ]);
 
   const accessRecordsByUserId = new Map([
@@ -62,15 +69,22 @@ export function createAuthOverrides() {
       email: "teacher-b@example.com",
       role: "teacher",
       active: true
+    }],
+    ["guest-1", {
+      user_id: "guest-1",
+      email: "guest@example.com",
+      role: "guest",
+      active: true
     }]
   ]);
 
   const accessRecordsByEmail = new Map([
     ["teacher@example.com", accessRecordsByUserId.get("teacher-1")],
     ["teacher-b@example.com", accessRecordsByUserId.get("teacher-2")],
-    ["kuangwen.chan@ri.edu.sg", {
+    ["guest@example.com", accessRecordsByUserId.get("guest-1")],
+    ["ri.kwmachinelearning@gmail.com", {
       user_id: null,
-      email: "kuangwen.chan@ri.edu.sg",
+      email: "ri.kwmachinelearning@gmail.com",
       role: "admin",
       active: true
     }]

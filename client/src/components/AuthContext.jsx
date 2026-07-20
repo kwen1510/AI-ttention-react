@@ -1,331 +1,115 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getSupabaseClient, getSupabaseConfig } from '../config/supabaseClient.js';
-import { getSessionWithRefresh, refreshSessionIfPossible } from '../lib/authSession.js';
 import {
   createStagingBypassHeaders,
   createStagingBypassTeacherProfile,
   isStagingBypassPath,
 } from '../lib/stagingBypass.js';
 
-const AuthContext = createContext({
-  supabase: null,
-  session: null,
-  user: null,
-  loading: true,
-  isTeacher: false,
-  isAdmin: false,
-  role: null,
-  isStagingBypass: false,
-  teacherLoading: true,
-  teacherProfile: null,
-  signOut: async () => {},
-});
-
-function needsAuth(input) {
-  if (!input) return false;
-  const resolveUrl = (value) => {
-    if (typeof value === 'string') return value;
-    if (typeof URL !== 'undefined' && value instanceof URL) return value.toString();
-    if (typeof Request !== 'undefined' && value instanceof Request) return value.url;
-    return null;
-  };
-
-  const urlValue = resolveUrl(input);
-  if (!urlValue) return false;
-  try {
-    const url = new URL(urlValue, typeof window !== 'undefined' ? window.location.href : 'http://localhost');
-    return url.origin === (typeof window !== 'undefined' ? window.location.origin : url.origin) && url.pathname.startsWith('/api/');
-  } catch {
-    return false;
-  }
-}
+const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const location = useLocation();
   const isStagingBypass = isStagingBypassPath(location.pathname);
   const supabase = useMemo(() => (isStagingBypass ? null : getSupabaseClient()), [isStagingBypass]);
   const config = useMemo(() => (isStagingBypass ? null : getSupabaseConfig()), [isStagingBypass]);
-  const [session, setSession] = useState(null);
-  const [user, setUser] = useState(null);
-  const [sessionLoading, setSessionLoading] = useState(true);
-  const [teacherLoading, setTeacherLoading] = useState(true);
-  const [isTeacher, setIsTeacher] = useState(false);
   const [teacherProfile, setTeacherProfile] = useState(null);
-  const [fetchReady, setFetchReady] = useState(typeof window === 'undefined');
-  const accessTokenRef = useRef(null);
-  const mountedRef = useRef(true);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+  const applyTeacherResponse = useCallback((data) => {
+    const resolvedRole = data?.user?.role || 'teacher';
+    const profile = data?.user
+      ? {
+          ...data.user,
+          role: resolvedRole,
+          isAdmin: Boolean(data.isAdmin || data.user?.isAdmin || resolvedRole === 'admin'),
+        }
+      : null;
+    setTeacherProfile(profile);
+    return profile;
   }, []);
 
-  const applySessionState = (nextSession) => {
-    accessTokenRef.current = nextSession?.access_token ?? null;
-    setSession(nextSession ?? null);
-    setUser(nextSession?.user ?? null);
-  };
-
-  useEffect(() => {
+  const refreshAuth = useCallback(async () => {
     if (isStagingBypass) {
-      const teacherProfile = {
-        ...createStagingBypassTeacherProfile(),
-        isAdmin: false,
-      };
-      setSession(null);
-      setUser(teacherProfile);
-      setTeacherProfile(teacherProfile);
-      setIsTeacher(true);
-      setSessionLoading(false);
-      setTeacherLoading(false);
-      return undefined;
+      const profile = { ...createStagingBypassTeacherProfile(), isAdmin: false };
+      setTeacherProfile(profile);
+      setLoading(false);
+      return profile;
     }
 
-    let isMounted = true;
-
-    async function loadSession() {
-      try {
-        const nextSession = await getSessionWithRefresh(supabase, { refreshIfMissing: true });
-        if (!isMounted) return;
-        applySessionState(nextSession);
-        if (nextSession) {
-          console.log('✅ Supabase session loaded:', nextSession.user?.email);
-        } else {
-          console.warn('⚠️ No Supabase session found - user may need to log in');
-        }
-      } catch (error) {
-        console.error('Failed to load Supabase session', error);
-      } finally {
-        if (isMounted) setSessionLoading(false);
-      }
-    }
-
-    loadSession();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (!isMounted) return;
-      const previousAccessToken = accessTokenRef.current;
-      const nextAccessToken = nextSession?.access_token ?? null;
-
-      if (!nextAccessToken && previousAccessToken && event !== 'SIGNED_OUT') {
-        void (async () => {
-          const recoveredSession = await refreshSessionIfPossible(supabase);
-          if (!isMounted) return;
-
-          if (recoveredSession?.access_token) {
-            applySessionState(recoveredSession);
-            if (recoveredSession.access_token !== previousAccessToken) {
-              setTeacherLoading(true);
-            }
-            return;
-          }
-
-          applySessionState(null);
-          setIsTeacher(false);
-          setTeacherProfile(null);
-          setTeacherLoading(false);
-        })();
-        return;
-      }
-
-      applySessionState(nextSession);
-
-      if (!nextAccessToken) {
-        setIsTeacher(false);
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
         setTeacherProfile(null);
-        setTeacherLoading(false);
-        return;
+        return null;
       }
-
-      if (nextAccessToken !== previousAccessToken) {
-        setTeacherLoading(true);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, [isStagingBypass, supabase]);
+      return applyTeacherResponse(await response.json());
+    } catch (error) {
+      console.warn('Unable to restore teacher login', error);
+      setTeacherProfile(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [applyTeacherResponse, isStagingBypass]);
 
   useEffect(() => {
-    if (isStagingBypass) {
-      const teacherProfile = {
-        ...createStagingBypassTeacherProfile(),
-        isAdmin: false,
-      };
-      setTeacherProfile(teacherProfile);
-      setIsTeacher(true);
-      setTeacherLoading(false);
-      return undefined;
-    }
-
-    let isMounted = true;
-
-    async function loadTeacherAccess() {
-      if (!session?.access_token) {
-        if (!isMounted) return;
-        setTeacherProfile(null);
-        setIsTeacher(false);
-        setTeacherLoading(false);
-        return;
-      }
-
-      setTeacherLoading(true);
-
-      try {
-        const response = await fetch('/api/auth/me', {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`
-          }
-        });
-
-        if (!isMounted) return;
-
-        if (response.ok) {
-          const data = await response.json();
-          const resolvedRole = data.user?.role || 'teacher';
-          setIsTeacher(Boolean(data.teacher));
-          setTeacherProfile(
-            data.user
-              ? {
-                  ...data.user,
-                  role: resolvedRole,
-                  isAdmin: Boolean(data.isAdmin || data.user?.isAdmin || resolvedRole === 'admin'),
-                }
-              : null
-          );
-          return;
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          setIsTeacher(false);
-          setTeacherProfile(null);
-          return;
-        }
-
-        console.warn('Unexpected /api/auth/me response:', response.status);
-        setIsTeacher(false);
-        setTeacherProfile(null);
-      } catch (error) {
-        if (!isMounted) return;
-        console.warn('Failed to load teacher access status', error);
-        setIsTeacher(false);
-        setTeacherProfile(null);
-      } finally {
-        if (isMounted) {
-          setTeacherLoading(false);
-        }
-      }
-    }
-
-    loadTeacherAccess();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isStagingBypass, session?.access_token]);
+    void refreshAuth();
+  }, [refreshAuth]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (!isStagingBypass || typeof window === 'undefined') return undefined;
     const originalFetch = window.fetch.bind(window);
-    setFetchReady(false);
-
-    window.fetch = async (input, init = {}) => {
-      if (needsAuth(input)) {
-        if (isStagingBypass) {
-          const headers = createStagingBypassHeaders(
-            init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined)
-          );
-          init = { ...init, headers };
-          console.log('🧪 Staging bypass attached to request:', typeof input === 'string' ? input : input?.url);
-        } else {
-          try {
-            let currentSession = session ?? (await getSessionWithRefresh(supabase, { refreshIfMissing: true }));
-            if (currentSession?.access_token) {
-              const headers = new Headers(
-                init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
-              );
-              headers.set('Authorization', `Bearer ${currentSession.access_token}`);
-              init = { ...init, headers };
-              console.log('✅ Auth token attached to request:', typeof input === 'string' ? input : input?.url);
-            } else {
-              console.warn('⚠️ No session available for authenticated request:', typeof input === 'string' ? input : input?.url);
-            }
-          } catch (error) {
-            console.warn('Failed to attach Supabase auth header', error);
-          }
-        }
-      }
-
-      let response = await originalFetch(input, init);
-
-      if (!isStagingBypass && needsAuth(input) && (response.status === 401 || response.status === 403)) {
-        const refreshedSession = await refreshSessionIfPossible(supabase);
-        if (refreshedSession?.access_token) {
-          const headers = new Headers(
-            init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined) || {}
-          );
-          headers.set('Authorization', `Bearer ${refreshedSession.access_token}`);
-          response = await originalFetch(input, { ...init, headers });
-
-          if (mountedRef.current) {
-            setTeacherLoading(true);
-          }
-        }
-      }
-
-      return response;
+    window.fetch = (input, init = {}) => {
+      const inputHeaders = init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined);
+      return originalFetch(input, {
+        ...init,
+        headers: createStagingBypassHeaders(inputHeaders),
+      });
     };
-
-    setFetchReady(true);
-
     return () => {
       window.fetch = originalFetch;
-      setFetchReady(false);
     };
-  }, [isStagingBypass, session, supabase]);
+  }, [isStagingBypass]);
 
-  const value = useMemo(
-    () => ({
-      supabase,
-      config,
-      session,
-      user,
-      loading: sessionLoading || teacherLoading || !fetchReady,
-      isTeacher,
-      role: teacherProfile?.role || null,
-      isAdmin: Boolean(teacherProfile?.isAdmin || teacherProfile?.role === 'admin'),
-      isStagingBypass,
-      teacherLoading,
-      teacherProfile,
-      signOut: () => {
-        if (supabase) {
-          return supabase.auth.signOut();
-        }
+  const signOut = useCallback(async () => {
+    if (!isStagingBypass) {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      }).catch(() => null);
+    }
+    setTeacherProfile(null);
+    if (typeof window !== 'undefined') window.location.assign('/login');
+  }, [isStagingBypass]);
 
-        if (typeof window !== 'undefined') {
-          window.location.assign('/student?blocked=teacher');
-        }
-
-        return Promise.resolve();
-      },
-    }),
-    [config, fetchReady, isStagingBypass, isTeacher, session, sessionLoading, supabase, teacherLoading, teacherProfile, user]
-  );
+  const value = useMemo(() => ({
+    supabase,
+    config,
+    session: null,
+    user: teacherProfile,
+    loading,
+    isTeacher: Boolean(teacherProfile),
+    role: teacherProfile?.role || null,
+    isAdmin: Boolean(teacherProfile?.isAdmin || teacherProfile?.role === 'admin'),
+    isStagingBypass,
+    teacherLoading: loading,
+    teacherProfile,
+    refreshAuth,
+    signOut,
+  }), [config, isStagingBypass, loading, refreshAuth, signOut, supabase, teacherProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }

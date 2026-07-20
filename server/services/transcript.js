@@ -192,6 +192,10 @@ export function extractTranscriptSegments(record) {
     return segments;
 }
 
+export function hasTranscriptSegment(segments, segmentId) {
+    return Boolean(segmentId) && (segments || []).some((segment) => segment?.id === segmentId);
+}
+
 export function segmentToTranscript(segment) {
     return {
         id: segment.id,
@@ -272,6 +276,9 @@ export async function persistTranscriptBundle({ sessionId, groupId, segments, re
 
 export async function appendTranscriptSegment({ sessionId, groupId, segment }) {
     const { record, segments } = await getTranscriptBundle(sessionId, groupId);
+    if (hasTranscriptSegment(segments, segment?.id)) {
+        return { record, segments, stats: record?.payload?.stats ?? computeTranscriptStats(segments) };
+    }
     const updatedSegments = [...segments, segment];
     return persistTranscriptBundle({
         sessionId,

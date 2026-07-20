@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../components/AuthContext.jsx";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { getSupabaseClient } from "../config/supabaseClient";
 import { sanitizeRedirect } from "../lib/sanitizeRedirect.js";
 import { Alert } from "../components/ui/alert.jsx";
 import { Button } from "../components/ui/button.jsx";
@@ -11,7 +10,7 @@ import { Panel } from "../components/ui/panel.jsx";
 import FullScreenLoader from "../components/FullScreenLoader.jsx";
 
 function LoginPage() {
-  const { user, loading, isTeacher } = useAuth();
+  const { user, loading, isTeacher, refreshAuth } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -51,16 +50,15 @@ function LoginPage() {
     setStatus({ type: "info", message: "Sending code..." });
 
     try {
-      const supabase = getSupabaseClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: window.location.origin + "/admin",
-        },
+      const response = await fetch('/api/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email }),
       });
 
-      if (error) throw error;
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Failed to send OTP.');
 
       setStatus({ type: "success", message: "OTP sent! Check your inbox." });
       setStep("otp");
@@ -76,18 +74,18 @@ function LoginPage() {
     setStatus({ type: "info", message: "Verifying..." });
 
     try {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otp,
-        type: "email",
+      const response = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email, token: otp.trim() }),
       });
 
-      if (error) throw error;
-      if (!data.session) throw new Error("Invalid OTP response");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Verification failed.');
 
       setStatus({ type: "success", message: "Verified! Signing in..." });
-      // AuthContext will handle the redirect via useEffect
+      await refreshAuth();
     } catch (err) {
       console.error("Verification error:", err);
       setStatus({ type: "error", message: err.message || "Verification failed." });

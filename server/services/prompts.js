@@ -1,5 +1,5 @@
 import { db } from "../db/db.js";
-import { isAdminUser, normalizeEmail } from "../middleware/auth.js";
+import { isAdminUser, isGuestUser, normalizeEmail } from "../middleware/auth.js";
 
 let warnedAboutMissingPromptCreatorColumns = false;
 
@@ -47,6 +47,10 @@ export function canTeacherManagePrompt(prompt, teacher) {
         return true;
     }
 
+    if (isGuestUser(teacher)) {
+        return false;
+    }
+
     const normalizedPrompt = normalizePromptRecord(prompt);
     const teacherEmail = normalizeEmail(teacher.email);
 
@@ -56,6 +60,19 @@ export function canTeacherManagePrompt(prompt, teacher) {
     );
 }
 
+export function canTeacherViewPrompt(prompt, teacher) {
+    if (!prompt || !teacher) {
+        return false;
+    }
+
+    const normalizedPrompt = normalizePromptRecord(prompt);
+    return normalizedPrompt.isPublic !== false || canTeacherManagePrompt(normalizedPrompt, teacher);
+}
+
+export function canTeacherCreatePrompt(teacher) {
+    return Boolean(teacher) && !isGuestUser(teacher);
+}
+
 export function decoratePromptForTeacher(prompt, teacher) {
     const normalizedPrompt = normalizePromptRecord(prompt);
 
@@ -63,7 +80,7 @@ export function decoratePromptForTeacher(prompt, teacher) {
         ...normalizedPrompt,
         canEdit: canTeacherManagePrompt(normalizedPrompt, teacher),
         canDelete: canTeacherManagePrompt(normalizedPrompt, teacher),
-        canClone: Boolean(teacher)
+        canClone: canTeacherCreatePrompt(teacher)
     };
 }
 

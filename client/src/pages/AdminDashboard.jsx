@@ -17,10 +17,10 @@ function AdminDashboard() {
   const [searchParams] = useSearchParams();
   const selectedPrompt = String(searchParams.get('prompt') || '').trim();
   const {
-    socket,
     isConnected,
     sessionCode,
     groups,
+    sessionEnded: realtimeSessionEnded,
     setGroups,
     joinSession
   } = useAdminSocket();
@@ -38,7 +38,7 @@ function AdminDashboard() {
     applyLibraryPrompt,
     isLibraryLoading,
     libraryError
-  } = usePromptManager(sessionCode, socket);
+  } = usePromptManager(sessionCode);
 
   const [isRecording, setIsRecording] = useState(false);
   const [interval, setInterval] = useState(30);
@@ -47,6 +47,15 @@ function AdminDashboard() {
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [applyingPromptId, setApplyingPromptId] = useState(null);
   const [releaseFeedback, setReleaseFeedback] = useState(null);
+  const [sessionTiming, setSessionTiming] = useState({ createdAt: null, expiresAt: null });
+  const [sessionEnded, setSessionEnded] = useState(false);
+
+  useEffect(() => {
+    if (realtimeSessionEnded) {
+      setIsRecording(false);
+      setSessionEnded(true);
+    }
+  }, [realtimeSessionEnded]);
 
   // Initialize session
   useEffect(() => {
@@ -56,13 +65,16 @@ function AdminDashboard() {
     const initSession = async () => {
       try {
         const res = await fetch('/api/new-session?mode=summary', {
+          method: 'POST',
           signal: controller.signal
         });
         if (!res.ok) {
           throw new Error(`Failed to create session (${res.status})`);
         }
         const data = await res.json();
-        joinSession(data.code);
+        setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
+        setSessionEnded(false);
+        joinSession(data.code, data.realtime?.teacherTopic, data.realtime?.accessToken);
       } catch (err) {
         if (disposed || controller.signal.aborted || err?.name === 'AbortError' || err?.message === 'Failed to fetch') {
           return;
@@ -132,6 +144,8 @@ function AdminDashboard() {
         throw new Error(`Failed to start session (${res.status})`);
       }
 
+      const data = await res.json().catch(() => ({}));
+      if (data.expiresAt) setSessionTiming((current) => ({ ...current, expiresAt: data.expiresAt }));
       setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -150,6 +164,7 @@ function AdminDashboard() {
       }
 
       setIsRecording(false);
+      setSessionEnded(true);
     } catch (err) {
       console.error('Failed to stop recording:', err);
     }
@@ -178,16 +193,25 @@ function AdminDashboard() {
     }
   };
 
-  const handleReleaseSummary = (groupNumber) => {
-    if (!socket || !sessionCode) {
+  const handleReleaseSummary = async (groupNumber) => {
+    if (!sessionCode) {
       return;
     }
 
-    socket.emit('release_summary', {
-      sessionCode,
-      groupNumber,
-      isReleased: true
-    });
+    try {
+      const response = await fetch(`/api/session/${sessionCode}/release-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupNumber, isReleased: true })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to release summary (${response.status})`);
+      }
+    } catch (err) {
+      console.error('Failed to release summary:', err);
+      showReleaseFeedback('Unable to release the summary. Try again.', 'error');
+      return;
+    }
 
     setGroups((prev) => {
       const next = new Map(prev);
@@ -204,8 +228,8 @@ function AdminDashboard() {
     showReleaseFeedback(`Released summary to Group ${groupNumber}.`, 'success');
   };
 
-  const handleReleaseAllSummaries = () => {
-    if (!socket || !sessionCode) {
+  const handleReleaseAllSummaries = async () => {
+    if (!sessionCode) {
       return;
     }
 
@@ -223,13 +247,21 @@ function AdminDashboard() {
       return;
     }
 
-    releaseTargets.forEach((groupNumber) => {
-      socket.emit('release_summary', {
-        sessionCode,
-        groupNumber,
-        isReleased: true
-      });
-    });
+    try {
+      await Promise.all(releaseTargets.map((groupNumber) => fetch(`/api/session/${sessionCode}/release-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupNumber, isReleased: true })
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to release summary (${response.status})`);
+        }
+      })));
+    } catch (err) {
+      console.error('Failed to release summaries:', err);
+      showReleaseFeedback('Unable to release all summaries. Try again.', 'error');
+      return;
+    }
 
     setGroups((prev) => {
       const next = new Map(prev);
@@ -259,6 +291,9 @@ function AdminDashboard() {
     <div className="admin-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
+        createdAt={sessionTiming.createdAt}
+        expiresAt={sessionTiming.expiresAt}
+        isEnded={sessionEnded}
         isConnected={isConnected}
         isRecording={isRecording}
         elapsedTime={elapsedTime}

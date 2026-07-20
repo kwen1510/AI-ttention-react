@@ -133,3 +133,48 @@ test("teacher auth middleware accepts staging bypass requests when enabled", asy
     delete process.env.STAGING_AUTH_BYPASS;
   }
 });
+
+test("staging bypass is disabled in production even if the flag is set", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousBypass = process.env.STAGING_AUTH_BYPASS;
+  process.env.NODE_ENV = "production";
+  process.env.STAGING_AUTH_BYPASS = "true";
+
+  try {
+    const { isStagingAuthBypassEnabled } = await import(`../server/middleware/auth.js?test=staging-prod-${Date.now()}`);
+    assert.equal(isStagingAuthBypassEnabled(), false);
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+    if (previousBypass === undefined) {
+      delete process.env.STAGING_AUTH_BYPASS;
+    } else {
+      process.env.STAGING_AUTH_BYPASS = previousBypass;
+    }
+  }
+});
+
+test("teacher auth middleware accepts a valid signed cookie without a bearer token", async () => {
+  applyBaseTestEnv(10000);
+  process.env.AUTH_COOKIE_SECRET = "test-auth-cookie-secret-at-least-thirty-two-characters";
+  const { createTeacherSessionToken } = await import(`../server/services/teacherSessionCookie.js?auth=${Date.now()}`);
+  const { __setAuthTestOverrides, authenticateTeacher } = await import(`../server/middleware/auth.js?test=cookie-auth-${Date.now()}`);
+
+  __setAuthTestOverrides({
+    lookupTeacherAccessRecordByUserId(userId) {
+      return { user_id: userId, email: "teacher@example.com", role: "teacher", active: true };
+    }
+  });
+
+  try {
+    const cookie = createTeacherSessionToken({ id: "teacher-cookie", email: "teacher@example.com" });
+    const teacher = await authenticateTeacher({ headers: { cookie: `ai_tt_teacher=${cookie}` } });
+    assert.equal(teacher.id, "teacher-cookie");
+    assert.equal(teacher.email, "teacher@example.com");
+  } finally {
+    __setAuthTestOverrides(null);
+  }
+});

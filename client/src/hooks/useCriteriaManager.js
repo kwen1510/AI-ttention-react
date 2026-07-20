@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { parseCheckboxPromptContent } from '../lib/prompts.js';
 
-export function useCriteriaManager(sessionCode, socket) {
+export function useCriteriaManager(sessionCode) {
     const [scenario, setScenario] = useState('');
     const [criteriaText, setCriteriaText] = useState('');
     const [currentCriteria, setCurrentCriteria] = useState([]);

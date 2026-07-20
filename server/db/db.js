@@ -5,7 +5,7 @@ const COLLECTION_META = {
   sessions: {
     primaryKey: 'id',
     upsertOn: 'id',
-    timestampFields: ['created_at', 'updated_at', 'start_time', 'end_time', 'ended_at', 'last_updated']
+    timestampFields: ['created_at', 'updated_at', 'start_time', 'end_time', 'ended_at', 'expires_at', 'last_updated']
   },
   groups: {
     primaryKey: 'id',
@@ -61,6 +61,25 @@ const COLLECTION_META = {
   checkbox_results: {
     primaryKey: 'id',
     timestampFields: ['created_at']
+  },
+  async_sessions: {
+    primaryKey: 'id',
+    upsertOn: 'id',
+    timestampFields: ['created_at', 'updated_at', 'expires_at', 'closed_at']
+  },
+  async_groups: {
+    primaryKey: 'id',
+    upsertOn: 'async_session_id,group_number',
+    timestampFields: ['created_at', 'updated_at']
+  },
+  async_segments: {
+    primaryKey: 'id',
+    timestampFields: ['created_at']
+  },
+  async_group_reports: {
+    primaryKey: 'id',
+    upsertOn: 'async_group_id',
+    timestampFields: ['created_at', 'updated_at']
   },
   prompt_library: {
     primaryKey: 'id',

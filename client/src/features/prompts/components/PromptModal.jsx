@@ -604,7 +604,7 @@ export function PromptModal({ isOpen, onClose, onSave, initialData = null, categ
                             className="ui-checkbox"
                         />
                         <span className="text-sm text-[var(--text)]">
-                            Make this prompt public so other teachers can use it.
+                            Make this prompt global so other teachers can use it. Otherwise it stays local to you.
                         </span>
                     </label>
                 </form>

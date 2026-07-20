@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-import FormData from "form-data";
 import { OPENAI_API_KEY } from "../config/env.js";
 import {
     buildTranscriptCleanupContext,
@@ -58,10 +56,7 @@ export async function transcribeAudioWithOpenAI(buffer, {
     }
 
     const formData = new FormData();
-    formData.append("file", buffer, {
-        filename,
-        contentType: mimeType
-    });
+    formData.append("file", new Blob([buffer], { type: mimeType }), filename);
     formData.append("model", "whisper-1");
     formData.append("language", language);
     formData.append("response_format", "verbose_json");
@@ -70,8 +65,7 @@ export async function transcribeAudioWithOpenAI(buffer, {
     const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: {
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
-            ...formData.getHeaders()
+            Authorization: `Bearer ${OPENAI_API_KEY}`
         },
         body: formData
     });

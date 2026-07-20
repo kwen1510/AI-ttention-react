@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import CheckboxDashboard from './pages/CheckboxDashboard.jsx';
+import AsyncDashboard from './pages/AsyncDashboard.jsx';
+import AsyncStudentView from './pages/AsyncStudentView.jsx';
 import DataExplorer from './pages/DataExplorer.jsx';
 import HistoryPage from './pages/HistoryPage.jsx';
 import PromptsPage from './pages/PromptsPage.jsx';
@@ -32,6 +34,11 @@ function App() {
         />
 
         <Route
+          path="/async"
+          element={renderTeacherRoute(<AsyncDashboard />)}
+        />
+
+        <Route
           path="/history"
           element={renderTeacherRoute(<HistoryPage />)}
         />
@@ -48,12 +55,14 @@ function App() {
 
         <Route path="/staging/admin" element={renderTeacherRoute(<AdminDashboard />)} />
         <Route path="/staging/checkbox" element={renderTeacherRoute(<CheckboxDashboard />)} />
+        <Route path="/staging/async" element={renderTeacherRoute(<AsyncDashboard />)} />
         <Route path="/staging/history" element={renderTeacherRoute(<HistoryPage />)} />
         <Route path="/staging/data" element={renderTeacherRoute(<DataExplorer />)} />
         <Route path="/staging/prompts" element={renderTeacherRoute(<PromptsPage />)} />
 
         <Route path="/student" element={<StudentView />} />
         <Route path="/s" element={<StudentView />} />
+        <Route path="/async/j/:shareId" element={<AsyncStudentView />} />
       </Route>
 
       <Route path="/staging" element={<Navigate to="/staging/admin" replace />} />

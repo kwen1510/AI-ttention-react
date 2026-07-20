@@ -2,9 +2,10 @@ process.env.NODE_ENV = process.env.NODE_ENV || "test";
 process.env.PORT = process.env.PORT || "0";
 process.env.HOST = process.env.HOST || "127.0.0.1";
 process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
-process.env.APP_ORIGINS = process.env.APP_ORIGINS || "http://127.0.0.1,http://localhost";
+process.env.APP_ORIGINS = process.env.APP_ORIGINS || "http://127.0.0.1,http://localhost"; // NOSONAR -- loopback test only.
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key";
+process.env.SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "sb_secret_test";
+process.env.SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_test";
 process.env.SESSION_JOIN_SECRET = process.env.SESSION_JOIN_SECRET || "smoke-test-session-secret";
 
 const { http, startServer } = await import("../index.js");

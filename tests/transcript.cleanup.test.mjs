@@ -50,3 +50,10 @@ test("boundary overlap trimming leaves unrelated text unchanged", async () => {
     next
   );
 });
+
+test("transcript segment ids identify retried chunks", async () => {
+  applyBaseTestEnv(10000);
+  const { hasTranscriptSegment } = await import(`../server/services/transcript.js?test=segment-id-${Date.now()}`);
+  assert.equal(hasTranscriptSegment([{ id: "chunk-one" }], "chunk-one"), true);
+  assert.equal(hasTranscriptSegment([{ id: "chunk-one" }], "chunk-two"), false);
+});

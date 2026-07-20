@@ -47,13 +47,44 @@ test("joinable session assertions reject inactive sessions", () => {
   assert.equal(active.sessionCode, "ZXCV98");
 });
 
-test("join tokens can fall back to the server role secret when a dedicated secret is absent", async () => {
+test("join tokens never reuse the Supabase server credential", async () => {
   applyBaseTestEnv(11003);
+  process.env.NODE_ENV = "test";
   delete process.env.SESSION_JOIN_SECRET;
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-secret";
 
   const joinTokens = await import(`../server/services/joinTokens.js?test=secret-fallback-${Date.now()}`);
-  assert.equal(joinTokens.getJoinTokenSecret(), "service-role-secret");
+  assert.notEqual(joinTokens.getJoinTokenSecret(), "service-role-secret");
+});
+
+test("join tokens require a dedicated secret in production", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousJoinSecret = process.env.SESSION_JOIN_SECRET;
+  const previousServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.NODE_ENV = "production";
+  delete process.env.SESSION_JOIN_SECRET;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-secret";
+
+  try {
+    const joinTokens = await import(`../server/services/joinTokens.js?test=prod-secret-${Date.now()}`);
+    assert.throws(() => joinTokens.getJoinTokenSecret(), /SESSION_JOIN_SECRET is not configured/);
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+    if (previousJoinSecret === undefined) {
+      delete process.env.SESSION_JOIN_SECRET;
+    } else {
+      process.env.SESSION_JOIN_SECRET = previousJoinSecret;
+    }
+    if (previousServiceRole === undefined) {
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    } else {
+      process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceRole;
+    }
+  }
 });
 
 test("joinable session assertions allow a short post-stop upload grace window", () => {
@@ -92,5 +123,16 @@ test("joinable session assertions allow a short post-stop upload grace window", 
       }
     ),
     /session not active/i
+  );
+});
+
+test("joinable session assertions reject expired active sessions", () => {
+  assert.throws(
+    () => assertJoinableSessionState(
+      "ROOM42",
+      { active: true },
+      { active: true, expires_at: Date.now() - 1000 }
+    ),
+    /session expired/i
   );
 });

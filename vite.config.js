@@ -17,16 +17,8 @@ export default defineConfig({
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'socket.io': ['socket.io-client'],
-        },
-      },
-    },
   },
   optimizeDeps: {
-    include: ['socket.io-client'],
     esbuildOptions: {
       define: {
         global: 'globalThis',

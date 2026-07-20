@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { selectRecordingMimeType, uploadAudioChunk } from '../lib/audioUpload.js';
 
 const INITIAL_UPLOAD_STATE = {
     phase: 'idle',
@@ -157,31 +158,13 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             lastError: null
         }));
 
-        const formData = new FormData();
-        formData.append('file', blob, `chunk_${Date.now()}.webm`);
-        formData.append('sessionCode', currentSessionCode);
-        formData.append('groupNumber', parsedGroup);
-
         try {
-            const response = await fetch('/api/transcribe-chunk', {
-                method: 'POST',
-                headers: {
-                    'x-session-code': currentSessionCode,
-                    'x-group-number': String(parsedGroup)
-                },
-                body: formData
+            await uploadAudioChunk({
+                blob,
+                sessionCode: currentSessionCode,
+                groupNumber: parsedGroup,
+                accessToken: currentSocket?.accessToken
             });
-
-            let payload = null;
-            try {
-                payload = await response.json();
-            } catch {
-                payload = null;
-            }
-
-            if (!response.ok) {
-                throw new Error(payload?.error || `Upload failed: ${response.status}`);
-            }
 
             pendingUploadsRef.current = Math.max(0, pendingUploadsRef.current - 1);
 
@@ -235,12 +218,10 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             }
 
             try {
-                const options = { mimeType: 'audio/webm;codecs=opus' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options.mimeType = 'audio/webm';
-                }
-
-                const recorder = new MediaRecorder(streamRef.current, options);
+                const mimeType = selectRecordingMimeType(MediaRecorder);
+                const recorder = mimeType
+                    ? new MediaRecorder(streamRef.current, { mimeType })
+                    : new MediaRecorder(streamRef.current);
                 mediaRecorderRef.current = recorder;
 
                 recorder.onstart = () => {

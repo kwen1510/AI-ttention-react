@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CheckSquare,
+  Clock3,
   Database,
   FileText,
   GraduationCap,
@@ -15,6 +16,7 @@ import { Button } from "./ui/button.jsx";
 const modeItems = [
   { key: "summary", path: "/admin", label: "Summary", icon: MessageSquare },
   { key: "checkbox", path: "/checkbox", label: "Checkbox", icon: CheckSquare },
+  { key: "async", path: "/async", label: "Async", icon: Clock3 },
   { key: "prompts", path: "/prompts", label: "Prompts", icon: FileText },
   { key: "history", path: "/history", label: "History", icon: Database },
 ];

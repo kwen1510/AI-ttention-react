@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-import FormData from "form-data";
 import { ELEVENLABS_KEY, TRANSCRIPTION_LANGUAGE } from "../config/env.js";
 import { transcribeAudioWithOpenAI } from "./openai.js";
 
@@ -34,6 +32,12 @@ function createMockTranscription(text) {
         text,
         words
     };
+}
+
+function extractMockTranscriptFromBuffer(buf) {
+    const raw = Buffer.isBuffer(buf) ? buf.toString("utf8") : "";
+    const match = raw.match(/MOCK_TRANSCRIPT:\s*([\s\S]+)/);
+    return match ? match[1].trim() : "";
 }
 
 export function extractMime(mime) {
@@ -83,6 +87,11 @@ export async function transcribe(buf, format = 'audio/webm') {
     try {
         if (isMockAiServicesEnabled()) {
             mockChunkCounter += 1;
+            const suppliedTranscript = extractMockTranscriptFromBuffer(buf);
+            if (suppliedTranscript) {
+                return createMockTranscription(suppliedTranscript);
+            }
+
             return createMockTranscription(
                 `Mock transcript chunk ${mockChunkCounter}. Testing one two three. Summary updates should continue while recording.`
             );
@@ -116,10 +125,7 @@ export async function transcribe(buf, format = 'audio/webm') {
         }
 
         // Add the audio buffer as a file
-        formData.append('file', buf, {
-            filename: filename,
-            contentType: audioMime
-        });
+        formData.append('file', new Blob([buf], { type: audioMime }), filename);
         formData.append('model_id', 'scribe_v1');
         formData.append('language_code', TRANSCRIPTION_LANGUAGE);
         formData.append('timestamps_granularity', 'word');
@@ -129,8 +135,7 @@ export async function transcribe(buf, format = 'audio/webm') {
                 const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
                     method: 'POST',
                     headers: {
-                        'xi-api-key': ELEVENLABS_KEY,
-                        ...formData.getHeaders()
+                        'xi-api-key': ELEVENLABS_KEY
                     },
                     body: formData
                 });
@@ -178,11 +183,14 @@ export async function transcribe(buf, format = 'audio/webm') {
         console.error("❌ Transcription error:", err);
         console.error("Error details:", err.message);
 
-        // Return a more user-friendly error message
-        if (err.message.includes('corrupted') || err.message.includes('invalid_content')) {
-            return { text: "Audio quality issue - please try again", words: [] };
-        }
-
-        return { text: "Transcription temporarily unavailable", words: [] };
+        const audioError = err.message.includes('corrupted') || err.message.includes('invalid_content');
+        const publicError = new Error(audioError
+            ? "The audio chunk could not be decoded. Please retry the recording."
+            : "The transcription service is temporarily unavailable. The audio chunk was not saved.");
+        publicError.status = audioError ? 422 : 503;
+        publicError.code = audioError ? "AUDIO_DECODE_FAILED" : "TRANSCRIPTION_PROVIDER_FAILED";
+        publicError.expose = true;
+        publicError.cause = err;
+        throw publicError;
     }
 }

@@ -82,7 +82,7 @@ export function PromptsList({ prompts, onView }) {
                                     {prompt.category}
                                 </Badge>
                                 <Badge tone={prompt.isPublic ? 'success' : 'neutral'} size="sm" icon={prompt.isPublic ? Globe : Lock}>
-                                    {prompt.isPublic ? 'Shared' : 'Private'}
+                                    {prompt.isPublic ? 'Global' : 'Local'}
                                 </Badge>
                             </div>
 

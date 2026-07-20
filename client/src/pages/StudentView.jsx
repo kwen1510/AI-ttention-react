@@ -9,12 +9,27 @@ import { SummaryPanel } from '../features/student/components/SummaryPanel';
 import { ChecklistPanel } from '../features/student/components/ChecklistPanel';
 import { Alert } from '../components/ui/alert.jsx';
 
+function readSessionCodeFromJoinToken(token) {
+  try {
+    const [encodedPayload] = String(token || '').split('.');
+    if (!encodedPayload) return '';
+    const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+    const payload = JSON.parse(window.atob(`${normalized}${padding}`));
+    return String(payload?.sessionCode || '').trim().toUpperCase();
+  } catch {
+    return '';
+  }
+}
+
 function StudentView() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
   const blockedTeacherAccess = params.get('blocked') === 'teacher';
-  const initialCode = String(params.get('c') || params.get('code') || '').trim().toUpperCase();
+  const joinToken = String(params.get('token') || '').trim();
+  const tokenSessionCode = readSessionCodeFromJoinToken(joinToken);
+  const initialCode = String(params.get('c') || params.get('code') || tokenSessionCode || '').trim().toUpperCase();
   const initialGroup = String(params.get('g') || params.get('group') || '').trim();
   const {
     socket,
@@ -73,7 +88,7 @@ function StudentView() {
   if (!sessionInfo.code) {
     return (
       <JoinForm
-        onJoin={joinSession}
+        onJoin={(code, group) => joinSession(code, group, joinToken || null)}
         error={socketError}
         initialCode={initialCode}
         initialGroup={initialGroup}
