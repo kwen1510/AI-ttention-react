@@ -69,6 +69,7 @@ try {
       probeError = new Error('Failed to remove the private Realtime probe channel');
     }
   }
+  await student.realtime.disconnect();
   if (syntheticUserId) {
     const { error } = await admin.auth.admin.deleteUser(syntheticUserId);
     if (error) {

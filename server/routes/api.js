@@ -2427,9 +2427,20 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
     try {
         const teacher = await requireTeacher(req, res);
         if (!teacher) return;
-        const { sessionCode, criteria, scenario, interval, strictness = 2 } = req.body;
+        const sessionCode = String(req.body?.sessionCode || "").trim().toUpperCase();
+        const criteria = Array.isArray(req.body?.criteria) ? req.body.criteria : [];
+        const scenario = String(req.body?.scenario || "").trim();
+        const interval = normalizeIntervalMs(req.body?.interval);
+        const strictness = Number(req.body?.strictness) || 2;
 
-        if (!sessionCode || !criteria || criteria.length === 0) {
+        const invalidCriteria = criteria.length === 0 || criteria.length > 50 || criteria.some((criterion) => {
+            const description = String(criterion?.description || "").trim();
+            const rubric = String(criterion?.rubric || "").trim();
+            const weight = criterion?.weight == null ? 1 : Number(criterion.weight);
+            return !description || description.length > 500 || rubric.length > 1000
+                || !Number.isFinite(weight) || weight <= 0 || weight > 100;
+        });
+        if (!/^[A-Z0-9]{6}$/.test(sessionCode) || invalidCriteria || scenario.length > 4000 || strictness < 1 || strictness > 3) {
             return res.status(400).json({ error: "Session code and criteria required" });
         }
 
@@ -2438,6 +2449,7 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
 
         // Clean up any old data for this session to ensure fresh start
         if (session) {
+            await getOwnedSessionContext(sessionCode, teacher.id);
             await cleanupOldSessionData(sessionCode);
         }
 
@@ -2491,20 +2503,23 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
         for (let index = 0; index < criteria.length; index++) {
             const criterion = criteria[index];
             const criterionId = uuid();
+            const description = String(criterion.description).trim();
+            const rubric = String(criterion.rubric || '').trim();
+            const weight = Number.isFinite(Number(criterion.weight)) ? Number(criterion.weight) : 1;
             await db.collection("checkbox_criteria").insertOne({
                 _id: criterionId,
                 session_id: session._id,
-                description: criterion.description,
-                rubric: criterion.rubric || '',
-                weight: criterion.weight || 1,
+                description,
+                rubric,
+                weight,
                 order_index: index,
                 created_at: Date.now()
             });
             criteriaIds.push(criterionId);
             memCriteria.push({
                 _id: criterionId,
-                description: criterion.description,
-                rubric: criterion.rubric || '',
+                description,
+                rubric,
                 order_index: index
             });
         }
@@ -2537,7 +2552,7 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
 
     } catch (err) {
         console.error("❌ Failed to create checkbox session:", err);
-        res.status(500).json({ error: "Failed to create checkbox session" });
+        sendRouteError(res, err, "Failed to create checkbox session");
     }
 });
 

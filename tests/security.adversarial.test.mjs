@@ -207,6 +207,43 @@ test("teacher identity owns created sessions and traversal paths cannot expose f
     assert.notEqual(checkbox.body.code, created.body.code);
     assert.equal(dbOverrides.dump("sessions").length, 2);
 
+    const configureCheckbox = await jsonRequest(baseUrl, "/api/checkbox/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
+      body: JSON.stringify({
+        sessionCode: checkbox.body.code,
+        criteria: [{ description: "Explain the chosen evidence", rubric: "Names evidence and explains it" }],
+        scenario: "Compare the evidence",
+        interval: 5000,
+        strictness: 2
+      })
+    });
+    assert.equal(configureCheckbox.response.status, 200);
+
+    const crossTeacherConfigure = await jsonRequest(baseUrl, "/api/checkbox/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-b-token" },
+      body: JSON.stringify({
+        sessionCode: checkbox.body.code,
+        criteria: [{ description: "Replace another teacher's rubric" }]
+      })
+    });
+    assert.equal(crossTeacherConfigure.response.status, 403);
+    assert.equal(
+      dbOverrides.dump("sessions").find((session) => session.code === checkbox.body.code).owner_id,
+      "teacher-1"
+    );
+
+    const oversizedCriteria = await jsonRequest(baseUrl, "/api/checkbox/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
+      body: JSON.stringify({
+        sessionCode: checkbox.body.code,
+        criteria: [{ description: "x".repeat(501) }]
+      })
+    });
+    assert.equal(oversizedCriteria.response.status, 400);
+
     const traversal = await fetch(`${baseUrl}/assets/%2e%2e/%2e%2e/.env`);
     const traversalBody = await traversal.text();
     assert.equal(traversal.status, 404);
