@@ -60,7 +60,7 @@ SILENCE_AUDIO_PATH=/absolute/path/to/silence.wav \
 npm run test:local:providers
 ```
 
-`test:local:core` includes 67 unit/API/adversarial tests, a 25-group Summary and Checkbox
+`test:local:core` includes 70 unit/API/adversarial tests, a 25-group Summary and Checkbox
 simulation, isolated browser workflows, browser cookie/security coverage, dependency audit, and a
 final production build/smoke test.
 The provider gate requires both usable speech transcription with silence suppression and a real
@@ -71,7 +71,6 @@ boundary probe. It creates and deletes one synthetic anonymous user without prin
 identifier:
 
 ```sh
-set -a && source .env && set +a
 npm run db:verify:student-boundary
 ```
 
