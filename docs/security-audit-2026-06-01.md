@@ -1,5 +1,26 @@
 # Security Audit - 2026-06-01
 
+## 2026-07-21 Re-spin Release Addendum
+
+- The complete local gate now passes 75 unit/API/adversarial tests, a 25-group Summary and Checkbox
+  simulation, isolated browser workflows, cookie/security E2E, dependency audit, production build,
+  and smoke test.
+- A cleanup-safe live production suite passed real speech and silence handling, OpenAI summary,
+  Summary/Checkbox/asynchronous modes, private-topic and cross-group denial, forced stop/close,
+  persisted history/state, and abandoned pending-session deletion on runtime commit `d538067`.
+- Production commit `196f73a` is healthy and adds a conditional Cloudflare Turnstile token path plus
+  cleanup-safe P-256/ES256 JWKS verification. Turnstile enforcement and ES256 rotation remain
+  dashboard gates; the production JWKS currently contains no asymmetric key.
+- The final tracked-source Semgrep rerun used OWASP Top Ten, JavaScript, Node, and secrets configs:
+  113 rules across 145 files, zero findings.
+- Gitleaks over an archive containing exactly tracked `HEAD` files returned zero findings. A raw
+  worktree scan reported seven candidates, all in the ignored local `.env`; no value was printed or
+  added to source control.
+- `npm audit --audit-level=moderate` reports zero vulnerabilities. The current shell has no Trivy
+  executable and no running/installed SonarQube scanner, so those two final reruns are unavailable.
+  The earlier final Trivy scan (zero high/critical findings) and Sonar quality gate (zero bugs,
+  vulnerabilities, or security hotspots) remain the latest evidence for those tools.
+
 ## 2026-07-20 Security Addendum
 
 - Teacher OTP verification now terminates on the server and creates an AES-256-GCM encrypted
@@ -106,22 +127,18 @@ verification suite. The app now has:
 
 ## Remaining Required Work Before Broad Production Use
 
-1. Rotate exposed credentials if any service-role key was ever pasted into chat, committed, emailed,
-   or used on a shared machine.
-2. Configure DigitalOcean secrets directly in the platform, not in tracked files.
-3. Configure a high-entropy production `SESSION_JOIN_SECRET`; do not reuse the Supabase service-role
-   key for token signing.
-4. Confirm production `APP_ORIGINS` and `APP_PUBLIC_ORIGIN` are exact HTTPS origins.
-5. Enable Supabase Auth controls appropriate for the school, including MFA for teacher/admin users
-   if feasible.
-6. Add a data-retention policy for async transcripts and reports, then implement scheduled cleanup.
-7. Add operational logging/alerting for repeated invalid share IDs, upload rejections, rate limits,
-   and unusually high public upload volume.
-8. Apply `20260720_native_realtime_memberships.sql`, verify no older broad
-   `realtime.messages` SELECT policy remains, and enable private-only channels in Realtime Settings.
-9. Run a real production smoke test on the deployed URL after deployment, including microphone
-   permission and upload from a phone.
-10. Monitor private-channel authorization failures and JWT expiry errors after deployment.
+1. In Supabase, migrate the legacy JWT secret into managed signing keys, rotate fresh tokens to
+   P-256/ES256, and run `npm run db:verify:es256` plus fresh teacher-cookie/Realtime validation.
+2. Wait the configured access-token lifetime plus 15 minutes, confirm legacy `anon` and
+   `service_role` last-use is quiet, disable those legacy API keys, and only then revoke the legacy
+   JWT secret. Keep the rollback sequence available throughout the overlap window.
+3. Create a hostname-restricted Cloudflare Turnstile widget, deploy only its public site key as
+   `VITE_TURNSTILE_SITE_KEY`, then store the private secret directly in Supabase and enable CAPTCHA.
+4. Establish the school's consent, transcript-retention, subject-access, and deletion policy, plus
+   monitoring/alerts for unusual anonymous Auth growth, invalid joins, rate limits, and upload
+   rejection volume.
+5. Repeat a short real-phone speech/silence smoke test before each major workshop and consider MFA
+   for teacher/admin dashboard accounts.
 
 ## Residual Risks
 
