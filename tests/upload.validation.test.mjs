@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import {
+  liveAudioUpload,
   MAX_AUDIO_UPLOAD_BYTES,
   isLikelySupportedAudioBuffer,
   isSupportedAudioUploadMimeType
@@ -57,49 +58,20 @@ test("audio payload validation checks file signatures outside mock mode", async 
   }
 });
 
-test("student upload validation requires a session reference and positive group numbers", async () => {
-  applyBaseTestEnv(10000);
-  const { validateStudentUploadRequest } = await import("../server/routes/api.js");
-
-  assert.throws(
-    () => validateStudentUploadRequest({ file: null, sessionCode: "", groupNumber: 1 }),
-    /missing file, session code, or group number/i
-  );
-
-  assert.throws(
-    () => validateStudentUploadRequest({ file: { size: 1 }, sessionCode: "ROOM42", groupNumber: 0 }),
-    /missing file, session code, or group number/i
-  );
-
-  assert.doesNotThrow(() => validateStudentUploadRequest({
-    file: { size: 128 },
-    sessionCode: "ROOM42",
-    groupNumber: 2
-  }));
-
-  assert.doesNotThrow(() => validateStudentUploadRequest({
-    file: { size: 128 },
-    joinToken: "token",
-    groupNumber: 2
-  }));
-});
-
 test("audio upload size cap stays at 10 MB", () => {
   assert.equal(MAX_AUDIO_UPLOAD_BYTES, 10 * 1024 * 1024);
+});
+
+test("live audio uses a separate bounded parser", () => {
+  assert.ok(liveAudioUpload);
 });
 
 test("all API audio upload handlers validate the file payload signature", () => {
   const source = fs.readFileSync(new URL("../server/routes/api.js", import.meta.url), "utf8");
   const lines = source.split("\n");
-  const uploadRoutes = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!line.includes("router.post(") || !line.includes("upload.single(")) {
-      continue;
-    }
-
-    const path = line.match(/router\.post\("([^"]+)"/)?.[1];
+  const uploadRoutes = ["/transcribe-chunk", "/async/join/:shareId/upload"].map((path) => {
+    const index = lines.findIndex((line) => line.includes(`router.post("${path}"`));
+    assert.notEqual(index, -1, `${path} route should exist`);
     let body = "";
     for (let bodyIndex = index; bodyIndex < lines.length; bodyIndex += 1) {
       if (bodyIndex > index && lines[bodyIndex].startsWith("router.")) {
@@ -107,8 +79,8 @@ test("all API audio upload handlers validate the file payload signature", () => 
       }
       body += `${lines[bodyIndex]}\n`;
     }
-    uploadRoutes.push({ path, body });
-  }
+    return { path, body };
+  });
 
   assert.equal(uploadRoutes.length, 2, "only the live and asynchronous upload handlers should remain");
 

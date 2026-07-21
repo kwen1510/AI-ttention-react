@@ -26,6 +26,7 @@ from (values
   ('async_group_reports'), ('async_segments'), ('async_groups'), ('async_sessions'),
   ('checkbox_results'), ('checkbox_progress'), ('checkbox_criteria'), ('checkbox_sessions'),
   ('mindmap_archives'), ('mindmap_sessions'),
+  ('rolling_summary_jobs'), ('rolling_summary_commits'), ('rolling_summary_states'), ('live_audio_chunks'),
   ('summary_snapshots'), ('summaries'), ('transcripts'),
   ('session_logs'), ('session_prompts'), ('groups'),
   ('classroom_realtime_memberships'), ('transcriptions'), ('sessions')

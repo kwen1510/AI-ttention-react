@@ -1,4 +1,5 @@
 import multer from "multer";
+import { LIVE_AUDIO_MAX_BYTES } from "../config/env.js";
 
 const SUPPORTED_AUDIO_MIME_TYPES = new Set([
     "audio/webm",
@@ -65,6 +66,21 @@ export const upload = multer({
     fileFilter: (_req, file, cb) => {
         if (!isSupportedAudioUploadMimeType(file?.mimetype)) {
             const error = new Error("Only audio uploads are supported");
+            error.status = 400;
+            error.code = "UNSUPPORTED_MEDIA_TYPE";
+            cb(error);
+            return;
+        }
+        cb(null, true);
+    }
+});
+
+export const liveAudioUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { files: 1, fileSize: LIVE_AUDIO_MAX_BYTES, fields: 4, parts: 5 },
+    fileFilter: (_req, file, cb) => {
+        if (!isSupportedAudioUploadMimeType(file?.mimetype)) {
+            const error = new Error("Only supported audio uploads are accepted");
             error.status = 400;
             error.code = "UNSUPPORTED_MEDIA_TYPE";
             cb(error);

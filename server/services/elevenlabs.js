@@ -1,4 +1,4 @@
-import { ELEVENLABS_KEY, TRANSCRIPTION_LANGUAGE } from "../config/env.js";
+import { ELEVENLABS_KEY, PROVIDER_TIMEOUT_MS, TRANSCRIPTION_LANGUAGE } from "../config/env.js";
 import { transcribeAudioWithOpenAI } from "./openai.js";
 
 let mockChunkCounter = 0;
@@ -118,7 +118,7 @@ export function normalizeElevenLabsTranscription(result) {
     };
 }
 
-export async function transcribe(buf, format = 'audio/webm') {
+export async function transcribe(buf, format = 'audio/webm', { signal = null } = {}) {
     try {
         if (isMockAiServicesEnabled()) {
             mockChunkCounter += 1;
@@ -172,7 +172,10 @@ export async function transcribe(buf, format = 'audio/webm') {
                     headers: {
                         'xi-api-key': ELEVENLABS_KEY
                     },
-                    body: formData
+                    body: formData,
+                    signal: signal
+                        ? AbortSignal.any([signal, AbortSignal.timeout(PROVIDER_TIMEOUT_MS)])
+                        : AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
                 });
 
                 if (!response.ok) {
@@ -198,6 +201,7 @@ export async function transcribe(buf, format = 'audio/webm') {
                 const result = await response.json();
                 return normalizeElevenLabsTranscription(result);
             } catch (err) {
+                if (signal?.aborted) throw err;
                 console.warn("⚠️ ElevenLabs transcription failed, falling back to OpenAI:", err.message);
             }
         } else {
@@ -207,7 +211,8 @@ export async function transcribe(buf, format = 'audio/webm') {
         return await transcribeAudioWithOpenAI(buf, {
             mimeType: audioMime,
             filename,
-            language: TRANSCRIPTION_LANGUAGE
+            language: TRANSCRIPTION_LANGUAGE,
+            signal
         });
 
     } catch (err) {

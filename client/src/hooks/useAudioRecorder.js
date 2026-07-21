@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createAudioActivityMonitor, selectRecordingMimeType, uploadAudioChunk } from '../lib/audioUpload.js';
+import {
+    createAudioActivityMonitor,
+    initialChunkStaggerMs,
+    MAX_PENDING_AUDIO_CHUNKS,
+    selectRecordingMimeType,
+    TARGET_AUDIO_BITRATE,
+    uploadAudioChunk
+} from '../lib/audioUpload.js';
 
 const INITIAL_UPLOAD_STATE = {
     phase: 'idle',
@@ -28,6 +35,8 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
     });
     const isRecordingRef = useRef(false);
     const pendingUploadsRef = useRef(0);
+    const uploadChainRef = useRef(Promise.resolve());
+    const firstCycleRef = useRef(true);
     const stopRequestedRef = useRef(false);
 
     useEffect(() => {
@@ -140,7 +149,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
         }
     }, []);
 
-    const uploadChunk = useCallback(async (blob) => {
+    const uploadChunk = useCallback((blob) => {
         const {
             sessionCode: currentSessionCode,
             groupNumber: currentGroupNumber,
@@ -153,6 +162,12 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
 
         const parsedGroup = Number(currentGroupNumber);
         const chunkSize = blob.size;
+        if (pendingUploadsRef.current >= MAX_PENDING_AUDIO_CHUNKS) {
+            const message = 'Upload queue is full. Check the connection before continuing.';
+            publishUploadState((previous) => ({ ...previous, phase: 'error', lastError: message }));
+            onUploadError?.(message);
+            return;
+        }
         pendingUploadsRef.current += 1;
 
         publishUploadState((previous) => ({
@@ -163,6 +178,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             lastError: null
         }));
 
+        uploadChainRef.current = uploadChainRef.current.then(async () => {
         try {
             await uploadAudioChunk({
                 blob,
@@ -214,6 +230,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 onUploadError(message);
             }
         }
+        });
     }, [onUploadError, publishUploadState]);
 
     useEffect(() => {
@@ -225,9 +242,11 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             try {
                 activityMonitorRef.current?.reset();
                 const mimeType = selectRecordingMimeType(MediaRecorder);
-                const recorder = mimeType
-                    ? new MediaRecorder(streamRef.current, { mimeType })
-                    : new MediaRecorder(streamRef.current);
+                const recorderOptions = {
+                    ...(mimeType ? { mimeType } : {}),
+                    audioBitsPerSecond: TARGET_AUDIO_BITRATE
+                };
+                const recorder = new MediaRecorder(streamRef.current, recorderOptions);
                 mediaRecorderRef.current = recorder;
 
                 recorder.onstart = () => {
@@ -296,11 +315,15 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 };
 
                 recorder.start();
+                const groupOffset = firstCycleRef.current
+                    ? initialChunkStaggerMs(sessionRef.current.groupNumber)
+                    : 0;
+                firstCycleRef.current = false;
                 cycleStopTimerRef.current = setTimeout(() => {
                     if (recorder.state === 'recording') {
                         recorder.stop();
                     }
-                }, intervalMsRef.current);
+                }, intervalMsRef.current + groupOffset);
             } catch (error) {
                 console.error('Failed to start recording cycle:', error);
                 clearCycleTimers();
@@ -332,6 +355,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
+                    channelCount: 1,
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true
@@ -345,6 +369,8 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             isRecordingRef.current = true;
             stopRequestedRef.current = false;
             pendingUploadsRef.current = 0;
+            uploadChainRef.current = Promise.resolve();
+            firstCycleRef.current = true;
             setIsRecording(true);
 
             publishUploadState({

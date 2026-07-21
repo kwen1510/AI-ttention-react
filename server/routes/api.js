@@ -1,14 +1,14 @@
 import express from "express";
 import { randomInt } from "crypto";
 import { randomUUID as uuid } from "node:crypto";
-import { isLikelySupportedAudioBuffer, upload } from "../middleware/upload.js";
+import { isLikelySupportedAudioBuffer, liveAudioUpload, upload } from "../middleware/upload.js";
 import { authenticateUserFromToken, authorizeTeacherUser, extractBearerToken, isTeacherEmailAllowedForLogin, normalizeEmail, optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
 import { aiUploadLimiter, asyncJoinLimiter, asyncUploadLimiter, authLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseAuthClient, supabase } from "../db/supabaseClient.js";
 import { clearTeacherSessionCookie, setTeacherSessionCookie } from "../services/teacherSessionCookie.js";
 import { createSupabaseDb } from "../db/db.js";
 import { isIgnorableTranscriptionText, transcribe } from "../services/elevenlabs.js";
-import { cleanTranscriptChunk, summarise } from "../services/openai.js";
+import { cleanTranscriptChunk } from "../services/openai.js";
 import {
     assertJoinableSessionState,
     buildJoinUrl,
@@ -20,11 +20,9 @@ import { activeSessions, sessionTimers } from "../services/state.js";
 import {
     appendTranscriptSegment,
     countTranscriptWords,
-    createSummaryUpdateFields,
     createTranscriptRecord,
     getTranscriptBundle,
-    hasTranscriptSegment,
-    persistSummarySnapshot
+    hasTranscriptSegment
 } from "../services/transcript.js";
 import {
     processCheckboxTranscript,
@@ -75,6 +73,15 @@ import {
     grantRealtimeTopics,
     revokeSessionRealtimeMemberships
 } from "../services/realtimeMemberships.js";
+import {
+    LIVE_AUDIO_CHUNK_MS,
+    SUMMARY_INTERVAL_DEFAULT_MS,
+    SUMMARY_INTERVAL_MAX_MS,
+    SUMMARY_INTERVAL_MIN_MS
+} from "../config/env.js";
+import { acquireLiveAudioCapacity, getLiveAudioMetrics, recordLiveAudioResult } from "../services/liveAudioCapacity.js";
+import { claimLiveAudioChunk, completeLiveAudioChunk } from "../services/liveAudioChunks.js";
+import { flushRollingSummary, scheduleRollingSummary } from "../services/rollingSummary.js";
 
 const router = express.Router();
 const db = createSupabaseDb();
@@ -110,13 +117,15 @@ function isUniqueViolation(error) {
     return String(error?.code || "") === "23505" || /duplicate key/i.test(String(error?.message || ""));
 }
 
-function normalizeIntervalMs(value, fallback = 30000) {
+export function normalizeSummaryIntervalMs(value, fallback = SUMMARY_INTERVAL_DEFAULT_MS) {
     const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 5000) {
+    if (!Number.isInteger(parsed) || parsed < SUMMARY_INTERVAL_MIN_MS || parsed > SUMMARY_INTERVAL_MAX_MS) {
         return fallback;
     }
     return parsed;
 }
+
+const normalizeIntervalMs = normalizeSummaryIntervalMs;
 
 function normalizePositiveInteger(value, fallback) {
     const parsed = Number(value);
@@ -183,14 +192,18 @@ async function expireClassroomSession(code, expiresAt) {
         audience: "all",
         payload: { reason: "expired" }
     });
-    await revokeSessionRealtimeMemberships(code);
     const terminalTimer = setTimeout(() => {
+        void flushRollingSummary({
+            sessionCode: code,
+            sessionId: session._id
+        }).catch((error) => console.warn("Final expired-session summary failed:", error.message));
         void publishRealtimeEvent({
             sessionCode: code,
             event: REALTIME_EVENTS.SESSION_ENDED,
             audience: "all",
             payload: { reason: "expired", endedAt: now }
         });
+        void revokeSessionRealtimeMemberships(code);
     }, FINAL_UPLOAD_GRACE_MS);
     terminalTimer.unref?.();
 }
@@ -264,7 +277,8 @@ async function ensureSessionRecord({
             code,
             mode,
             active,
-            interval_ms: intervalMs,
+            interval_ms: LIVE_AUDIO_CHUNK_MS,
+            summary_interval_ms: normalizeSummaryIntervalMs(intervalMs),
             strictness,
             created_at: createdAt,
             start_time: startTime,
@@ -304,7 +318,7 @@ function restoreSessionRuntimeState(session) {
         code,
         ownerId: session.owner_id,
         active: Boolean(session.active),
-        interval: session.interval_ms || 30000,
+        interval: session.summary_interval_ms || SUMMARY_INTERVAL_DEFAULT_MS,
         startTime: session.start_time || null,
         created_at: session.created_at || Date.now(),
         persisted: true,
@@ -466,7 +480,8 @@ async function resolveStudentSessionContext({
         sessionState: nextState,
         group,
         mode: session?.mode || nextState?.mode || "summary",
-        interval: session?.interval_ms || nextState?.interval || 30000,
+        interval: session?.summary_interval_ms || nextState?.interval || SUMMARY_INTERVAL_DEFAULT_MS,
+        audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
         active: Boolean(session?.active || nextState?.active)
     };
 }
@@ -488,6 +503,48 @@ async function authorizeStudentGroupRequest(req, sessionCode, groupNumber) {
         groupNumber
     });
     return identity;
+}
+
+async function preflightLiveAudioUpload(req, res, next) {
+    try {
+        const sessionCode = normalizeSessionCode(req.get("x-session-code"));
+        const groupNumber = normalizeGroupNumber(req.get("x-group-number"));
+        if (!sessionCode || !groupNumber) {
+            throw createHttpError("Session and group headers are required", 400);
+        }
+
+        await authorizeStudentGroupRequest(req, sessionCode, groupNumber);
+        const context = await resolveStudentSessionContext({
+            sessionCode,
+            groupNumber,
+            requireActive: true,
+            allowUploadGrace: true
+        });
+        if (!context.session?._id || !context.group?._id) {
+            throw createHttpError("Persisted active session required", 409);
+        }
+
+        const releaseCapacity = acquireLiveAudioCapacity();
+        if (!releaseCapacity) {
+            res.setHeader("Retry-After", "2");
+            throw createHttpError("Transcription capacity is busy; retry this chunk", 503);
+        }
+        req.liveAudioContext = context;
+        req.releaseLiveAudioCapacity = releaseCapacity;
+        next();
+    } catch (error) {
+        sendRouteError(res, error, "Audio upload rejected");
+    }
+}
+
+function parseLiveAudioUpload(req, res, next) {
+    liveAudioUpload.single("file")(req, res, (error) => {
+        if (!error) return next();
+        req.releaseLiveAudioCapacity?.();
+        req.releaseLiveAudioCapacity = null;
+        const status = error?.code === "LIMIT_FILE_SIZE" ? 413 : (error?.status || 400);
+        res.status(status).json({ error: status === 413 ? "Audio chunk exceeds the live upload limit" : error.message });
+    });
 }
 
 async function loadChecklistState(session, sessionCode, groupNumber) {
@@ -517,7 +574,7 @@ async function loadChecklistState(session, sessionCode, groupNumber) {
 }
 
 async function buildStudentJoinState(context, realtimeUser) {
-    const { code, groupNumber, session, sessionState, mode, interval, active } = context;
+    const { code, groupNumber, session, sessionState, mode, interval, audioChunkInterval, active } = context;
     const status = active ? "recording" : "waiting";
     const payload = {
         code,
@@ -525,6 +582,8 @@ async function buildStudentJoinState(context, realtimeUser) {
         mode,
         status,
         interval,
+        audioChunkInterval,
+        summaryInterval: interval,
         expiresAt: session?.expires_at || sessionState?.expiresAt || null,
         realtime: {
             studentTopic: buildStudentRealtimeTopic(code),
@@ -569,6 +628,34 @@ async function buildStudentJoinState(context, realtimeUser) {
     }
 
     return payload;
+}
+
+async function buildTeacherGroupRecovery(session) {
+    if (!session?._id) return [];
+    const groups = await db.collection("groups").find({ session_id: session._id }).sort({ number: 1 }).toArray();
+    const recovered = [];
+    for (const group of groups) {
+        const [{ segments, stats }, summaryRecord, released] = await Promise.all([
+            getTranscriptBundle(session._id, group._id),
+            db.collection("summaries").findOne({ group_id: group._id }),
+            isSummaryReleased({ sessionCode: session.code, sessionId: session._id, groupNumber: group.number })
+        ]);
+        recovered.push({
+            group: group.number,
+            transcripts: segments.slice(-10).map((segment) => ({
+                text: segment.text,
+                timestamp: segment.created_at,
+                duration: segment.duration_seconds || 0,
+                wordCount: segment.word_count || 0
+            })),
+            cumulativeTranscript: segments.map((segment) => segment.text).join(" ").slice(-30_000),
+            summary: summaryRecord?.text || null,
+            summaryReleased: released,
+            stats,
+            isActive: Boolean(session.active)
+        });
+    }
+    return recovered;
 }
 
 async function publishStudentPresence(context, event, extra = {}) {
@@ -830,13 +917,6 @@ async function buildAsyncGroupReport({ session, group, latestText, latestDuratio
     };
 }
 
-export function validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber }) {
-    const normalizedSessionCode = String(sessionCode || "").trim().toUpperCase();
-    if (!file || (!joinToken && !normalizedSessionCode) || !Number.isFinite(groupNumber) || groupNumber <= 0) {
-        throw createHttpError("Missing file, session code, or group number", 400);
-    }
-}
-
 function allowMockAudioPayloads() {
     return process.env.ALLOW_DEV_TEST === "true" && process.env.MOCK_AI_SERVICES === "true";
 }
@@ -853,17 +933,6 @@ export function validateAudioUploadPayload(file) {
     if (!isLikelySupportedAudioBuffer(file.buffer, file.mimetype)) {
         throw createHttpError("Invalid or unsupported audio file", 400);
     }
-}
-
-async function resolveJoinableSession(joinToken, options = {}) {
-    const payload = verifyJoinToken(joinToken);
-    const sessionCode = payload.sessionCode;
-    const session = await db.collection("sessions").findOne({ code: sessionCode });
-    const sessionState = activeSessions.get(sessionCode);
-    return {
-        payload,
-        ...assertJoinableSessionState(sessionCode, sessionState, session, options)
-    };
 }
 
 function extractTranscriptMetrics(transcription) {
@@ -1546,13 +1615,15 @@ router.post("/new-session", async (req, res) => {
         res.json({
             code,
             mode,
-            interval: session.interval_ms || 30000,
+            interval: session.summary_interval_ms || SUMMARY_INTERVAL_DEFAULT_MS,
+            audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
             active: Boolean(session.active),
             startTime: session.start_time ? new Date(session.start_time).toISOString() : null,
             createdAt: new Date(createdAt).toISOString(),
             expiresAt: new Date(expiresAt).toISOString(),
             pending: !session.start_time,
             reused,
+            groups: await buildTeacherGroupRecovery(session),
             realtime: {
                 teacherTopic: buildSessionRealtimeTopic(code),
                 accessToken: req.teacherSupabaseAccessToken || null
@@ -1562,6 +1633,16 @@ router.post("/new-session", async (req, res) => {
         console.error("❌ Failed to create session:", err);
         sendRouteError(res, err, "Failed to create session");
     }
+});
+
+router.get("/operations/metrics", async (req, res) => {
+    const teacher = await requireTeacher(req, res);
+    if (!teacher) return;
+    if (!teacher.isAdmin && teacher.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.json(getLiveAudioMetrics());
 });
 
 router.post("/session/:code/join-token", async (req, res) => {
@@ -1598,7 +1679,10 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
 
         const { code } = req.params;
         const requestedMode = req.body?.mode === "checkbox" ? "checkbox" : "summary";
-        const intervalMs = normalizeIntervalMs(req.body?.interval);
+        const intervalMs = normalizeSummaryIntervalMs(req.body?.interval, null);
+        if (!intervalMs) {
+            throw createHttpError("Summary interval must be between 15 and 300 seconds", 400);
+        }
         const { session, memory } = await getOwnedSessionContext(code, teacher.id);
         const createdAt = session?.created_at || memory?.created_at || Date.now();
         const startTime = Date.now();
@@ -1637,7 +1721,8 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                     mode: requestedMode,
                     active: true,
                     is_current: true,
-                    interval_ms: intervalMs,
+                    interval_ms: LIVE_AUDIO_CHUNK_MS,
+                    summary_interval_ms: intervalMs,
                     start_time: persistedSession.start_time || startTime,
                     expires_at: expiresAt,
                     end_time: null,
@@ -1673,7 +1758,11 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             sessionCode: code,
             event: REALTIME_EVENTS.RECORD_NOW,
             audience: "all",
-            payload: { interval: intervalMs }
+            payload: {
+                interval: LIVE_AUDIO_CHUNK_MS,
+                audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
+                summaryInterval: intervalMs
+            }
         });
 
         res.json({
@@ -1681,11 +1770,37 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             code,
             mode: requestedMode,
             interval: intervalMs,
+            audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
             expiresAt: new Date(expiresAt).toISOString()
         });
     } catch (err) {
         console.error("❌ Failed to start session:", err);
         sendRouteError(res, err, "Failed to start session");
+    }
+});
+
+router.patch("/session/:code/summary-interval", express.json(), async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+        const intervalMs = normalizeSummaryIntervalMs(req.body?.interval, null);
+        if (!intervalMs) throw createHttpError("Summary interval must be between 15 and 300 seconds", 400);
+        const code = normalizeSessionCode(req.params.code);
+        const { session, memory } = await getOwnedSessionContext(code, teacher.id);
+        if (!session || session.ended_reason || session.end_time) {
+            throw createHttpError("Active or pending session required", 409);
+        }
+        await db.collection("sessions").updateOne(
+            { _id: session._id },
+            { $set: { summary_interval_ms: intervalMs, updated_at: Date.now() } }
+        );
+        if (memory) {
+            memory.interval = intervalMs;
+            activeSessions.set(code, memory);
+        }
+        res.json({ success: true, interval: intervalMs });
+    } catch (error) {
+        sendRouteError(res, error, "Failed to save summary interval");
     }
 });
 
@@ -1755,7 +1870,7 @@ router.post("/session/:code/stop", async (req, res) => {
                 code,
                 ownerId: teacher.id,
                 active: false,
-                interval: session.interval_ms || 30000,
+                interval: session.summary_interval_ms || SUMMARY_INTERVAL_DEFAULT_MS,
                 startTime: session.start_time || null,
                 created_at: session.created_at || endedAt,
                 persisted: true,
@@ -1772,14 +1887,18 @@ router.post("/session/:code/stop", async (req, res) => {
             audience: "all",
             payload: {}
         });
-        await revokeSessionRealtimeMemberships(code);
         const terminalTimer = setTimeout(() => {
+            void flushRollingSummary({
+                sessionCode: code,
+                sessionId: session?._id || memory?.id
+            }).catch((error) => console.warn("Final rolling summary failed:", error.message));
             void publishRealtimeEvent({
                 sessionCode: code,
                 event: REALTIME_EVENTS.SESSION_ENDED,
                 audience: "all",
                 payload: { reason: "teacher", endedAt }
             });
+            void revokeSessionRealtimeMemberships(code);
         }, FINAL_UPLOAD_GRACE_MS);
         terminalTimer.unref?.();
 
@@ -2051,86 +2170,68 @@ router.delete("/prompts/:id", async (req, res) => {
     }
 });
 
-router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (req, res) => {
+router.post("/transcribe-chunk", aiUploadLimiter, preflightLiveAudioUpload, parseLiveAudioUpload, async (req, res) => {
+    let claimedChunk = null;
     try {
         const file = req.file;
-        const joinToken = String(req.body?.joinToken || "").trim();
-        const sessionCode = String(req.body?.sessionCode || "").trim().toUpperCase();
-        const groupNumber = Number(req.body?.groupNumber);
+        const {
+            code: resolvedSessionCode,
+            groupNumber,
+            session,
+            sessionState: memory,
+            group
+        } = req.liveAudioContext;
         const requestedChunkId = String(req.body?.chunkId || "").trim();
         const chunkId = /^[a-zA-Z0-9_-]{16,100}$/.test(requestedChunkId) ? requestedChunkId : null;
-
-        validateStudentUploadRequest({ file, joinToken, sessionCode, groupNumber });
+        if (!chunkId) throw createHttpError("A valid stable chunk ID is required", 400);
+        if (req.body?.sessionCode && normalizeSessionCode(req.body.sessionCode) !== resolvedSessionCode) {
+            throw createHttpError("Session header does not match upload body", 400);
+        }
+        if (req.body?.groupNumber && Number(req.body.groupNumber) !== groupNumber) {
+            throw createHttpError("Group header does not match upload body", 400);
+        }
         validateAudioUploadPayload(file);
-
-        let authorizedSessionCode = sessionCode;
-        if (joinToken) {
-            authorizedSessionCode = verifyJoinToken(joinToken, {
-                expectedSessionCode: sessionCode || undefined
-            }).sessionCode;
-        }
-        await authorizeStudentGroupRequest(req, authorizedSessionCode, groupNumber);
-
-        let session;
-        let memory;
-        let resolvedSessionCode;
-
-        if (joinToken) {
-            try {
-                const resolved = await resolveJoinableSession(joinToken, {
-                    allowUploadGrace: true
-                });
-                session = resolved.sessionRecord;
-                memory = resolved.sessionState;
-                resolvedSessionCode = resolved.sessionCode;
-                if (!session) {
-                    return res.status(404).json({ error: "Active session not found" });
-                }
-            } catch (error) {
-                if (error?.status === 404 && /session not active/i.test(error.message || "")) {
-                    return res.json({
-                        success: true,
-                        skipped: true,
-                        reason: "Session not active"
-                    });
-                }
-                throw error;
-            }
-        } else {
-            session = await db.collection("sessions").findOne({ code: sessionCode });
-            memory = activeSessions.get(sessionCode);
-            resolvedSessionCode = sessionCode;
-
-            if (!session && !memory) {
-                return res.status(404).json({ error: "Active session not found" });
-            }
-
-            const canAcceptUpload = Boolean(
-                session?.active ||
-                memory?.active ||
-                (Number.isFinite(Number(session?.accept_uploads_until)) && Number(session.accept_uploads_until) >= Date.now()) ||
-                (Number.isFinite(Number(memory?.acceptUploadsUntil)) && Number(memory.acceptUploadsUntil) >= Date.now())
-            );
-
-            if (!canAcceptUpload) {
-                return res.json({
-                    success: true,
-                    skipped: true,
-                    reason: "Session not active"
-                });
-            }
-        }
-
         const sessionMode = session.mode || memory?.mode || "summary";
-        const group = await ensureGroupRecord(session._id, groupNumber);
         const existingTranscriptBundle = await getTranscriptBundle(session._id, group._id);
-        if (chunkId && hasTranscriptSegment(existingTranscriptBundle.segments, chunkId)) {
+        if (hasTranscriptSegment(existingTranscriptBundle.segments, chunkId)) {
             return res.json({ success: true, duplicate: true, chunkId });
         }
-        const transcription = await transcribe(file.buffer, file.mimetype);
+
+        const claim = await claimLiveAudioChunk({
+            sessionId: session._id,
+            groupId: group._id,
+            clientChunkId: chunkId,
+            byteSize: file.size,
+            mimeType: file.mimetype
+        });
+        if (!claim.claimed) {
+            if (claim.processing) throw createHttpError("Chunk is already being processed", 425);
+            return res.json({ success: true, duplicate: true, chunkId });
+        }
+        claimedChunk = claim.record;
+
+        const byteSize = file.size;
+        const providerStartedAt = Date.now();
+        let audioBuffer = file.buffer;
+        file.buffer = null;
+        let transcription;
+        const providerAbort = new AbortController();
+        const abortProvider = () => providerAbort.abort();
+        req.once("aborted", abortProvider);
+        try {
+            transcription = await transcribe(audioBuffer, file.mimetype, { signal: providerAbort.signal });
+            recordLiveAudioResult({ bytes: byteSize, providerLatencyMs: Date.now() - providerStartedAt });
+        } catch (error) {
+            recordLiveAudioResult({ bytes: byteSize, providerLatencyMs: Date.now() - providerStartedAt, providerError: true });
+            throw error;
+        } finally {
+            req.off("aborted", abortProvider);
+            audioBuffer = null;
+        }
         const { text, duration } = extractTranscriptMetrics(transcription);
 
         if (!text || isIgnorableTranscriptionText(text)) {
+            await completeLiveAudioChunk(claimedChunk._id, { status: "no_speech", durationSeconds: duration });
             return res.json({ success: true, skipped: true, reason: "No speech detected", chunkId });
         }
 
@@ -2158,6 +2259,12 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             groupId: group._id,
             segment: transcriptRecord.segment
         });
+        await completeLiveAudioChunk(claimedChunk._id, {
+            status: "complete",
+            durationSeconds: duration,
+            transcriptSegmentId: transcriptRecord.segment.id
+        });
+        claimedChunk = null;
 
 
         if (sessionMode === "checkbox") {
@@ -2318,33 +2425,6 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             });
         }
 
-        const fullText = segments.map((segment) => segment.text).join(" ");
-        let customPrompt = memory?.customPrompt || null;
-        if (!customPrompt) {
-            const promptData = await db.collection("session_prompts").findOne({ session_id: session._id });
-            customPrompt = promptData?.prompt || null;
-        }
-
-        const summary = await summarise(fullText, customPrompt);
-        await db.collection("summaries").findOneAndUpdate(
-            { group_id: group._id },
-            { $set: createSummaryUpdateFields({ sessionId: session._id, text: summary, timestamp: now }) },
-            { upsert: true }
-        );
-        await persistSummarySnapshot({
-            sessionId: session._id,
-            groupId: group._id,
-            segments,
-            summaryText: summary,
-            timestamp: now
-        });
-
-        const summaryReleased = await isSummaryReleased({
-            sessionCode: resolvedSessionCode,
-            sessionId: session._id,
-            groupNumber
-        });
-
         const transcriptionAndSummary = {
             transcription: {
                 text: finalTranscriptText,
@@ -2352,8 +2432,6 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 duration,
                 wordCount
             },
-            summary: summaryReleased ? summary : null,
-            isReleased: summaryReleased,
             isLatestSegment: true
         };
         await publishRealtimeEvent({
@@ -2367,11 +2445,9 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             group: groupNumber,
             isActive: true,
             latestTranscript: finalTranscriptText,
-            cumulativeTranscript: fullText,
+            cumulativeTranscript: segments.map((segment) => segment.text).join(" ").slice(-30_000),
             transcriptDuration: duration,
             transcriptWordCount: wordCount,
-            summary,
-            summaryReleased,
             stats: {
                 totalSegments: stats.total_segments,
                 totalWords: stats.total_words,
@@ -2387,15 +2463,31 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             payload: adminUpdate
         });
 
+        await scheduleRollingSummary({
+            sessionCode: resolvedSessionCode,
+            sessionId: session._id,
+            intervalMs: session.summary_interval_ms || memory?.interval || SUMMARY_INTERVAL_DEFAULT_MS
+        });
+
         res.json({
             success: true,
             mode: sessionMode,
             transcript: finalTranscriptText,
-            summary
+            summaryQueued: true,
+            chunkId
         });
     } catch (err) {
+        if (claimedChunk?._id) {
+            await completeLiveAudioChunk(claimedChunk._id, {
+                status: "failed",
+                errorCode: String(err?.code || err?.status || "processing_failed").slice(0, 80)
+            }).catch(() => {});
+        }
         console.error("❌ Failed to transcribe uploaded chunk:", err);
         sendRouteError(res, err, "Failed to transcribe chunk");
+    } finally {
+        req.releaseLiveAudioCapacity?.();
+        req.releaseLiveAudioCapacity = null;
     }
 });
 
@@ -2461,7 +2553,8 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
                 code: sessionCode,
                 mode: "checkbox",
                 active: false,
-                interval_ms: interval || 30000,
+                interval_ms: LIVE_AUDIO_CHUNK_MS,
+                summary_interval_ms: interval || SUMMARY_INTERVAL_DEFAULT_MS,
                 strictness: strictness,
                 created_at: Date.now()
             };
@@ -2474,7 +2567,8 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
                         owner_id: teacher.id,
                         mode: "checkbox",
                         active: false,
-                        interval_ms: interval || 30000,
+                        interval_ms: LIVE_AUDIO_CHUNK_MS,
+                        summary_interval_ms: interval || SUMMARY_INTERVAL_DEFAULT_MS,
                         strictness: strictness,
                         updated_at: Date.now()
                     }

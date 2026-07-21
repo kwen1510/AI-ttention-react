@@ -28,6 +28,7 @@ if (!USE_REAL_AI) {
 const { createDbOverrides } = await import("../tests/api.integration.helpers.mjs");
 const dbModule = await import("../server/db/db.js");
 const realtimeModule = await import("../server/services/realtime.js");
+const rollingSummaryModule = await import("../server/services/rollingSummary.js");
 const authModule = await import("../server/middleware/auth.js");
 const { createAuthOverrides } = await import("../tests/_helpers.mjs");
 const { activeSessions } = await import("../server/services/state.js");
@@ -124,7 +125,7 @@ async function joinGroups(sessionCode) {
 async function startSession(sessionCode, mode) {
   const result = await teacherJson(`/api/session/${sessionCode}/start`, {
     method: "POST",
-    body: JSON.stringify({ interval: 5000, mode })
+    body: JSON.stringify({ interval: 15000, mode })
   });
   assert.equal(result.success, true);
   assert.equal(result.code, sessionCode);
@@ -162,6 +163,7 @@ async function uploadSpeech(sessionCode, group, speech, realAudioPath = null) {
   );
   formData.append("sessionCode", sessionCode);
   formData.append("groupNumber", String(group));
+  formData.append("chunkId", `multigroup-${sessionCode}-${group}-${Date.now()}`);
 
   return requestJson("/api/transcribe-chunk", {
     method: "POST",
@@ -212,7 +214,7 @@ async function runSummaryMode() {
     } else {
       assert.match(result.transcript, new RegExp(`Group ${group} says renewable energy`, "i"));
     }
-    assert.match(result.summary, /renewable energy/i);
+    assert.equal(result.summaryQueued, true);
     uploadResults.push(result);
 
     if (USE_REAL_AI && group === GROUPS[0] && process.env.SILENCE_AUDIO_PATH) {
@@ -222,6 +224,12 @@ async function runSummaryMode() {
       assert.equal(silence.reason, "No speech detected");
     }
   }
+
+  const session = dbOverrides.dump("sessions").find((record) => record.code === sessionCode);
+  const batch = await rollingSummaryModule.runRollingSummary({ sessionCode, sessionId: session._id });
+  assert.equal(batch.committed, GROUPS.length);
+  const summaryRows = dbOverrides.dump("summaries");
+  for (const summary of summaryRows) assert.match(summary.text, /renewable energy/i);
 
   assert.equal(eventCount(sessionCode, "admin_update"), GROUPS.length);
   assert.equal(eventCount(sessionCode, "transcription_and_summary", /:group:/), GROUPS.length);
@@ -236,7 +244,7 @@ async function runSummaryMode() {
     assert.equal(release.summaryState.isReleased, true);
   }
 
-  assert.equal(eventCount(sessionCode, "summary_state"), GROUPS.length * 2);
+  assert.equal(eventCount(sessionCode, "summary_state"), GROUPS.length * 4);
   await stopSession(sessionCode);
   assert.equal(eventCount(sessionCode, "stop_recording"), 2);
 
@@ -244,7 +252,7 @@ async function runSummaryMode() {
     sessionCode,
     groups: GROUPS.length,
     transcripts: uploadResults.map((result) => result.transcript),
-    summaries: uploadResults.map((result) => result.summary)
+    summaries: summaryRows.map((result) => result.text)
   };
 }
 
@@ -253,7 +261,7 @@ async function configureChecklist(sessionCode) {
     method: "POST",
     body: JSON.stringify({
       sessionCode,
-      interval: 5000,
+      interval: 15000,
       strictness: 2,
       scenario: "Students explain when back titration is useful.",
       criteria: [

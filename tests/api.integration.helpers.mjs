@@ -120,6 +120,18 @@ class InMemoryCollection {
         throw error;
       }
     }
+    if (this.name === "live_audio_chunks") {
+      const conflict = this.rows.some((row) => (
+        row.session_id === inserted.session_id
+        && row.group_id === inserted.group_id
+        && row.client_chunk_id === inserted.client_chunk_id
+      ));
+      if (conflict) {
+        const error = new Error("duplicate key value violates unique constraint");
+        error.code = "23505";
+        throw error;
+      }
+    }
     this.rows.push(inserted);
     return {
       acknowledged: true,

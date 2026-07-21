@@ -2,7 +2,7 @@ import * as React from "react";
 import { ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-function Field({ label, htmlFor, hint, error, className, children }) {
+function Field({ label, htmlFor, hint, hintId, error, className, children }) {
   return (
     <div className={cn("ui-field", className)}>
       {label ? (
@@ -12,7 +12,7 @@ function Field({ label, htmlFor, hint, error, className, children }) {
       ) : null}
       {children}
       {error ? <p className="ui-field__error">{error}</p> : null}
-      {!error && hint ? <p className="ui-field__hint">{hint}</p> : null}
+      {!error && hint ? <p id={hintId} className="ui-field__hint">{hint}</p> : null}
     </div>
   );
 }

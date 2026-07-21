@@ -86,6 +86,7 @@ function CheckboxDashboard() {
           throw new Error(`Failed to create session (${res.status})`);
         }
         const data = await res.json();
+        setInterval(Math.round(Number(data.audioChunkInterval || 30000) / 1000));
         setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
         setSessionEnded(false);
         setIsRecording(Boolean(data.active));
@@ -465,6 +466,10 @@ function CheckboxDashboard() {
         onOpenQR={() => setShowQR(true)}
         interval={interval}
         onIntervalChange={setInterval}
+        intervalLabel="Audio chunk (seconds)"
+        intervalHint="Fixed at 30 seconds for reliable transcription"
+        intervalDisabled
+        nextCycleLabel="Next chunk"
       />
 
       <main className="page-shell page-shell--fluid stack">

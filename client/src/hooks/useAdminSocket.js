@@ -160,6 +160,9 @@ export function useAdminSocket() {
                     };
                     next.set(groupNum, {
                         ...existing,
+                        summary: data.summary
+                            ? { text: data.summary, timestamp: Date.now() }
+                            : existing.summary,
                         isReleased: Boolean(data.isReleased),
                         lastUpdate: Date.now()
                     });

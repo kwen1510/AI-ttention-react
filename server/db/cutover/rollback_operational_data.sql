@@ -16,7 +16,7 @@ where catalog.batch_id = :'archive_batch'
   and catalog.table_name = any (array[
     'async_group_reports','async_segments','async_groups','async_sessions',
     'checkbox_results','checkbox_progress','checkbox_criteria','checkbox_sessions',
-    'mindmap_archives','mindmap_sessions','summary_snapshots','summaries','transcripts',
+    'mindmap_archives','mindmap_sessions','rolling_summary_jobs','rolling_summary_commits','rolling_summary_states','live_audio_chunks','summary_snapshots','summaries','transcripts',
     'session_logs','session_prompts','groups','transcriptions','sessions'
   ]::name[]);
 

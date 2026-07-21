@@ -6,6 +6,13 @@ const AUDIO_MIME_CANDIDATES = [
   'audio/mp4',
   'audio/ogg;codecs=opus'
 ];
+export const MAX_PENDING_AUDIO_CHUNKS = 3;
+export const TARGET_AUDIO_BITRATE = 64_000;
+
+export function initialChunkStaggerMs(groupNumber) {
+  const parsed = Number(groupNumber);
+  return Number.isInteger(parsed) && parsed > 0 ? (parsed * 797) % 5_000 : 0;
+}
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));

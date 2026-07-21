@@ -6,7 +6,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const databaseUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL;
 const migrations = [
   "server/db/migrations/20260720_classroom_session_lifecycle.sql",
-  "server/db/migrations/20260720_native_realtime_memberships.sql"
+  "server/db/migrations/20260720_native_realtime_memberships.sql",
+  "server/db/migrations/20260728_hybrid_live_audio_and_rolling_summaries.sql"
 ];
 
 if (!databaseUrl) {

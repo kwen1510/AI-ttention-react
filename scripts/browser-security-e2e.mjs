@@ -76,11 +76,23 @@ try {
   assert.equal(browserState.localKeys.some((key) => /supabase|auth|token/i.test(key)), false);
   assert.equal(browserState.sessionKeys.some((key) => /supabase|auth|token/i.test(key)), false);
 
+  const summaryInterval = page.getByLabel("Summary every (seconds)");
+  assert.equal(await summaryInterval.inputValue(), "30");
+  assert.equal(await summaryInterval.getAttribute("min"), "15");
+  assert.equal(await summaryInterval.getAttribute("max"), "300");
+  const intervalSave = page.waitForResponse((response) => (
+    response.request().method() === "PATCH" && /\/summary-interval$/.test(response.url())
+  ));
+  await summaryInterval.fill("15");
+  await summaryInterval.blur();
+  assert.equal((await intervalSave).status(), 200);
+
   await page.close();
   const restoredPage = await context.newPage();
   await restoredPage.goto(`${baseUrl}/admin`, { waitUntil: "domcontentloaded" });
   await restoredPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
   await restoredPage.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.querySelector(".session-code-text")?.textContent?.trim() || ""));
+  assert.equal(await restoredPage.getByLabel("Summary every (seconds)").inputValue(), "15");
 
   const endResponse = restoredPage.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/session\/[A-Z0-9]+\/stop$/.test(response.url())
@@ -89,11 +101,24 @@ try {
   assert.equal((await endResponse).status(), 200);
   await restoredPage.getByText("Session ended", { exact: true }).waitFor({ timeout: 10_000 });
 
-  const traversalResponse = await context.request.get(`${baseUrl}/assets/%2e%2e/%2e%2e/.env`);
-  assert.equal(traversalResponse.status(), 404);
-  assert.equal((await traversalResponse.text()).includes("SUPABASE_SECRET_KEY"), false);
+  const forbiddenPaths = [
+    "/assets/%2e%2e/%2e%2e/.env",
+    "/assets/%252e%252e/%252e%252e/.env",
+    "/assets/..%5c..%5c.env",
+    "/.git/config",
+    "/package.json",
+    "/node_modules/dotenv/package.json",
+    "/server/routes/api.js",
+    "/archives/database.dump"
+  ];
+  for (const requestPath of forbiddenPaths) {
+    const response = await context.request.get(`${baseUrl}${requestPath}`);
+    assert.equal(response.status(), 404, `${requestPath} must not be served`);
+    const body = await response.text();
+    assert.equal(/SUPABASE_SECRET_KEY|BEGIN PRIVATE KEY|"dependencies"/.test(body), false);
+  }
 
-  console.log("Browser security e2e passed: HttpOnly restoration, no Web Storage auth, forced end, traversal denial.");
+  console.log("Browser security e2e passed: HttpOnly restoration, no Web Storage auth, forced end, encoded traversal and source/archive denial.");
 } finally {
   await context?.close().catch(() => {});
   await browser?.close().catch(() => {});

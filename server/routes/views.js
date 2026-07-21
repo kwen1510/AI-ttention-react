@@ -39,10 +39,44 @@ const staticDir = frontendCandidates.find((dir) => {
         return false;
     }
 }) ?? null;
+const staticRealDir = staticDir ? fs.realpathSync(staticDir) : null;
+
+function decodePathRepeatedly(value) {
+    let decoded = String(value || "");
+    for (let count = 0; count < 3; count += 1) {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) return next;
+        decoded = next;
+    }
+    return decoded;
+}
+
+function staticContainmentGuard(req, res, next) {
+    try {
+        const decoded = decodePathRepeatedly(req.path).replace(/\\/g, "/");
+        if (decoded.includes("\0") || decoded.split("/").some((part) => part === "." || part === ".." || part.startsWith("."))) {
+            return sendTypedNotFound(res, decoded);
+        }
+        const candidate = path.resolve(staticRealDir, `.${decoded}`);
+        if (candidate !== staticRealDir && !candidate.startsWith(`${staticRealDir}${path.sep}`)) {
+            return sendTypedNotFound(res, decoded);
+        }
+        if (fs.existsSync(candidate)) {
+            const realCandidate = fs.realpathSync(candidate);
+            if (realCandidate !== staticRealDir && !realCandidate.startsWith(`${staticRealDir}${path.sep}`)) {
+                return sendTypedNotFound(res, decoded);
+            }
+        }
+        return next();
+    } catch {
+        return sendTypedNotFound(res, req.path);
+    }
+}
 
 if (!staticDir) {
     console.warn("⚠️ No compiled frontend bundle found. The dashboard routes will return 404 until the client is built.");
 } else {
+    router.use(staticContainmentGuard);
     router.use(express.static(staticDir, {
         index: false,
         setHeaders(res, filePath) {

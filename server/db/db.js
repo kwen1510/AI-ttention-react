@@ -35,6 +35,26 @@ const COLLECTION_META = {
     upsertOn: 'group_id,segment_cursor',
     timestampFields: ['created_at']
   },
+  live_audio_chunks: {
+    primaryKey: 'id',
+    upsertOn: 'session_id,group_id,client_chunk_id',
+    timestampFields: ['created_at', 'updated_at', 'completed_at']
+  },
+  rolling_summary_states: {
+    primaryKey: 'group_id',
+    upsertOn: 'group_id',
+    timestampFields: ['created_at', 'updated_at']
+  },
+  rolling_summary_commits: {
+    primaryKey: 'id',
+    upsertOn: 'group_id,target_cursor,prompt_version',
+    timestampFields: ['created_at']
+  },
+  rolling_summary_jobs: {
+    primaryKey: 'session_id',
+    upsertOn: 'session_id',
+    timestampFields: ['due_at', 'created_at', 'updated_at']
+  },
   checkbox_sessions: {
     primaryKey: 'session_id',
     upsertOn: 'session_id',

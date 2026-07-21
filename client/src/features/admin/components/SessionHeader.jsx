@@ -18,7 +18,12 @@ export function SessionHeader({
     onStopRecording,
     onOpenQR,
     interval,
-    onIntervalChange
+    onIntervalChange,
+    onIntervalCommit,
+    intervalLabel = "Summary every (seconds)",
+    intervalHint = "15–300 seconds; default 30",
+    intervalDisabled = false,
+    nextCycleLabel = "Next summary"
 }) {
     const formatTime = (seconds) => {
         const safeSeconds = Math.max(0, Number(seconds) || 0);
@@ -65,17 +70,26 @@ export function SessionHeader({
                     ) : null}
                     {isRecording ? <Badge tone="primary">Elapsed {formatTime(elapsedTime)}</Badge> : null}
                     {isRecording && Number.isFinite(nextChunkIn) ? (
-                        <Badge tone="accent">Next chunk {formatTime(nextChunkIn)}</Badge>
+                        <Badge tone="accent">{nextCycleLabel} {formatTime(nextChunkIn)}</Badge>
                     ) : null}
 
-                    <Field label="Interval (sec)" htmlFor="sessionInterval" className="w-[8rem]">
+                    <Field
+                        label={intervalLabel}
+                        htmlFor="sessionInterval"
+                        hint={intervalHint}
+                        hintId="sessionIntervalHint"
+                        className="w-[13rem]"
+                    >
                         <Input
                             id="sessionInterval"
                             type="number"
-                            min={5}
-                            max={120}
+                            min={15}
+                            max={300}
                             value={interval}
+                            aria-describedby="sessionIntervalHint"
+                            disabled={intervalDisabled}
                             onChange={(e) => onIntervalChange(Number(e.target.value))}
+                            onBlur={onIntervalCommit}
                         />
                     </Field>
                 </ToolbarGroup>

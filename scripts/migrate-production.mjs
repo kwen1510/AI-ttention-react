@@ -26,6 +26,7 @@ const sqlFiles = [
   "server/db/migrations/20260725_multi_instance_session_state.sql",
   "server/db/migrations/20260726_abandoned_session_cleanup.sql",
   "server/db/migrations/20260727_retention_cron.sql",
+  "server/db/migrations/20260728_hybrid_live_audio_and_rolling_summaries.sql",
   "server/db/migrations/20260721_service_only_live_hardening.sql"
 ];
 

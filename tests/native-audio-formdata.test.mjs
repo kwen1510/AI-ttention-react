@@ -59,3 +59,30 @@ test('OpenAI failures do not expose provider response bodies', async () => {
         globalThis.fetch = originalFetch;
     }
 });
+
+test('GPT-5 summary requests use the Responses API with minimal reasoning and no stored response', async () => {
+    const originalFetch = globalThis.fetch;
+    let request;
+    globalThis.fetch = async (url, options) => {
+        request = { url, body: JSON.parse(options.body) };
+        return { ok: true, json: async () => ({ output_text: '{"groups":[]}' }) };
+    };
+
+    try {
+        const { callOpenAIResponses } = await import('../server/services/openai.js');
+        await callOpenAIResponses('test-key', {
+            model: 'gpt-5-nano',
+            store: false,
+            prompt_cache_key: 'ai-ttention-rolling-summary-v1',
+            reasoning: { effort: 'minimal' },
+            max_output_tokens: 256,
+            input: 'test'
+        });
+        assert.equal(request.url, 'https://api.openai.com/v1/responses');
+        assert.equal(request.body.store, false);
+        assert.equal(request.body.reasoning.effort, 'minimal');
+        assert.equal(request.body.prompt_cache_key, 'ai-ttention-rolling-summary-v1');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});

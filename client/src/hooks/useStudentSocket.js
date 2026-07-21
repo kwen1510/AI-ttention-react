@@ -54,7 +54,7 @@ export function useStudentSocket() {
             case REALTIME_EVENTS.RECORD_NOW:
                 setRecordingState({
                     isRecording: true,
-                    interval: payload.interval || payload
+                    interval: payload.audioChunkInterval || payload.interval || payload
                 });
                 break;
             case REALTIME_EVENTS.STOP_RECORDING:
@@ -223,8 +223,8 @@ export function useStudentSocket() {
                 mode: data.mode || 'summary',
                 expiresAt: data.expiresAt || null
             });
-            if (data.status === 'recording' && data.interval) {
-                setRecordingState({ isRecording: true, interval: data.interval });
+            if (data.status === 'recording' && (data.audioChunkInterval || data.interval)) {
+                setRecordingState({ isRecording: true, interval: data.audioChunkInterval || data.interval });
             } else {
                 setRecordingState({ isRecording: false, interval: null });
             }

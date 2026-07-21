@@ -70,7 +70,18 @@ function AdminDashboard() {
           throw new Error(`Failed to create session (${res.status})`);
         }
         const data = await res.json();
+        setInterval(Math.min(300, Math.max(15, Math.round(Number(data.interval || 30000) / 1000))));
         setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
+        setGroups(new Map((Array.isArray(data.groups) ? data.groups : []).map((group) => [group.group, {
+          transcripts: group.transcripts || [],
+          cumulativeTranscript: group.cumulativeTranscript || '',
+          summary: group.summary ? { text: group.summary, timestamp: Date.now() } : null,
+          stats: group.stats || {},
+          isReleased: Boolean(group.summaryReleased),
+          isActive: Boolean(group.isActive),
+          uploadErrors: 0,
+          uploadStatus: null
+        }])));
         setSessionEnded(false);
         setIsRecording(Boolean(data.active));
         if (data.active && data.startTime) {
@@ -149,6 +160,22 @@ function AdminDashboard() {
       setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording:', err);
+    }
+  };
+
+  const handleIntervalCommit = async () => {
+    if (!sessionCode) return;
+    const bounded = Math.min(300, Math.max(15, Math.round(Number(interval) || 30)));
+    setInterval(bounded);
+    try {
+      const response = await fetch(`/api/session/${sessionCode}/summary-interval`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval: bounded * 1000 })
+      });
+      if (!response.ok) throw new Error(`Failed to save summary interval (${response.status})`);
+    } catch (error) {
+      console.error('Failed to save summary interval:', error);
     }
   };
 
@@ -303,6 +330,7 @@ function AdminDashboard() {
         onOpenQR={() => setShowQR(true)}
         interval={interval}
         onIntervalChange={setInterval}
+        onIntervalCommit={handleIntervalCommit}
       />
 
       <main className="page-shell page-shell--fluid stack">

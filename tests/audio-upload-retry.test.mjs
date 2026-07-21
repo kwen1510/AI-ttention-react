@@ -5,10 +5,21 @@ import {
   audioChunkExtension,
   createAudioChunkId,
   hasAudibleSignal,
+  initialChunkStaggerMs,
+  MAX_PENDING_AUDIO_CHUNKS,
   selectRecordingMimeType,
+  TARGET_AUDIO_BITRATE,
   uploadAsyncAudio,
   uploadAudioChunk
 } from '../client/src/lib/audioUpload.js';
+
+test('live recorder targets compressed mono-friendly chunks with bounded staggering', () => {
+  assert.equal(TARGET_AUDIO_BITRATE, 64_000);
+  assert.equal(MAX_PENDING_AUDIO_CHUNKS, 3);
+  assert.equal(initialChunkStaggerMs(0), 0);
+  assert.ok(initialChunkStaggerMs(1) >= 0 && initialChunkStaggerMs(1) < 5_000);
+  assert.notEqual(initialChunkStaggerMs(1), initialChunkStaggerMs(2));
+});
 
 test('audio chunk fallback remains a database-safe UUID on older phones', () => {
   const fallbackCrypto = {

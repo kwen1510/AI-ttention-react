@@ -104,9 +104,14 @@ test("student APIs reject forged roles, missing identity, and cross-group claims
     crossGroupUpload.append("file", new Blob(["synthetic-audio"], { type: "audio/webm" }), "chunk.webm");
     crossGroupUpload.append("sessionCode", "SECURE");
     crossGroupUpload.append("groupNumber", "3");
+    crossGroupUpload.append("chunkId", "security-cross-group-0001");
     const uploadResponse = await fetch(`${baseUrl}/api/transcribe-chunk`, {
       method: "POST",
-      headers: { Authorization: "Bearer student-token" },
+      headers: {
+        Authorization: "Bearer student-token",
+        "x-session-code": "SECURE",
+        "x-group-number": "3"
+      },
       body: crossGroupUpload
     });
     assert.equal(uploadResponse.status, 403);
@@ -116,7 +121,7 @@ test("student APIs reject forged roles, missing identity, and cross-group claims
       headers: { Authorization: "Bearer teacher-token" }
     });
     assert.equal(stop.response.status, 200);
-    assert.equal(revokedSession, "SECURE");
+    assert.equal(revokedSession, null, "membership stays upload-valid only during the final 15-second grace");
     const stoppedSession = dbOverrides.dump("sessions")[0];
     assert.equal(stoppedSession.is_current, false);
     assert.ok(stoppedSession.accept_uploads_until > Date.now());
@@ -131,7 +136,7 @@ test("student APIs reject forged roles, missing identity, and cross-group claims
     const restartEndedSession = await jsonRequest(baseUrl, "/api/session/SECURE/start", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
-      body: JSON.stringify({ mode: "summary", interval: 5000 })
+      body: JSON.stringify({ mode: "summary", interval: 15000 })
     });
     assert.equal(restartEndedSession.response.status, 409);
   } finally {
@@ -189,6 +194,22 @@ test("teacher identity owns created sessions and traversal paths cannot expose f
     const stored = dbOverrides.dump("sessions")[0];
     assert.equal(stored.owner_id, "teacher-1");
     assert.equal(stored.active, false);
+    assert.equal(created.body.interval, 30000);
+
+    const savedInterval = await jsonRequest(baseUrl, `/api/session/${created.body.code}/summary-interval`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
+      body: JSON.stringify({ interval: 15000 })
+    });
+    assert.equal(savedInterval.response.status, 200);
+    assert.equal(savedInterval.body.interval, 15000);
+
+    const tamperedInterval = await jsonRequest(baseUrl, `/api/session/${created.body.code}/summary-interval`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer teacher-token" },
+      body: JSON.stringify({ interval: 14999 })
+    });
+    assert.equal(tamperedInterval.response.status, 400);
 
     const repeated = await jsonRequest(baseUrl, "/api/new-session?mode=summary", {
       method: "POST",
@@ -197,6 +218,7 @@ test("teacher identity owns created sessions and traversal paths cannot expose f
     assert.equal(repeated.response.status, 200);
     assert.equal(repeated.body.code, created.body.code);
     assert.equal(repeated.body.reused, true);
+    assert.equal(repeated.body.interval, 15000);
     assert.equal(dbOverrides.dump("sessions").length, 1);
 
     const checkbox = await jsonRequest(baseUrl, "/api/new-session?mode=checkbox", {
@@ -214,7 +236,7 @@ test("teacher identity owns created sessions and traversal paths cannot expose f
         sessionCode: checkbox.body.code,
         criteria: [{ description: "Explain the chosen evidence", rubric: "Names evidence and explains it" }],
         scenario: "Compare the evidence",
-        interval: 5000,
+        interval: 15000,
         strictness: 2
       })
     });

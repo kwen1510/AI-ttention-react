@@ -108,7 +108,7 @@ async function joinStudent(session, group) {
 async function startClassroom(session, mode) {
   const started = await teacherJson(`/api/session/${session.code}/start`, {
     method: 'POST',
-    body: JSON.stringify({ interval: 5000, mode })
+    body: JSON.stringify({ interval: 15000, mode })
   });
   assert.ok(new Date(started.expiresAt).getTime() - Date.now() > 3.9 * 60 * 60_000);
 }
@@ -130,7 +130,12 @@ async function upload(session, student, file, chunkId) {
   form.append('chunkId', chunkId);
   return requestJson('/api/transcribe-chunk', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${student.token}`, Origin: APP },
+    headers: {
+      Authorization: `Bearer ${student.token}`,
+      Origin: APP,
+      'x-session-code': session.code,
+      'x-group-number': String(student.group)
+    },
     body: form
   });
 }
@@ -158,8 +163,7 @@ async function runSummary() {
   const speech = await upload(session, first, SPEECH_FILE, `summaryspeech${Date.now()}`);
   assert.equal(speech.success, true);
   assert.ok(speech.transcript?.trim());
-  assert.ok(speech.summary?.trim());
-  assert.notEqual(speech.summary, 'Summarization failed');
+  assert.equal(speech.summaryQueued, true);
 
   const forged = new FormData();
   forged.append('file', new Blob([await readFile(SPEECH_FILE)], { type: mimeFor(SPEECH_FILE) }), path.basename(SPEECH_FILE));
@@ -168,7 +172,14 @@ async function runSummary() {
   forged.append('groupNumber', '1');
   forged.append('chunkId', `forgedgroup${Date.now()}`);
   await requestJson('/api/transcribe-chunk', {
-    method: 'POST', headers: { Authorization: `Bearer ${second.token}`, Origin: APP }, body: forged
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${second.token}`,
+      Origin: APP,
+      'x-session-code': session.code,
+      'x-group-number': '1'
+    },
+    body: forged
   }, 403);
 
   await stopClassroom(session.code);
@@ -190,7 +201,7 @@ async function runCheckbox() {
     method: 'POST',
     body: JSON.stringify({
       sessionCode: session.code,
-      interval: 5000,
+      interval: 15000,
       strictness: 2,
       scenario: 'Students explain when back titration is useful.',
       criteria: [
