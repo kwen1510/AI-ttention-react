@@ -57,13 +57,19 @@ export function unwrapRealtimePayload(message) {
 
 let realtimeIdentityPromise = null;
 
-export async function getRealtimeIdentitySession() {
+export function buildAnonymousSignInCredentials(captchaToken) {
+  const token = String(captchaToken || '').trim();
+  return token ? { options: { captchaToken: token } } : undefined;
+}
+
+export async function getRealtimeIdentitySession(captchaToken = null) {
   const supabase = getSupabaseClient();
   const existing = await supabase.auth.getSession();
   if (existing.data?.session?.access_token) return existing.data.session;
 
   if (!realtimeIdentityPromise) {
-    realtimeIdentityPromise = supabase.auth.signInAnonymously()
+    const credentials = buildAnonymousSignInCredentials(captchaToken);
+    realtimeIdentityPromise = supabase.auth.signInAnonymously(credentials)
       .then(({ data, error }) => {
         if (error || !data?.session?.access_token) {
           throw error || new Error('Supabase anonymous Auth did not return a session');

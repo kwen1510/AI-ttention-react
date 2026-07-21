@@ -189,7 +189,7 @@ export function useStudentSocket() {
         return () => clearInterval(interval);
     }, [postStudentEvent, sessionInfo.code, sessionInfo.group]);
 
-    const joinSession = useCallback(async (code, group, token = null) => {
+    const joinSession = useCallback(async (code, group, token = null, captchaToken = null) => {
         const normalizedCode = normalizeSessionCode(code);
         const parsedGroup = normalizeGroupNumber(group);
         if (!normalizedCode || !parsedGroup) {
@@ -199,7 +199,7 @@ export function useStudentSocket() {
         try {
             setError(null);
             joinTokenRef.current = token || null;
-            const realtimeSession = await getRealtimeIdentitySession();
+            const realtimeSession = await getRealtimeIdentitySession(captchaToken);
             accessTokenRef.current = realtimeSession.access_token;
             const response = await fetch(`/api/session/${normalizedCode}/student-join`, {
                 method: 'POST',

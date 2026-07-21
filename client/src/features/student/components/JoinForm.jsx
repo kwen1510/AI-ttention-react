@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { GraduationCap, AlertCircle } from 'lucide-react';
+import { getSupabaseConfig } from '../../../config/supabaseClient.js';
 import { Button } from '../../../components/ui/button.jsx';
 import { Field, Input } from '../../../components/ui/field.jsx';
 import { Alert } from '../../../components/ui/alert.jsx';
@@ -14,6 +16,11 @@ export function JoinForm({
 }) {
     const [code, setCode] = useState(() => String(initialCode || '').trim().toUpperCase());
     const [group, setGroup] = useState(() => String(initialGroup || '').trim());
+    const [captchaToken, setCaptchaToken] = useState(null);
+    const [captchaError, setCaptchaError] = useState('');
+    const [isJoining, setIsJoining] = useState(false);
+    const turnstileRef = useRef(null);
+    const turnstileSiteKey = getSupabaseConfig().turnstileSiteKey;
 
     useEffect(() => {
         setCode(String(initialCode || '').trim().toUpperCase());
@@ -23,13 +30,28 @@ export function JoinForm({
         setGroup(String(initialGroup || '').trim());
     }, [initialGroup]);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         const normalizedCode = String(code || '').trim().toUpperCase();
         const parsedGroup = Number.parseInt(group, 10);
 
-        if (/^[A-Z0-9]{6}$/.test(normalizedCode) && Number.isFinite(parsedGroup) && parsedGroup > 0) {
-            onJoin(normalizedCode, parsedGroup);
+        if (!/^[A-Z0-9]{6}$/.test(normalizedCode) || !Number.isFinite(parsedGroup) || parsedGroup <= 0) {
+            return;
+        }
+        if (turnstileSiteKey && !captchaToken) {
+            setCaptchaError('Complete the security check before joining.');
+            return;
+        }
+
+        setIsJoining(true);
+        try {
+            await onJoin(normalizedCode, parsedGroup, captchaToken);
+        } finally {
+            setIsJoining(false);
+            if (turnstileSiteKey) {
+                setCaptchaToken(null);
+                turnstileRef.current?.reset();
+            }
         }
     };
 
@@ -80,8 +102,39 @@ export function JoinForm({
                         />
                     </Field>
 
-                    <Button type="submit" variant="primary" size="lg" className="w-full">
-                        Join with code
+                    {turnstileSiteKey && (
+                        <div className="space-y-2">
+                            <Turnstile
+                                ref={turnstileRef}
+                                siteKey={turnstileSiteKey}
+                                onSuccess={(token) => {
+                                    setCaptchaToken(token);
+                                    setCaptchaError('');
+                                }}
+                                onExpire={() => setCaptchaToken(null)}
+                                onError={() => {
+                                    setCaptchaToken(null);
+                                    setCaptchaError('The security check could not load. Check the connection and try again.');
+                                }}
+                                options={{
+                                    action: 'student_join',
+                                    appearance: 'interaction-only',
+                                    size: 'flexible',
+                                    theme: 'auto'
+                                }}
+                            />
+                            {captchaError && <p className="text-sm text-[var(--danger)]">{captchaError}</p>}
+                        </div>
+                    )}
+
+                    <Button
+                        type="submit"
+                        variant="primary"
+                        size="lg"
+                        className="w-full"
+                        disabled={isJoining || Boolean(turnstileSiteKey && !captchaToken)}
+                    >
+                        {isJoining ? 'Joining…' : 'Join with code'}
                     </Button>
                 </form>
 

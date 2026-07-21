@@ -6,6 +6,7 @@ export function getSupabaseConfig() {
   return {
     url: import.meta.env.VITE_SUPABASE_URL,
     publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    turnstileSiteKey: String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim(),
   };
 }
 

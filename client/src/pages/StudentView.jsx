@@ -88,7 +88,7 @@ function StudentView() {
   if (!sessionInfo.code) {
     return (
       <JoinForm
-        onJoin={(code, group) => joinSession(code, group, joinToken || null)}
+        onJoin={(code, group, captchaToken) => joinSession(code, group, joinToken || null, captchaToken)}
         error={socketError}
         initialCode={initialCode}
         initialGroup={initialGroup}

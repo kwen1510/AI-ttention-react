@@ -148,8 +148,18 @@ The command refuses to run without the exact confirmation and a verified archive
 1. In Auth URL configuration, set the Site URL to the production HTTPS origin and allow the production `/admin` redirect.
 2. Keep email OTP enabled. Ensure the email template displays `{{ .Token }}` because the login screen expects the verification code, not a browser-stored magic-link session.
 3. Enable **Allow anonymous sign-ins** for students.
-4. Configure Cloudflare Turnstile or hCaptcha before public use and review anonymous-auth rate limits. Anonymous users have the `authenticated` database role, so the exact RLS/grant posture is mandatory.
-5. Set a short access-token lifetime appropriate for Realtime policy-cache revocation (10–15 minutes is the operational target; never below Supabase's supported minimum).
+4. Create a Cloudflare Turnstile widget restricted to `ai-ttention.rafflesian.org`. Add its public
+   site key to DigitalOcean as build-time `VITE_TURNSTILE_SITE_KEY`, deploy, and confirm the student
+   join screen completes the check. Do not put the Turnstile secret in DigitalOcean or any `VITE_*`
+   variable.
+5. In **Authentication → Bot and Abuse Protection**, select Turnstile, enter the private Turnstile
+   secret directly into Supabase, and enable CAPTCHA. The client passes the single-use token to
+   `signInAnonymously`; Supabase performs server-side validation.
+6. Re-run `db:verify:student-boundary` with a test-token strategy or manually join from a clean
+   browser. A raw scripted anonymous sign-in should now fail without CAPTCHA. Review anonymous-auth
+   rate limits as a second layer. Anonymous users have the `authenticated` database role, so the
+   exact RLS/grant posture remains mandatory.
+7. Set a short access-token lifetime appropriate for Realtime policy-cache revocation (10–15 minutes is the operational target; never below Supabase's supported minimum).
 
 ### Private Realtime
 
@@ -182,6 +192,7 @@ compiled into the browser bundle; every secret is runtime-only.
 | `NODE_ENV` | Build and Run Time | no | `production` |
 | `VITE_SUPABASE_URL` | Build Time | no | public project HTTPS URL |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Build Time | no | `sb_publishable_...` browser key |
+| `VITE_TURNSTILE_SITE_KEY` | Build Time | no | public Cloudflare Turnstile site key |
 | `APP_PUBLIC_ORIGIN`, `APP_ORIGINS` | Run Time | no | exact production HTTPS origin |
 | `SUPABASE_URL` | Run Time | no | public project HTTPS URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Run Time | no | same publishable key |
@@ -306,7 +317,7 @@ Do not deactivate legacy keys or treat old live records as disposable until all 
 Residual risks:
 
 - Public async share links can be forwarded; entropy, rate limits, caps, expiry, and close controls mitigate but do not eliminate this.
-- Anonymous sign-in can be abused to grow `auth.users`; CAPTCHA, rate limits, monitoring, and scheduled cleanup remain operational requirements.
+- Anonymous sign-in can grow `auth.users`; Turnstile, Supabase rate limits, monitoring, and scheduled cleanup provide layered controls. Do not enable Supabase CAPTCHA before the matching public site key is deployed.
 - The backend secret key bypasses RLS. Server authorization and ownership tests are therefore critical, and the key must be independently rotatable.
 - Audio signature checks are lightweight format validation, not malware scanning.
 - Transcript retention, consent, subject-access, and deletion periods still require an explicit school policy.
