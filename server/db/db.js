@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.js';
-import { v4 as uuid } from 'uuid';
+import { randomUUID as uuid } from 'node:crypto';
 
 const COLLECTION_META = {
   sessions: {

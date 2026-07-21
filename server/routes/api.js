@@ -1,6 +1,6 @@
 import express from "express";
 import { randomInt } from "crypto";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import { isLikelySupportedAudioBuffer, upload } from "../middleware/upload.js";
 import { authenticateUserFromToken, authorizeTeacherUser, extractBearerToken, isTeacherEmailAllowedForLogin, normalizeEmail, optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
 import { aiUploadLimiter, asyncJoinLimiter, asyncUploadLimiter, authLimiter } from "../middleware/rateLimit.js";

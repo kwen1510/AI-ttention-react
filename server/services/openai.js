@@ -120,6 +120,17 @@ export function parseJsonFromText(text) {
     }
 }
 
+export function buildFallbackSummary(text) {
+    const sentences = normalizeTranscriptText(text)
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean)
+        .slice(-6);
+    return sentences.length > 0
+        ? sentences.map((sentence) => `- ${sentence}`).join("\n")
+        : "Summary unavailable";
+}
+
 export async function summarise(text, customPrompt) {
     try {
         if (process.env.MOCK_AI_SERVICES === "true" && process.env.ALLOW_DEV_TEST === "true") {
@@ -138,8 +149,8 @@ export async function summarise(text, customPrompt) {
 
         const basePrompt = customPrompt || "Summarise the following classroom discussion in ≤6 clear bullet points:";
         if (!OPENAI_API_KEY) {
-            console.warn('⚠️ OpenAI API key not configured; skipping summarisation');
-            return "Summarization unavailable (missing OpenAI key)";
+            console.warn('⚠️ OpenAI API key not configured; using extractive summary');
+            return buildFallbackSummary(text);
         }
 
         const response = await callOpenAIChat(OPENAI_API_KEY, {
@@ -157,7 +168,7 @@ export async function summarise(text, customPrompt) {
         return summaryText ?? "(no summary)";
     } catch (err) {
         console.error("❌ Summarization error:", err);
-        return "Summarization failed";
+        return buildFallbackSummary(text);
     }
 }
 
