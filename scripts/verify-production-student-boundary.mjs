@@ -17,6 +17,7 @@ const admin = createClient(url, secretKey, {
 
 let syntheticUserId;
 let unauthorizedChannel;
+let probeError;
 const result = {
   anonymousSignIn: false,
   protectedTableReadDenied: false,
@@ -59,13 +60,25 @@ try {
     throw new Error('Private Realtime authorization probe did not return a conclusive status');
   }
   result.unauthorizedPrivateRealtimeDenied = true;
+} catch (error) {
+  probeError = error;
 } finally {
-  if (unauthorizedChannel) await student.removeChannel(unauthorizedChannel);
+  if (unauthorizedChannel) {
+    const removal = await student.removeChannel(unauthorizedChannel);
+    if (removal === 'error' && !probeError) {
+      probeError = new Error('Failed to remove the private Realtime probe channel');
+    }
+  }
   if (syntheticUserId) {
     const { error } = await admin.auth.admin.deleteUser(syntheticUserId);
-    if (error) throw error;
-    result.syntheticUserDeleted = true;
+    if (error) {
+      probeError ??= error;
+    } else {
+      result.syntheticUserDeleted = true;
+    }
   }
 }
+
+if (probeError) throw probeError;
 
 console.log(JSON.stringify(result, null, 2));

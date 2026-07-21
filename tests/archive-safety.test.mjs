@@ -84,3 +84,27 @@ test("asynchronous audio retries have a database uniqueness boundary", async () 
   assert.match(sql, /add column if not exists client_chunk_id text/i);
   assert.match(sql, /unique index[\s\S]+async_group_id, client_chunk_id/i);
 });
+
+test("classroom session reuse and final-upload grace survive multiple app instances", async () => {
+  const sql = await readFile(new URL("../server/db/migrations/20260725_multi_instance_session_state.sql", import.meta.url), "utf8");
+  assert.match(sql, /add column if not exists is_current boolean not null default false/i);
+  assert.match(sql, /add column if not exists accept_uploads_until timestamptz/i);
+  assert.match(sql, /unique index[\s\S]+owner_id, mode[\s\S]+where is_current = true/i);
+  assert.match(sql, /check \(not is_current or \(ended_reason is null and end_time is null\)\)/i);
+
+  const migrationRunner = await readFile(new URL("../scripts/migrate-production.mjs", import.meta.url), "utf8");
+  assert.match(migrationRunner, /20260725_multi_instance_session_state\.sql/);
+});
+
+test("abandoned pending sessions are deleted by the audited service-only retention job", async () => {
+  const sql = await readFile(new URL("../server/db/migrations/20260726_abandoned_session_cleanup.sql", import.meta.url), "utf8");
+  assert.match(sql, /start_time is null/i);
+  assert.match(sql, /active is false/i);
+  assert.match(sql, /delete from public\.sessions/i);
+  assert.match(sql, /abandoned_sessions_deleted/i);
+  assert.match(sql, /revoke all on function[\s\S]+from public, anon, authenticated/i);
+  assert.match(sql, /grant execute on function[\s\S]+to service_role/i);
+
+  const migrationRunner = await readFile(new URL("../scripts/migrate-production.mjs", import.meta.url), "utf8");
+  assert.match(migrationRunner, /20260726_abandoned_session_cleanup\.sql/);
+});

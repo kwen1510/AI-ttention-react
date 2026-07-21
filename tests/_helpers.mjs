@@ -49,11 +49,10 @@ export function createAuthOverrides() {
     ["admin-token", { id: "admin-1", email: "ri.kwmachinelearning@gmail.com", is_anonymous: false }],
     ["guest-token", { id: "guest-1", email: "guest@example.com", is_anonymous: false }],
     ["student-token", { id: "student-1", is_anonymous: true }],
-    ["student-token-1", { id: "student-1", is_anonymous: true }],
-    ["student-token-2", { id: "student-2", is_anonymous: true }],
-    ["student-token-3", { id: "student-3", is_anonymous: true }],
-    ["student-token-4", { id: "student-4", is_anonymous: true }],
-    ["student-token-5", { id: "student-5", is_anonymous: true }],
+    ...Array.from({ length: 25 }, (_, index) => [
+      `student-token-${index + 1}`,
+      { id: `student-${index + 1}`, is_anonymous: true }
+    ]),
     ["domain-teacher-token", { id: "teacher-3", email: "teacher-c@ri.edu.sg", is_anonymous: false }]
   ]);
 

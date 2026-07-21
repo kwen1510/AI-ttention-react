@@ -116,7 +116,6 @@ try {
   await ensureHeaderIncludes("/student", "cache-control", "no-store");
   await ensureHeaderIncludes("/admin", "cache-control", "no-store");
   await ensureHeaderIncludes("/history", "cache-control", "no-store");
-  await ensureHeaderIncludes("/data", "cache-control", "no-store");
   await ensureOk("/login", /<html/i);
 
   for (const assetPath of assetPaths) {

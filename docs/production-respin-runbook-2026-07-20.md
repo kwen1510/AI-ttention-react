@@ -9,7 +9,10 @@ This is the authoritative setup, archive, migration, deployment, validation, and
 - Students call Supabase Anonymous Sign-In in memory. The server verifies the Supabase user JWT, requires `is_anonymous=true`, and grants that user exact, expiring database memberships.
 - Supabase Broadcast channels are private. A teacher may receive only its session's opaque teacher topic; a student may receive only the student-control topic and its one assigned group topic. Browsers have no Broadcast `INSERT` policy.
 - Student events and audio uploads require both the anonymous bearer identity and its exact active database membership. A trigger prevents an identity accumulating active memberships in multiple groups in the same class.
-- Ending a class revokes every membership immediately and stops student events. A bounded 15-second final-audio path remains for already-recorded chunks; the class otherwise expires after four hours.
+- A generated code is a 60-minute pending reservation. If recording never starts it and its
+  memberships are deleted; first start promotes it to a retained four-hour classroom. Ending a
+  started class revokes every membership immediately and stops student events. A bounded 15-second
+  final-audio path remains only for already-recorded chunks.
 - The application holds no Supabase JWT signing key and mints no Supabase JWT. Supabase manages ES256 signing and exposes only public verification keys.
 
 ## 2. Before any production write
@@ -99,7 +102,11 @@ The orchestrator re-verifies the archive before applying, in order:
 2. four-hour classroom expiry fields and constraints;
 3. native Supabase Realtime membership table, single-group trigger, and exact-topic RLS;
 4. audited retention cleanup for expired memberships and old anonymous users;
-5. service-only grants and RLS on all live `public` tables.
+5. exact teacher/admin/guest whitelist and global/teacher-owned prompt visibility;
+6. asynchronous audio idempotency boundaries;
+7. database-backed current-session and final-upload-grace state for multi-instance correctness;
+8. audited deletion of abandoned pending sessions and their Realtime memberships;
+9. service-only grants and RLS on all live `public` tables.
 
 The SQL is idempotent. Inspect `realtime.messages` policies after migration:
 
@@ -166,27 +173,27 @@ The repository selects the supported Node 24 LTS line through `package.json` and
 DigitalOcean's Node buildpack reads the `engines.node` value; do not override it back to the EOL
 Node 20 line.
 
-Configure these as encrypted runtime/build variables:
+Configure the variables with these DigitalOcean scopes. Public `VITE_*` values are deliberately
+compiled into the browser bundle; every secret is runtime-only.
 
-```text
-NODE_ENV=production
-APP_PUBLIC_ORIGIN=https://your-production-origin
-APP_ORIGINS=https://your-production-origin
-SUPABASE_URL=https://PROJECT_REF.supabase.co
-SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-SUPABASE_SECRET_KEY=sb_secret_...
-VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-AUTH_COOKIE_SECRET=<independent random value, at least 32 characters>
-SESSION_JOIN_SECRET=<different independent random value, at least 32 characters>
-AUTH_COOKIE_TTL_SECONDS=2592000
-CLASSROOM_SESSION_TTL_MINUTES=240
-ALLOW_LEGACY_TEACHER_ALLOWLIST=false
-OPENAI_API_KEY=<server-only>
-ELEVENLABS_KEY=<server-only>
-```
+| Variable | Scope | Encrypted | Value class |
+|---|---|---:|---|
+| `NODE_ENV` | Build and Run Time | no | `production` |
+| `VITE_SUPABASE_URL` | Build Time | no | public project HTTPS URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Build Time | no | `sb_publishable_...` browser key |
+| `APP_PUBLIC_ORIGIN`, `APP_ORIGINS` | Run Time | no | exact production HTTPS origin |
+| `SUPABASE_URL` | Run Time | no | public project HTTPS URL |
+| `SUPABASE_PUBLISHABLE_KEY` | Run Time | no | same publishable key |
+| `SUPABASE_SECRET_KEY` | Run Time | yes | `sb_secret_...` backend key |
+| `AUTH_COOKIE_SECRET` | Run Time | yes | independent random 32+ character value |
+| `SESSION_JOIN_SECRET` | Run Time | yes | different independent 32+ character value |
+| `OPENAI_API_KEY`, `ELEVENLABS_KEY` | Run Time | yes | provider secrets |
+| `AUTH_COOKIE_TTL_SECONDS` | Run Time | no | `2592000` |
+| `CLASSROOM_SESSION_TTL_MINUTES` | Run Time | no | `240` |
+| `PENDING_SESSION_TTL_MINUTES` | Run Time | no | `60` |
+| `ALLOW_LEGACY_TEACHER_ALLOWLIST` | Run Time | no | `false` |
 
-`SUPABASE_SECRET_KEY`, `AUTH_COOKIE_SECRET`, `SESSION_JOIN_SECRET`, provider keys, and the database URL must never be build-time/public variables. Do not deploy `SUPABASE_DB_URL`; it is needed only on the controlled migration computer.
+`SUPABASE_SECRET_KEY`, `AUTH_COOKIE_SECRET`, `SESSION_JOIN_SECRET`, provider keys, and the database URL must never be build-time/public variables. Do not deploy `SUPABASE_DB_URL`; it is needed only on the controlled migration computer. The browser requires only the project URL and publishable key so it can obtain anonymous identities and join authorized private Realtime topics; RLS remains the authorization boundary.
 
 Before deployment, load the intended DigitalOcean environment in a protected local/CI context and
 run:
@@ -216,7 +223,9 @@ Run it twice and use different outputs.
    `#app-version` span. This marker is generated automatically during every build.
 4. Confirm `/health` and production security headers.
 5. Teacher OTP: request a code, verify it, close/reopen the browser, and confirm automatic restoration. Confirm no Supabase Auth token exists in Local Storage or Session Storage and the app cookie is HttpOnly/Secure/Strict.
-6. Create a class. Confirm created/expiry time is displayed and defaults to four hours.
+6. Create a class. Confirm it shows a one-hour **Start by** time. Start recording and confirm the
+   display changes to a four-hour expiry. End a separate unstarted reservation and confirm it is
+   deleted rather than appearing in History.
 7. Join with two clean student browser profiles. Confirm distinct anonymous Auth user IDs.
 8. Attempt teacher-topic and cross-group subscriptions from a student; both must return channel authorization failure.
 9. Record/upload from both groups and confirm each receives only its own transcript/summary/checklist updates.
@@ -226,7 +235,7 @@ Run it twice and use different outputs.
 13. Run the retention function on schedule (for example daily with Supabase Cron after enabling `pg_cron`):
 
 ```sql
-select private.cleanup_aittention_ephemeral_data(7, 30);
+select private.cleanup_aittention_ephemeral_data(7, 30, 60);
 ```
 
 Review `private.aittention_retention_log` after each scheduled run.
@@ -234,15 +243,25 @@ Review `private.aittention_retention_log` after each scheduled run.
 ## 9. Local and CI verification commands
 
 ```sh
-npm run test:unit
-npm test
-npm run test:realtime:multi
-npm run test:browser:security
-npm run db:verify:student-boundary
-npm audit --omit=dev --audit-level=high
+npm run test:local:core
+
+SPEECH_AUDIO_PATH=/absolute/path/to/speech.webm \
+SILENCE_AUDIO_PATH=/absolute/path/to/silence.wav \
+npm run test:local:providers
 ```
 
-Also run Semgrep OWASP rules, Gitleaks over current source, and Trivy high/critical vulnerability/secret scanning. SonarQube is supplementary; record an unavailable or interrupted local container result rather than claiming a pass.
+The core gate includes unit/API/adversarial tests, a production build and smoke test, a 25-group
+Summary/Checkbox composition test, browser cookie/security checks, and npm audit. The provider gate
+must recognize real speech, treat silence as skipped, and generate a real OpenAI summary. Repeat the
+audio provider gate with WebM, M4A/MP4, and Ogg fixtures when validating phone/browser compatibility.
+
+After anonymous Auth is enabled, run the cleanup-safe Supabase boundary probe separately:
+
+```sh
+npm run db:verify:student-boundary
+```
+
+Also run Semgrep OWASP rules, Gitleaks over current source, Trivy high/critical vulnerability/secret scanning, and a localhost SonarQube analysis. Record the quality-gate status and separate bugs, vulnerabilities, and security hotspots from optional maintainability suggestions.
 
 The Secure Auth Lab lessons and their applicability/exception evidence are inventoried in
 `secure-auth-lab-control-mapping-2026-07-20.md`.
@@ -287,7 +306,8 @@ Residual risks:
 - The backend secret key bypasses RLS. Server authorization and ownership tests are therefore critical, and the key must be independently rotatable.
 - Audio signature checks are lightweight format validation, not malware scanning.
 - Transcript retention, consent, subject-access, and deletion periods still require an explicit school policy.
-- The current production bundle has a size warning; this is a performance concern, not a security gate.
+- Horizontal replicas share session/release/grace state through Postgres, but the in-process abuse
+  limiter is per replica. Use a shared rate-limit store before scaling beyond a small replica count.
 - Historical Git commits contain the old public anon JWT. It is low-privilege/public by design, but it should be disabled after new-key validation so history no longer represents an active credential.
 
 ## Official references

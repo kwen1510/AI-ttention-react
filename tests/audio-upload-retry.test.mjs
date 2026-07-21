@@ -3,10 +3,16 @@ import test from 'node:test';
 
 import {
   audioChunkExtension,
+  hasAudibleSignal,
   selectRecordingMimeType,
   uploadAsyncAudio,
   uploadAudioChunk
 } from '../client/src/lib/audioUpload.js';
+
+test('audio activity detection rejects quiet samples and keeps sustained speech', () => {
+  assert.equal(hasAudibleSignal(new Float32Array(512)), false);
+  assert.equal(hasAudibleSignal(Float32Array.from({ length: 512 }, (_, index) => index % 2 ? 0.04 : -0.04)), true);
+});
 
 test('recorder selects MP4 on phones without WebM support', () => {
   const MobileMediaRecorder = {

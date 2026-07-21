@@ -117,6 +117,9 @@ test("student APIs reject forged roles, missing identity, and cross-group claims
     });
     assert.equal(stop.response.status, 200);
     assert.equal(revokedSession, "SECURE");
+    const stoppedSession = dbOverrides.dump("sessions")[0];
+    assert.equal(stoppedSession.is_current, false);
+    assert.ok(stoppedSession.accept_uploads_until > Date.now());
 
     const afterForcedEnd = await jsonRequest(baseUrl, "/api/session/SECURE/student-event", {
       method: "POST",

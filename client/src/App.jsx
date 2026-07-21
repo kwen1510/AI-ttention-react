@@ -1,15 +1,16 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './pages/LoginPage.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
-import CheckboxDashboard from './pages/CheckboxDashboard.jsx';
-import AsyncDashboard from './pages/AsyncDashboard.jsx';
-import AsyncStudentView from './pages/AsyncStudentView.jsx';
-import DataExplorer from './pages/DataExplorer.jsx';
-import HistoryPage from './pages/HistoryPage.jsx';
-import PromptsPage from './pages/PromptsPage.jsx';
-import StudentView from './pages/StudentView.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AppLayout from './components/AppLayout.jsx';
+
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard.jsx'));
+const CheckboxDashboard = lazy(() => import('./pages/CheckboxDashboard.jsx'));
+const AsyncDashboard = lazy(() => import('./pages/AsyncDashboard.jsx'));
+const AsyncStudentView = lazy(() => import('./pages/AsyncStudentView.jsx'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage.jsx'));
+const PromptsPage = lazy(() => import('./pages/PromptsPage.jsx'));
+const StudentView = lazy(() => import('./pages/StudentView.jsx'));
 
 function App() {
   const renderTeacherRoute = (element) => (
@@ -19,7 +20,8 @@ function App() {
   );
 
   return (
-    <Routes>
+    <Suspense fallback={<div className="min-h-screen bg-gray-50" aria-busy="true" />}>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
 
       <Route element={<AppLayout />}>
@@ -44,11 +46,6 @@ function App() {
         />
 
         <Route
-          path="/data"
-          element={renderTeacherRoute(<DataExplorer />)}
-        />
-
-        <Route
           path="/prompts"
           element={renderTeacherRoute(<PromptsPage />)}
         />
@@ -57,7 +54,6 @@ function App() {
         <Route path="/staging/checkbox" element={renderTeacherRoute(<CheckboxDashboard />)} />
         <Route path="/staging/async" element={renderTeacherRoute(<AsyncDashboard />)} />
         <Route path="/staging/history" element={renderTeacherRoute(<HistoryPage />)} />
-        <Route path="/staging/data" element={renderTeacherRoute(<DataExplorer />)} />
         <Route path="/staging/prompts" element={renderTeacherRoute(<PromptsPage />)} />
 
         <Route path="/student" element={<StudentView />} />
@@ -68,7 +64,8 @@ function App() {
       <Route path="/staging" element={<Navigate to="/staging/admin" replace />} />
       <Route path="/" element={<Navigate to="/student" replace />} />
       <Route path="*" element={<Navigate to="/student" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

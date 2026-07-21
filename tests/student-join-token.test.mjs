@@ -107,6 +107,21 @@ test("joinable session assertions allow a short post-stop upload grace window", 
 
   assert.equal(joinable.sessionCode, "ZXCV98");
 
+  const databaseBackedGrace = assertJoinableSessionState(
+    "ZXCV98",
+    null,
+    {
+      active: false,
+      accept_uploads_until: now + 5_000
+    },
+    {
+      allowUploadGrace: true,
+      now
+    }
+  );
+
+  assert.equal(databaseBackedGrace.sessionCode, "ZXCV98");
+
   assert.throws(
     () => assertJoinableSessionState(
       "ZXCV98",

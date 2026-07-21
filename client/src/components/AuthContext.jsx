@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getSupabaseClient, getSupabaseConfig } from '../config/supabaseClient.js';
 import {
   createStagingBypassHeaders,
   createStagingBypassTeacherProfile,
@@ -12,8 +11,9 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const location = useLocation();
   const isStagingBypass = isStagingBypassPath(location.pathname);
-  const supabase = useMemo(() => (isStagingBypass ? null : getSupabaseClient()), [isStagingBypass]);
-  const config = useMemo(() => (isStagingBypass ? null : getSupabaseConfig()), [isStagingBypass]);
+  const isPublicStudentPath = location.pathname === '/student'
+    || location.pathname === '/s'
+    || location.pathname.startsWith('/async/j/');
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +31,11 @@ export function AuthProvider({ children }) {
   }, []);
 
   const refreshAuth = useCallback(async () => {
+    if (isPublicStudentPath) {
+      setTeacherProfile(null);
+      setLoading(false);
+      return null;
+    }
     if (isStagingBypass) {
       const profile = { ...createStagingBypassTeacherProfile(), isAdmin: false };
       setTeacherProfile(profile);
@@ -57,7 +62,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [applyTeacherResponse, isStagingBypass]);
+  }, [applyTeacherResponse, isPublicStudentPath, isStagingBypass]);
 
   useEffect(() => {
     void refreshAuth();
@@ -90,8 +95,6 @@ export function AuthProvider({ children }) {
   }, [isStagingBypass]);
 
   const value = useMemo(() => ({
-    supabase,
-    config,
     session: null,
     user: teacherProfile,
     loading,
@@ -103,7 +106,7 @@ export function AuthProvider({ children }) {
     teacherProfile,
     refreshAuth,
     signOut,
-  }), [config, isStagingBypass, loading, refreshAuth, signOut, supabase, teacherProfile]);
+  }), [isStagingBypass, loading, refreshAuth, signOut, teacherProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

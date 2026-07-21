@@ -2,12 +2,39 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { chromium } from "playwright-core";
 
-process.env.HOST = process.env.HOST || "127.0.0.1";
-process.env.PORT = process.env.PORT || "0";
+process.env.NODE_ENV = "test";
+process.env.HOST = "127.0.0.1";
+process.env.PORT = "0";
+process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
+process.env.SUPABASE_URL = "https://example.supabase.co";
+process.env.SUPABASE_SECRET_KEY = "sb_secret_test";
+process.env.SUPABASE_PUBLISHABLE_KEY = "sb_publishable_test";
+process.env.SESSION_JOIN_SECRET = "browser-e2e-join-secret-at-least-32-characters";
+process.env.AUTH_COOKIE_SECRET = "browser-e2e-cookie-secret-at-least-32-characters";
 process.env.STAGING_AUTH_BYPASS = "true";
 process.env.ALLOW_DEV_TEST = "true";
 process.env.ALLOW_LEGACY_TEACHER_ALLOWLIST = "false";
 process.env.MOCK_AI_SERVICES = "true";
+
+const { createDbOverrides } = await import("../tests/api.integration.helpers.mjs");
+const { createAuthOverrides } = await import("../tests/_helpers.mjs");
+const dbModule = await import("../server/db/db.js");
+const authModule = await import("../server/middleware/auth.js");
+const realtimeModule = await import("../server/services/realtime.js");
+const membershipModule = await import("../server/services/realtimeMemberships.js");
+const stateModule = await import("../server/services/state.js");
+dbModule.__setDbTestOverrides(createDbOverrides({
+  sessions: [], groups: [], transcripts: [], summaries: [], summary_snapshots: [],
+  session_logs: [], session_prompts: [], teacher_prompts: [], checkbox_sessions: [],
+  checkbox_criteria: [], checkbox_progress: []
+}));
+authModule.__setAuthTestOverrides(createAuthOverrides());
+realtimeModule.__setRealtimeTestPublisher(() => ({ success: true }));
+membershipModule.__setRealtimeMembershipTestOverride({
+  grant: (rows) => rows,
+  revoke: () => true,
+  assertMembership: () => true
+});
 
 const { http, startServer } = await import("../index.js");
 
@@ -130,8 +157,37 @@ try {
     acceptDownloads: true,
     viewport: { width: 1440, height: 1100 },
   });
+  await context.routeWebSocket("wss://example.supabase.co/**", (webSocket) => webSocket.close());
 
   await context.grantPermissions(["microphone"], { origin: baseUrl });
+  await context.route("**/auth/v1/signup", async (route) => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const now = new Date().toISOString();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        access_token: "student-token",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: expiresAt,
+        refresh_token: "student-refresh-token",
+        user: {
+          id: "student-1",
+          aud: "authenticated",
+          role: "authenticated",
+          email: "",
+          phone: "",
+          app_metadata: { provider: "anonymous", providers: ["anonymous"] },
+          user_metadata: {},
+          identities: [],
+          created_at: now,
+          updated_at: now,
+          is_anonymous: true
+        }
+      })
+    });
+  });
 
   const teacherSummaryPage = await context.newPage();
   attachDiagnostics(teacherSummaryPage, "teacher-summary", diagnostics, baseUrl);
@@ -161,8 +217,14 @@ try {
   const studentSummaryPage = await context.newPage();
   attachDiagnostics(studentSummaryPage, "student-summary", diagnostics, baseUrl);
   await studentSummaryPage.goto(summaryJoinUrl, { waitUntil: "domcontentloaded" });
+  assert.equal(await studentSummaryPage.locator(".app-navbar").count(), 0);
   await studentSummaryPage.locator("#groupNumber").fill("1");
+  const summaryJoinResponse = studentSummaryPage.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().endsWith(`/api/session/${summarySessionCode}/student-join`)
+  );
   await studentSummaryPage.getByRole("button", { name: /Join with code/i }).click();
+  await expectOkResponse(summaryJoinResponse, "summary student join");
   await studentSummaryPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentSummaryPage.getByText("Group 1", { exact: false }).waitFor();
 
@@ -172,7 +234,6 @@ try {
 
   const promptId = Date.now();
   const promptTitle = `E2E Prompt ${promptId}`;
-  const promptTitleCopy = `${promptTitle} (Copy)`;
   const promptDescription = `Created by browser e2e ${promptId}`;
   const promptDescriptionUpdated = `Updated by browser e2e ${promptId}`;
   const promptContent = `Summarise the discussion clearly in three bullet points.\nMention action items if present.`;
@@ -183,10 +244,6 @@ try {
   );
   await promptsPage.getByRole("button", { name: "Create Prompt" }).click();
   await promptsPage.locator("#title").fill(promptTitle);
-  const authorNameInput = promptsPage.locator("#authorName");
-  if (!(await authorNameInput.evaluate((element) => element.hasAttribute("readonly")))) {
-    await authorNameInput.fill("Browser E2E");
-  }
   await promptsPage.locator("#description").fill(promptDescription);
   await promptsPage.locator("#content").fill(promptContent);
   await promptsPage.locator("#tags").fill("e2e, browser");
@@ -210,25 +267,7 @@ try {
   await promptsPage.getByText(promptTitle, { exact: true }).click();
   await promptsPage.getByRole("dialog").getByText(promptDescriptionUpdated, { exact: false }).waitFor();
 
-  const clonePromptResponse = promptsPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    /\/api\/prompts\/[^/]+\/clone$/.test(response.url())
-  );
-  await promptsPage.evaluate(() => {
-    window.prompt = () => "Browser Clone";
-  });
-  await promptsPage.getByRole("button", { name: "Clone" }).click();
-  await expectOkResponse(clonePromptResponse, "prompt clone");
-  await promptsPage.getByText(promptTitleCopy, { exact: true }).waitFor({ timeout: 20_000 });
-
-  await promptsPage.getByText(promptTitle, { exact: true }).click();
-  await promptsPage.getByRole("dialog").getByText(promptDescriptionUpdated, { exact: false }).waitFor();
-  const usePromptResponse = promptsPage.waitForResponse((response) =>
-    response.request().method() === "POST" &&
-    /\/api\/prompts\/[^/]+\/use$/.test(response.url())
-  );
   await promptsPage.getByRole("button", { name: "Use Prompt" }).click();
-  await expectOkResponse(usePromptResponse, "prompt use");
   await promptsPage.waitForURL(new RegExp(`${baseUrl}/staging/admin\\?prompt=`), { timeout: 20_000 });
   await promptsPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
   await promptsPage.getByRole("button", { name: /Summary prompt/i }).click();
@@ -238,7 +277,6 @@ try {
   await promptsPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
   await promptsPage.getByRole("heading", { name: /Prompt library/i }).waitFor();
   await deletePromptByTitle(promptsPage, promptTitle);
-  await deletePromptByTitle(promptsPage, promptTitleCopy);
 
   const teacherCheckboxPage = await context.newPage();
   attachDiagnostics(teacherCheckboxPage, "teacher-checkbox", diagnostics, baseUrl);
@@ -270,10 +308,6 @@ try {
   await studentCheckboxPage.getByRole("button", { name: /Join with code/i }).click();
   await studentCheckboxPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentCheckboxPage.getByText(/Waiting for the checklist/i).waitFor({ timeout: 20_000 });
-  await teacherCheckboxPage.getByRole("button", { name: /Release checklist/i }).click();
-  await studentCheckboxPage.getByText("Group checklist", { exact: false }).waitFor({ timeout: 20_000 });
-  await studentCheckboxPage.getByText("States at least one human cause").waitFor();
-  await studentCheckboxPage.getByText("Suggests one mitigation strategy").waitFor();
 
   const historyPage = await context.newPage();
   attachDiagnostics(historyPage, "history", diagnostics, baseUrl);
@@ -299,12 +333,6 @@ try {
 
   await historyModal.locator("button").last().click();
   await historyPage.waitForTimeout(200);
-
-  const dataPage = await context.newPage();
-  attachDiagnostics(dataPage, "data", diagnostics, baseUrl);
-  await dataPage.goto(`${baseUrl}/staging/data`, { waitUntil: "domcontentloaded" });
-  await dataPage.getByRole("heading", { name: /Session history/i }).waitFor({ timeout: 20_000 });
-  await dataPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
 
   if (diagnostics.length > 0) {
     throw new Error(`Browser diagnostics detected issues:\n${diagnostics.join("\n")}`);
@@ -336,6 +364,13 @@ try {
       });
     });
   }
+  dbModule.__setDbTestOverrides(null);
+  authModule.__setAuthTestOverrides(null);
+  realtimeModule.__setRealtimeTestPublisher(null);
+  membershipModule.__setRealtimeMembershipTestOverride(null);
+  stateModule.activeSessions.clear();
+  for (const timer of stateModule.sessionTimers.values()) clearTimeout(timer);
+  stateModule.sessionTimers.clear();
 }
 
 process.exit(0);

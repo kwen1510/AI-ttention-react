@@ -1,38 +1,9 @@
 import { v4 as uuid } from "uuid";
 import { db } from "../db/db.js";
-import { activeSessions } from "./state.js";
 
 function normalizeGroupNumber(groupNumber) {
     const parsed = Number(groupNumber);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function getMemoryReleaseMap(sessionCode) {
-    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
-    if (!normalizedCode) {
-        return {};
-    }
-
-    const sessionState = activeSessions.get(normalizedCode);
-    const releaseMap = sessionState?.summaryReleasedGroups;
-    return releaseMap && typeof releaseMap === "object" ? { ...releaseMap } : {};
-}
-
-function setMemoryReleaseMap(sessionCode, nextMap) {
-    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
-    if (!normalizedCode) {
-        return;
-    }
-
-    const sessionState = activeSessions.get(normalizedCode);
-    if (!sessionState) {
-        return;
-    }
-
-    activeSessions.set(normalizedCode, {
-        ...sessionState,
-        summaryReleasedGroups: { ...nextMap }
-    });
 }
 
 async function loadPersistedReleaseMap(sessionId) {
@@ -58,23 +29,8 @@ async function loadPersistedReleaseMap(sessionId) {
     return releaseMap;
 }
 
-export async function getSummaryReleaseMap({ sessionCode = "", sessionId = null } = {}) {
-    const memoryMap = getMemoryReleaseMap(sessionCode);
-    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
-    if (activeSessions.has(normalizedCode) && Object.prototype.hasOwnProperty.call(activeSessions.get(normalizedCode) || {}, "summaryReleasedGroups")) {
-        return memoryMap;
-    }
-
-    if (!sessionId) {
-        return memoryMap;
-    }
-
-    const persistedMap = await loadPersistedReleaseMap(sessionId);
-    if (normalizedCode) {
-        setMemoryReleaseMap(normalizedCode, persistedMap);
-    }
-
-    return persistedMap;
+export async function getSummaryReleaseMap({ sessionId = null } = {}) {
+    return loadPersistedReleaseMap(sessionId);
 }
 
 export async function isSummaryReleased({ sessionCode = "", sessionId = null, groupNumber } = {}) {
@@ -87,24 +43,14 @@ export async function isSummaryReleased({ sessionCode = "", sessionId = null, gr
     return Boolean(releaseMap[normalizedGroup]);
 }
 
-export async function recordSummaryRelease({ sessionCode = "", sessionId = null, groupNumber, isReleased = true } = {}) {
+export async function recordSummaryRelease({ sessionId = null, groupNumber, isReleased = true } = {}) {
     const normalizedGroup = normalizeGroupNumber(groupNumber);
     if (!normalizedGroup) {
         throw new Error("Invalid group number");
     }
 
-    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
     const nextReleased = Boolean(isReleased);
     const timestamp = Date.now();
-
-    const nextMap = {
-        ...getMemoryReleaseMap(normalizedCode),
-        [normalizedGroup]: nextReleased
-    };
-
-    if (normalizedCode) {
-        setMemoryReleaseMap(normalizedCode, nextMap);
-    }
 
     if (sessionId) {
         await db.collection("session_logs").insertOne({

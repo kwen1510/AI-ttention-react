@@ -4,7 +4,7 @@ import { chromium } from "playwright-core";
 
 process.env.NODE_ENV = "test";
 process.env.HOST = "127.0.0.1";
-process.env.PORT = "11045";
+process.env.PORT = "0";
 process.env.SKIP_SUPABASE_BOOTSTRAP = "true";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SECRET_KEY = "sb_secret_test";
@@ -47,8 +47,8 @@ function chromePath() {
 let browser;
 let context;
 try {
-  await startServer({ exitOnFailure: false });
-  const baseUrl = "http://127.0.0.1:11045";
+  const address = await startServer({ exitOnFailure: false });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
   browser = await chromium.launch({ executablePath: chromePath(), headless: true });
   context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 

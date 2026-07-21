@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+const USE_REAL_AI = process.env.REAL_AI_E2E === "true";
 
 process.env.NODE_ENV = "test";
 process.env.PORT = process.env.PORT || "0";
@@ -13,20 +17,24 @@ process.env.STAGING_AUTH_BYPASS = "true";
 process.env.STAGING_BYPASS_TEACHER_ID = "00000000-0000-4000-8000-000000000001";
 process.env.STAGING_BYPASS_TEACHER_EMAIL = "staging-teacher@example.com";
 process.env.ALLOW_DEV_TEST = "true";
-process.env.MOCK_AI_SERVICES = "true";
-process.env.OPENAI_API_KEY = "";
-process.env.OPENAI_KEY = "";
-process.env.ELEVENLABS_KEY = "";
+process.env.PENDING_SESSION_TTL_MINUTES = "60";
+process.env.MOCK_AI_SERVICES = USE_REAL_AI ? "false" : "true";
+if (!USE_REAL_AI) {
+  process.env.OPENAI_API_KEY = "";
+  process.env.OPENAI_KEY = "";
+  process.env.ELEVENLABS_KEY = "";
+}
 
 const { createDbOverrides } = await import("../tests/api.integration.helpers.mjs");
 const dbModule = await import("../server/db/db.js");
 const realtimeModule = await import("../server/services/realtime.js");
 const authModule = await import("../server/middleware/auth.js");
 const { createAuthOverrides } = await import("../tests/_helpers.mjs");
-const { activeSessions, latestChecklistState } = await import("../server/services/state.js");
+const { activeSessions } = await import("../server/services/state.js");
 const { http, startServer } = await import("../index.js");
 
-const GROUPS = [1, 2, 3, 4, 5];
+const groupCount = Math.max(1, Math.min(25, Number(process.env.E2E_GROUP_COUNT) || 5));
+const GROUPS = Array.from({ length: groupCount }, (_, index) => index + 1);
 const teacherHeaders = {
   "Content-Type": "application/json",
   "x-staging-auth-bypass": "teacher"
@@ -84,6 +92,9 @@ async function createSession(mode) {
   });
   assert.match(session.code, /^[A-Z0-9]{6}$/);
   assert.equal(session.mode, mode);
+  assert.equal(session.pending, true);
+  const pendingLifetime = new Date(session.expiresAt).getTime() - Date.now();
+  assert.equal(pendingLifetime > 55 * 60_000 && pendingLifetime <= 60 * 60_000, true);
   return session.code;
 }
 
@@ -117,6 +128,7 @@ async function startSession(sessionCode, mode) {
   });
   assert.equal(result.success, true);
   assert.equal(result.code, sessionCode);
+  assert.equal(new Date(result.expiresAt).getTime() > Date.now() + 3.9 * 60 * 60_000, true);
 }
 
 async function stopSession(sessionCode) {
@@ -126,12 +138,27 @@ async function stopSession(sessionCode) {
   assert.equal(result.success, true);
 }
 
-async function uploadMockSpeech(sessionCode, group, speech) {
+function audioMime(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".wav") return "audio/wav";
+  if (extension === ".m4a" || extension === ".mp4") return "audio/mp4";
+  if (extension === ".ogg") return "audio/ogg";
+  if (extension === ".mp3") return "audio/mpeg";
+  if (extension === ".aac") return "audio/aac";
+  if (extension === ".flac") return "audio/flac";
+  return "audio/webm";
+}
+
+async function uploadSpeech(sessionCode, group, speech, realAudioPath = null) {
   const formData = new FormData();
+  const bytes = realAudioPath
+    ? await readFile(realAudioPath)
+    : Buffer.from(`MOCK_TRANSCRIPT: ${speech}`);
+  const type = realAudioPath ? audioMime(realAudioPath) : "audio/webm";
   formData.append(
     "file",
-    new Blob([`MOCK_TRANSCRIPT: ${speech}`], { type: "audio/webm" }),
-    `group-${group}.webm`
+    new Blob([bytes], { type }),
+    realAudioPath ? path.basename(realAudioPath) : `group-${group}.webm`
   );
   formData.append("sessionCode", sessionCode);
   formData.append("groupNumber", String(group));
@@ -177,12 +204,23 @@ async function runSummaryMode() {
       `Student ${group} adds that solar panels and wind farms need planning.`,
       `The group asks for clearer examples before the teacher releases feedback.`
     ].join(" ");
-    const result = await uploadMockSpeech(sessionCode, group, speech);
+    const result = await uploadSpeech(sessionCode, group, speech, process.env.SUMMARY_AUDIO_PATH);
     assert.equal(result.success, true);
     assert.equal(result.mode, "summary");
-    assert.match(result.transcript, new RegExp(`Group ${group} says renewable energy`, "i"));
+    if (USE_REAL_AI) {
+      assert.equal(result.transcript.trim().length > 0, true);
+    } else {
+      assert.match(result.transcript, new RegExp(`Group ${group} says renewable energy`, "i"));
+    }
     assert.match(result.summary, /renewable energy/i);
     uploadResults.push(result);
+
+    if (USE_REAL_AI && group === GROUPS[0] && process.env.SILENCE_AUDIO_PATH) {
+      const silence = await uploadSpeech(sessionCode, group, "", process.env.SILENCE_AUDIO_PATH);
+      assert.equal(silence.success, true);
+      assert.equal(silence.skipped, true);
+      assert.equal(silence.reason, "No speech detected");
+    }
   }
 
   assert.equal(eventCount(sessionCode, "admin_update"), GROUPS.length);
@@ -256,7 +294,7 @@ async function runChecklistMode() {
       `They explain that the direct reaction is not reliable enough for the class investigation.`,
       `They ask the teacher to check whether their reason is specific enough.`
     ].join(" ");
-    const result = await uploadMockSpeech(sessionCode, group, speech);
+    const result = await uploadSpeech(sessionCode, group, speech, process.env.CHECKBOX_AUDIO_PATH);
     assert.equal(result.success, true);
     assert.equal(result.mode, "checkbox");
     assert.equal(result.matches >= 1, true);
@@ -336,7 +374,6 @@ try {
     });
   }
   activeSessions.clear();
-  latestChecklistState.clear();
   dbModule.__setDbTestOverrides(null);
   realtimeModule.__setRealtimeTestPublisher(null);
 }

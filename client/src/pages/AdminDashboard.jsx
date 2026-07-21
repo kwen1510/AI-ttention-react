@@ -30,9 +30,7 @@ function AdminDashboard() {
     setCurrentPrompt,
     promptLibrary,
     savePrompt,
-    testPrompt,
     feedback,
-    testResult,
     loadSessionPrompt,
     loadLibrary,
     applyLibraryPrompt,
@@ -97,22 +95,20 @@ function AdminDashboard() {
   // Load prompt when session is ready
   useEffect(() => {
     if (sessionCode) {
+      if (selectedPrompt) {
+        void savePrompt(selectedPrompt, { successMessage: 'Saved prompt applied to session' });
+        return undefined;
+      }
       const controller = new AbortController();
       void loadSessionPrompt({
         signal: controller.signal,
-        fallbackPrompt: selectedPrompt || DEFAULT_SUMMARY_PROMPT
+        fallbackPrompt: DEFAULT_SUMMARY_PROMPT
       });
       return () => controller.abort();
     }
 
     return undefined;
-  }, [sessionCode, loadSessionPrompt, selectedPrompt]);
-
-  useEffect(() => {
-    if (selectedPrompt) {
-      setCurrentPrompt(selectedPrompt);
-    }
-  }, [selectedPrompt, setCurrentPrompt]);
+  }, [sessionCode, loadSessionPrompt, savePrompt, selectedPrompt]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -338,10 +334,8 @@ function AdminDashboard() {
           currentPrompt={currentPrompt}
           onPromptChange={setCurrentPrompt}
           onSave={savePrompt}
-          onTest={testPrompt}
           onReset={() => setCurrentPrompt(DEFAULT_SUMMARY_PROMPT)}
           feedback={feedback}
-          testResult={testResult}
           onOpenLibrary={handleOpenPromptLibrary}
           isLibraryLoading={isLibraryLoading}
         />

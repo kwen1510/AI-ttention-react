@@ -102,3 +102,133 @@ test("student join endpoint grants exact topics to a native Supabase identity", 
     realtime.__setRealtimeTestPublisher(null);
   }
 });
+
+test("checkbox join state is rebuilt from Postgres instead of process memory", async () => {
+  applyBaseTestEnv(11046);
+
+  const dbModule = await import("../server/db/db.js");
+  const authModule = await import("../server/middleware/auth.js");
+  const realtime = await import("../server/services/realtime.js");
+  const dbOverrides = createDbOverrides({
+    sessions: [{
+      _id: "checkbox-session-1",
+      code: "CHECK1",
+      owner_id: "teacher-1",
+      mode: "checkbox",
+      active: true,
+      interval_ms: 30000,
+      created_at: Date.now(),
+      expires_at: Date.now() + 60_000
+    }],
+    groups: [],
+    checkbox_sessions: [{
+      session_id: "checkbox-session-1",
+      scenario: "Evaluate the discussion",
+      released_groups: { 2: true }
+    }],
+    checkbox_criteria: [{
+      _id: "criterion-1",
+      session_id: "checkbox-session-1",
+      description: "Uses evidence",
+      rubric: "Quotes the source",
+      order_index: 0,
+      created_at: Date.now()
+    }],
+    checkbox_progress: [{
+      session_id: "checkbox-session-1",
+      group_number: 2,
+      progress: {
+        "criterion-1": { status: "green", completed: true, quote: "Evidence quoted" }
+      }
+    }]
+  });
+
+  dbModule.__setDbTestOverrides(dbOverrides);
+  authModule.__setAuthTestOverrides(createAuthOverrides());
+  realtime.__setRealtimeTestPublisher(() => ({ success: true }));
+  const { http, startServer } = await loadServer(`checkbox-realtime-join-${Date.now()}`);
+
+  try {
+    const address = await startServer({ exitOnFailure: false });
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const { response, body } = await jsonRequest(baseUrl, "/api/session/CHECK1/student-join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer student-token" },
+      body: JSON.stringify({ group: 2 })
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(body.checklistState.isReleased, true);
+    assert.equal(body.checklistState.scenario, "Evaluate the discussion");
+    assert.equal(body.checklistState.criteria[0].status, "green");
+    assert.equal(body.checklistState.criteria[0].quote, "Evidence quoted");
+  } finally {
+    await stopServer(http);
+    dbModule.__setDbTestOverrides(null);
+    authModule.__setAuthTestOverrides(null);
+    realtime.__setRealtimeTestPublisher(null);
+  }
+});
+
+test("expired unstarted classrooms are deleted before a fresh pending session is reserved", async () => {
+  applyBaseTestEnv(11047);
+  process.env.PENDING_SESSION_TTL_MINUTES = "5";
+
+  const dbModule = await import("../server/db/db.js");
+  const authModule = await import("../server/middleware/auth.js");
+  const memberships = await import("../server/services/realtimeMemberships.js");
+  const deletedMemberships = [];
+  const dbOverrides = createDbOverrides({
+    sessions: [{
+      _id: "abandoned-session-1",
+      code: "OLD123",
+      owner_id: "teacher-1",
+      mode: "summary",
+      active: false,
+      is_current: true,
+      start_time: null,
+      created_at: Date.now() - 10 * 60_000,
+      expires_at: Date.now() - 1
+    }]
+  });
+
+  dbModule.__setDbTestOverrides(dbOverrides);
+  authModule.__setAuthTestOverrides(createAuthOverrides());
+  memberships.__setRealtimeMembershipTestOverride({
+    delete(code) { deletedMemberships.push(code); }
+  });
+  const { http, startServer } = await loadServer(`pending-session-${Date.now()}`);
+
+  try {
+    const address = await startServer({ exitOnFailure: false });
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const before = Date.now();
+    const { response, body } = await jsonRequest(baseUrl, "/api/new-session?mode=summary", {
+      method: "POST",
+      headers: { Authorization: "Bearer teacher-token", "Content-Type": "application/json" }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(body.pending, true);
+    assert.notEqual(body.code, "OLD123");
+    assert.equal(deletedMemberships.includes("OLD123"), true);
+    assert.equal(dbOverrides.dump("sessions").some((session) => session.code === "OLD123"), false);
+    const pendingLifetime = new Date(body.expiresAt).getTime() - before;
+    assert.equal(pendingLifetime >= 4.9 * 60_000 && pendingLifetime <= 5.1 * 60_000, true);
+
+    const { response: stopResponse, body: stopBody } = await jsonRequest(baseUrl, `/api/session/${body.code}/stop`, {
+      method: "POST",
+      headers: { Authorization: "Bearer teacher-token", "Content-Type": "application/json" }
+    });
+    assert.equal(stopResponse.status, 200);
+    assert.equal(stopBody.discarded, true);
+    assert.equal(dbOverrides.dump("sessions").some((session) => session.code === body.code), false);
+    assert.equal(deletedMemberships.includes(body.code), true);
+  } finally {
+    await stopServer(http);
+    dbModule.__setDbTestOverrides(null);
+    authModule.__setAuthTestOverrides(null);
+    memberships.__setRealtimeMembershipTestOverride(null);
+    delete process.env.PENDING_SESSION_TTL_MINUTES;
+  }
+});

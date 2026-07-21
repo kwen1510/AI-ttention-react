@@ -58,7 +58,11 @@ export function SessionHeader({
                     {isRecording ? <Badge tone="danger">Recording live</Badge> : null}
                     {isEnded ? <Badge tone="neutral">Session ended</Badge> : null}
                     {createdAt ? <Badge tone="neutral">Created {formatDateTime(createdAt)}</Badge> : null}
-                    {expiresAt && !isEnded ? <Badge tone="warning">Expires {formatDateTime(expiresAt)}</Badge> : null}
+                    {expiresAt && !isEnded ? (
+                        <Badge tone="warning">
+                            {isRecording ? 'Expires' : 'Start by'} {formatDateTime(expiresAt)}
+                        </Badge>
+                    ) : null}
                     {isRecording ? <Badge tone="primary">Elapsed {formatTime(elapsedTime)}</Badge> : null}
                     {isRecording && Number.isFinite(nextChunkIn) ? (
                         <Badge tone="accent">Next chunk {formatTime(nextChunkIn)}</Badge>

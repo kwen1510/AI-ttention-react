@@ -4,11 +4,9 @@ import { DEFAULT_SUMMARY_PROMPT, normalizePromptText } from '../lib/prompts.js';
 export function usePromptManager(sessionCode) {
     const [currentPrompt, setCurrentPrompt] = useState(DEFAULT_SUMMARY_PROMPT);
     const [promptLibrary, setPromptLibrary] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
     const [isLibraryLoading, setIsLibraryLoading] = useState(false);
     const [libraryError, setLibraryError] = useState(null);
     const [feedback, setFeedback] = useState(null);
-    const [testResult, setTestResult] = useState(null);
 
     const showFeedback = (message, type = 'info') => {
         setFeedback({ message, type });
@@ -49,7 +47,6 @@ export function usePromptManager(sessionCode) {
             return false;
         }
         try {
-            setIsLoading(true);
             const res = await fetch(`/api/session/${sessionCode}/prompt`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -66,41 +63,8 @@ export function usePromptManager(sessionCode) {
         } catch (err) {
             showFeedback('Error saving prompt', 'error');
             return false;
-        } finally {
-            setIsLoading(false);
         }
     }, [sessionCode]);
-
-    const testPrompt = useCallback(async (text) => {
-        if (!text.trim()) return;
-        try {
-            setIsLoading(true);
-            setTestResult(null);
-            showFeedback('Testing prompt...', 'info');
-
-            const sampleText = "Student A: I think renewable energy is really important for our future. Student B: Yeah, but what about the costs? Solar panels are expensive. Student C: True, but they save money in the long run. Teacher: Great points! What about government incentives? Student A: Oh right, there are tax credits that help reduce the initial cost. Student B: That makes it more affordable then. Student C: Plus think about the environmental benefits - reduced carbon emissions, cleaner air. Teacher: Excellent discussion on the economic and environmental aspects of renewable energy.";
-
-            const res = await fetch('/api/test-summary', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: sampleText, customPrompt: text })
-            });
-
-            const data = await res.json();
-            if (res.ok) {
-                setTestResult(String(data.summary || '').trim() || 'No summary returned.');
-                showFeedback('Test successful. Review the rendered output below.', 'success');
-            } else {
-                setTestResult(null);
-                showFeedback(`Test failed: ${data.error}`, 'error');
-            }
-        } catch (err) {
-            setTestResult(null);
-            showFeedback('Error testing prompt', 'error');
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
 
     const loadLibrary = useCallback(async () => {
         try {
@@ -122,19 +86,6 @@ export function usePromptManager(sessionCode) {
         }
     }, []);
 
-    const recordPromptUse = useCallback(async (promptId) => {
-        if (!promptId) return;
-        try {
-            await fetch(`/api/prompts/${promptId}/use`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionCode: sessionCode || 'current-session' })
-            });
-        } catch (err) {
-            console.warn('Failed to record prompt usage:', err);
-        }
-    }, [sessionCode]);
-
     const applyLibraryPrompt = useCallback(async (prompt) => {
         const text = normalizePromptText(prompt?.content);
         if (!text) {
@@ -146,25 +97,18 @@ export function usePromptManager(sessionCode) {
             successMessage: `${prompt.title || 'Prompt'} applied to session`
         });
 
-        if (success) {
-            await recordPromptUse(prompt?._id);
-        }
-
         return success;
-    }, [recordPromptUse, savePrompt]);
+    }, [savePrompt]);
 
     return {
         currentPrompt,
         setCurrentPrompt,
         promptLibrary,
-        isLoading,
         isLibraryLoading,
         libraryError,
         feedback,
-        testResult,
         loadSessionPrompt,
         savePrompt,
-        testPrompt,
         loadLibrary,
         applyLibraryPrompt,
         setFeedback

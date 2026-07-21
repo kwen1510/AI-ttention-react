@@ -3,15 +3,15 @@ import { transcribeAudioWithOpenAI } from "./openai.js";
 
 let mockChunkCounter = 0;
 const IGNORED_TRANSCRIPTION_TEXTS = new Set([
-    "No audio data available",
-    "Audio too short for transcription",
-    "Invalid WebM container - only complete containers are supported",
-    "WebM container too small",
-    "Audio quality issue - please try again",
-    "Audio quality issue - WebM container may be incomplete",
-    "Transcription temporarily unavailable",
-    "No transcription available",
-    "Transcription failed"
+    "no audio data available",
+    "audio too short for transcription",
+    "invalid webm container - only complete containers are supported",
+    "webm container too small",
+    "audio quality issue - please try again",
+    "audio quality issue - webm container may be incomplete",
+    "transcription temporarily unavailable",
+    "no transcription available",
+    "transcription failed"
 ]);
 
 function isMockAiServicesEnabled() {
@@ -61,6 +61,7 @@ function resolveAudioUploadMetadata(format) {
 
         case 'audio/mp4':
         case 'audio/m4a':
+        case 'audio/x-m4a':
             audioMime = 'audio/mp4';
             filename = 'audio.mp4';
             break;
@@ -69,6 +70,23 @@ function resolveAudioUploadMetadata(format) {
         case 'audio/opus':
             audioMime = 'audio/ogg';
             filename = 'audio.ogg';
+            break;
+
+        case 'audio/mpeg':
+        case 'audio/mp3':
+            audioMime = 'audio/mpeg';
+            filename = 'audio.mp3';
+            break;
+
+        case 'audio/aac':
+            audioMime = 'audio/aac';
+            filename = 'audio.aac';
+            break;
+
+        case 'audio/flac':
+        case 'audio/x-flac':
+            audioMime = 'audio/flac';
+            filename = 'audio.flac';
             break;
 
         default:
@@ -80,7 +98,24 @@ function resolveAudioUploadMetadata(format) {
 }
 
 export function isIgnorableTranscriptionText(text) {
-    return IGNORED_TRANSCRIPTION_TEXTS.has(String(text || "").trim());
+    const normalized = String(text || "").trim().toLowerCase();
+    return IGNORED_TRANSCRIPTION_TEXTS.has(normalized)
+        || /^(?:\[(?:silence|music|applause|laughter|noise)\]|\((?:silence|music|applause|laughter|noise)\))[.!]?$/.test(normalized);
+}
+
+export function normalizeElevenLabsTranscription(result) {
+    const text = String(result?.text || "").trim();
+    const words = Array.isArray(result?.words) ? result.words : [];
+    const classifiedWords = words.filter((word) => typeof word?.type === "string");
+    const hasClassifiedSpeech = classifiedWords.some((word) => (
+        word.type === "word" && /[\p{L}\p{N}]/u.test(String(word.text || word.word || ""))
+    ));
+    const onlyNonSpeechEvents = classifiedWords.length > 0 && !hasClassifiedSpeech;
+
+    return {
+        text: onlyNonSpeechEvents ? "" : text,
+        words: onlyNonSpeechEvents ? [] : words.filter((word) => word?.type !== "audio_event")
+    };
 }
 
 export async function transcribe(buf, format = 'audio/webm') {
@@ -126,7 +161,7 @@ export async function transcribe(buf, format = 'audio/webm') {
 
         // Add the audio buffer as a file
         formData.append('file', new Blob([buf], { type: audioMime }), filename);
-        formData.append('model_id', 'scribe_v1');
+        formData.append('model_id', 'scribe_v2');
         formData.append('language_code', TRANSCRIPTION_LANGUAGE);
         formData.append('timestamps_granularity', 'word');
 
@@ -143,7 +178,6 @@ export async function transcribe(buf, format = 'audio/webm') {
                 if (!response.ok) {
                     const errorText = await response.text();
                     console.error(`❌ ElevenLabs API error: ${response.status} ${response.statusText}`);
-                    console.error('Error response:', errorText);
 
                     if (response.status === 400) {
                         try {
@@ -162,10 +196,7 @@ export async function transcribe(buf, format = 'audio/webm') {
                 }
 
                 const result = await response.json();
-                return {
-                    text: result.text || "No transcription available",
-                    words: result.words || []
-                };
+                return normalizeElevenLabsTranscription(result);
             } catch (err) {
                 console.warn("⚠️ ElevenLabs transcription failed, falling back to OpenAI:", err.message);
             }

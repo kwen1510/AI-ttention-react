@@ -23,6 +23,8 @@ const sqlFiles = [
   "server/db/migrations/20260722_retention_cleanup.sql",
   "server/db/migrations/20260723_access_whitelist_and_prompt_visibility.sql",
   "server/db/migrations/20260724_async_audio_idempotency.sql",
+  "server/db/migrations/20260725_multi_instance_session_state.sql",
+  "server/db/migrations/20260726_abandoned_session_cleanup.sql",
   "server/db/migrations/20260721_service_only_live_hardening.sql"
 ];
 

@@ -30,8 +30,10 @@ create table public.sessions (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id),
   code text not null unique,
+  mode text,
   active boolean not null default false,
   created_at timestamptz not null default now(),
+  end_time timestamptz,
   expires_at timestamptz,
   ended_reason text
 );

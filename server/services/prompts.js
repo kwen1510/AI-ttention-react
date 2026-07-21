@@ -79,8 +79,7 @@ export function decoratePromptForTeacher(prompt, teacher) {
     return {
         ...normalizedPrompt,
         canEdit: canTeacherManagePrompt(normalizedPrompt, teacher),
-        canDelete: canTeacherManagePrompt(normalizedPrompt, teacher),
-        canClone: canTeacherCreatePrompt(teacher)
+        canDelete: canTeacherManagePrompt(normalizedPrompt, teacher)
     };
 }
 

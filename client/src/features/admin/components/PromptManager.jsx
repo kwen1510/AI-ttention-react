@@ -1,10 +1,9 @@
 import React, { useId, useState } from 'react';
-import { FileText, ChevronDown, FlaskConical, Check, Library } from 'lucide-react';
+import { FileText, ChevronDown, Check, Library } from 'lucide-react';
 import { Alert } from '../../../components/ui/alert.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import { Panel, PanelHeader } from '../../../components/ui/panel.jsx';
 import { Textarea } from '../../../components/ui/field.jsx';
-import { MarkdownContent } from '../../../components/ui/markdown.jsx';
 import {
     DEFAULT_SUMMARY_PROMPT,
     getSummaryPromptPreview,
@@ -15,10 +14,8 @@ export function PromptManager({
     currentPrompt,
     onPromptChange,
     onSave,
-    onTest,
     onReset,
     feedback,
-    testResult,
     onOpenLibrary,
     isLibraryLoading
 }) {
@@ -77,10 +74,6 @@ export function PromptManager({
 
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="cluster">
-                                <Button type="button" onClick={() => onTest(currentPrompt)} variant="secondary" size="sm">
-                                    <FlaskConical className="h-3.5 w-3.5" />
-                                    Test
-                                </Button>
                                 <Button type="button" onClick={() => onSave(currentPrompt)} variant="primary" size="sm">
                                     <Check className="h-3.5 w-3.5" />
                                     Apply
@@ -97,11 +90,6 @@ export function PromptManager({
                             </Alert>
                         )}
 
-                        {testResult ? (
-                            <div className="ui-code-block text-sm">
-                                <MarkdownContent content={testResult} />
-                            </div>
-                        ) : null}
                     </div>
                 </div>
             )}

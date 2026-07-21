@@ -113,6 +113,34 @@ export async function revokeSessionRealtimeMemberships(sessionCode, revokedAt = 
     if (error) throw error;
 }
 
+export async function extendSessionRealtimeMemberships(sessionCode, expiresAt) {
+    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
+    if (!normalizedCode) return;
+    const normalizedExpiry = normalizeExpiry(expiresAt);
+    if (membershipTestOverride) return membershipTestOverride.extend?.(normalizedCode, normalizedExpiry);
+    if (process.env.NODE_ENV === "test") return;
+
+    const { error } = await supabase
+        .from("classroom_realtime_memberships")
+        .update({ expires_at: normalizedExpiry })
+        .eq("session_code", normalizedCode)
+        .is("revoked_at", null);
+    if (error) throw error;
+}
+
+export async function deleteSessionRealtimeMemberships(sessionCode) {
+    const normalizedCode = String(sessionCode || "").trim().toUpperCase();
+    if (!normalizedCode) return;
+    if (membershipTestOverride) return membershipTestOverride.delete?.(normalizedCode);
+    if (process.env.NODE_ENV === "test") return;
+
+    const { error } = await supabase
+        .from("classroom_realtime_memberships")
+        .delete()
+        .eq("session_code", normalizedCode);
+    if (error) throw error;
+}
+
 export function __setRealtimeMembershipTestOverride(override) {
     membershipTestOverride = override || null;
 }

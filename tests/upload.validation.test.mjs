@@ -110,7 +110,7 @@ test("all API audio upload handlers validate the file payload signature", () => 
     uploadRoutes.push({ path, body });
   }
 
-  assert.ok(uploadRoutes.length >= 4, "expected API upload handlers to be discovered");
+  assert.equal(uploadRoutes.length, 2, "only the live and asynchronous upload handlers should remain");
 
   for (const route of uploadRoutes) {
     assert.match(

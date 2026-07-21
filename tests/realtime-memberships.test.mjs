@@ -28,3 +28,26 @@ test("Realtime membership grants are identity, session, and topic scoped", async
     service.__setRealtimeMembershipTestOverride(null);
   }
 });
+
+test("Realtime membership lifecycle can be extended or deleted by session", async () => {
+  process.env.NODE_ENV = "test";
+  process.env.SUPABASE_URL ||= "https://example.supabase.co";
+  process.env.SUPABASE_SECRET_KEY ||= "sb_secret_test";
+  process.env.SUPABASE_PUBLISHABLE_KEY ||= "sb_publishable_test";
+  const service = await import(`../server/services/realtimeMemberships.js?lifecycle=${Date.now()}`);
+  const calls = [];
+  service.__setRealtimeMembershipTestOverride({
+    extend(code, expiresAt) { calls.push(["extend", code, expiresAt]); },
+    delete(code) { calls.push(["delete", code]); }
+  });
+  try {
+    await service.extendSessionRealtimeMemberships("room42", "2030-01-01T00:00:00.000Z");
+    await service.deleteSessionRealtimeMemberships("room42");
+    assert.deepEqual(calls, [
+      ["extend", "ROOM42", "2030-01-01T00:00:00.000Z"],
+      ["delete", "ROOM42"]
+    ]);
+  } finally {
+    service.__setRealtimeMembershipTestOverride(null);
+  }
+});

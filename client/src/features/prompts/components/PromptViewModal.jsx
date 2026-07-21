@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit, Copy, Trash2, Play, Globe, Lock, FileText, CheckSquare } from 'lucide-react';
+import { Edit, Trash2, Play, Globe, Lock, FileText, CheckSquare } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { Button } from '../../../components/ui/button.jsx';
 import {
@@ -17,7 +17,6 @@ export function PromptViewModal({
     onClose,
     onUse,
     onEdit,
-    onClone,
     onDelete
 }) {
     if (!prompt) return null;
@@ -43,7 +42,7 @@ export function PromptViewModal({
                         <p>{prompt.description || 'No description provided.'}</p>
                     </section>
 
-                    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="ui-metric">
                             <span className="ui-metric__label">Category</span>
                             <Badge tone="neutral">{prompt.category}</Badge>
@@ -53,14 +52,6 @@ export function PromptViewModal({
                             <Badge tone={modeTones[prompt.mode]} icon={prompt.mode === 'checkbox' ? CheckSquare : FileText}>
                                 {prompt.mode.charAt(0).toUpperCase() + prompt.mode.slice(1)}
                             </Badge>
-                        </div>
-                        <div className="ui-metric">
-                            <span className="ui-metric__label">Views</span>
-                            <span className="ui-metric__value">{prompt.views || 0}</span>
-                        </div>
-                        <div className="ui-metric">
-                            <span className="ui-metric__label">Uses</span>
-                            <span className="ui-metric__value">{prompt.usage_count || 0}</span>
                         </div>
                     </div>
 
@@ -95,11 +86,6 @@ export function PromptViewModal({
                         {prompt.canEdit ? (
                             <Button type="button" onClick={() => onEdit(prompt)} variant="secondary" size="sm">
                                 <Edit className="h-4 w-4" /> Edit
-                            </Button>
-                        ) : null}
-                        {prompt.canClone !== false ? (
-                            <Button type="button" onClick={() => onClone(prompt)} variant="secondary" size="sm">
-                                <Copy className="h-4 w-4" /> Clone
                             </Button>
                         ) : null}
                         {prompt.canDelete ? (

@@ -137,8 +137,8 @@ export function assertJoinableSessionState(sessionCode, sessionState, sessionRec
     const allowUploadGrace = Boolean(options?.allowUploadGrace);
     const hasUploadGrace =
         allowUploadGrace &&
-        Number.isFinite(Number(sessionState?.acceptUploadsUntil)) &&
-        Number(sessionState.acceptUploadsUntil) >= now;
+        Number.isFinite(Number(sessionRecord?.accept_uploads_until || sessionState?.acceptUploadsUntil)) &&
+        Number(sessionRecord?.accept_uploads_until || sessionState?.acceptUploadsUntil) >= now;
 
     const expiresAt = Number(sessionRecord?.expires_at || sessionState?.expiresAt || 0);
     if (expiresAt && expiresAt <= now) {

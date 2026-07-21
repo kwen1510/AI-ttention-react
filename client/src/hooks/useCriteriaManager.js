@@ -187,19 +187,6 @@ export function useCriteriaManager(sessionCode) {
         }
     }, [formatCriteriaText, hydrateCriteria, sessionCode]);
 
-    const recordPromptUse = useCallback(async (promptId) => {
-        if (!promptId) return;
-        try {
-            await fetch(`/api/prompts/${promptId}/use`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionCode: sessionCode || 'current-session' })
-            });
-        } catch (err) {
-            console.warn('Failed to record prompt usage:', err);
-        }
-    }, [sessionCode]);
-
     const applyLibraryPrompt = useCallback(async (prompt, interval) => {
         const parsedPrompt = parseCheckboxPromptContent(prompt?.content, prompt?.scenario || '');
         const nextStrictness = Number(prompt?.strictness || strictness || 2);
@@ -216,12 +203,8 @@ export function useCriteriaManager(sessionCode) {
             }
         );
 
-        if (savedCriteria) {
-            await recordPromptUse(prompt?._id);
-        }
-
         return savedCriteria;
-    }, [recordPromptUse, saveCriteria, strictness]);
+    }, [saveCriteria, strictness]);
 
     return {
         scenario,

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { cn } from "@/lib/utils.js";
 

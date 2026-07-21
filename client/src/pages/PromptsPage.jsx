@@ -29,7 +29,6 @@ function PromptsPage() {
     createPrompt,
     updatePrompt,
     deletePrompt,
-    clonePrompt,
     usePrompt: applyPrompt,
     handlePageChange,
     refresh
@@ -57,14 +56,6 @@ function PromptsPage() {
 
   const handleDelete = async (id) => {
     const success = await deletePrompt(id);
-    if (success) {
-      setIsViewModalOpen(false);
-      setSelectedPrompt(null);
-    }
-  };
-
-  const handleClone = async (promptRecord) => {
-    const success = await clonePrompt(promptRecord._id);
     if (success) {
       setIsViewModalOpen(false);
       setSelectedPrompt(null);
@@ -254,7 +245,6 @@ function PromptsPage() {
         onClose={() => setIsViewModalOpen(false)}
         onUse={handleUse}
         onEdit={handleEditRequest}
-        onClone={handleClone}
         onDelete={handleDelete}
       />
     </div>

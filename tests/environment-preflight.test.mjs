@@ -43,8 +43,11 @@ function validDeployment() {
     SUPABASE_SECRET_KEY: "sb_secret_server-value",
     AUTH_COOKIE_SECRET: "cookie-secret-value-with-more-than-32-characters",
     SESSION_JOIN_SECRET: "join-secret-value-with-more-than-32-characters",
+    OPENAI_API_KEY: "openai-server-test-value",
+    ELEVENLABS_KEY: "elevenlabs-server-test-value",
     AUTH_COOKIE_TTL_SECONDS: "2592000",
     CLASSROOM_SESSION_TTL_MINUTES: "240",
+    PENDING_SESSION_TTL_MINUTES: "60",
     ALLOW_LEGACY_TEACHER_ALLOWLIST: "false"
   };
 }
@@ -69,4 +72,20 @@ test("deployment preflight rejects legacy keys, migration URLs, insecure origins
   assert.match(errors, /must be independent/);
   assert.match(errors, /VITE_SUPABASE_SECRET_KEY/);
   assert.equal(errors.includes(env.AUTH_COOKIE_SECRET), false);
+});
+
+test("deployment preflight rejects test bypasses, staging identities, and missing providers", () => {
+  const env = validDeployment();
+  env.STAGING_AUTH_BYPASS = "true";
+  env.ALLOW_DEV_TEST = "true";
+  env.MOCK_AI_SERVICES = "true";
+  env.STAGING_BYPASS_TEACHER_EMAIL = "staging@example.com";
+  delete env.OPENAI_API_KEY;
+
+  const errors = validateDeploymentEnvironment(env).join("\n");
+  assert.match(errors, /STAGING_AUTH_BYPASS/);
+  assert.match(errors, /ALLOW_DEV_TEST/);
+  assert.match(errors, /MOCK_AI_SERVICES/);
+  assert.match(errors, /STAGING_BYPASS_TEACHER_EMAIL/);
+  assert.match(errors, /OPENAI_API_KEY is required/);
 });

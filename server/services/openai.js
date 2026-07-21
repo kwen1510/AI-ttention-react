@@ -39,8 +39,9 @@ export async function callOpenAIChat(apiKey, {
     });
 
     if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`OpenAI chat error ${res.status} ${res.statusText}: ${errorText}`);
+        const error = new Error(`OpenAI chat request failed (${res.status})`);
+        error.status = res.status;
+        throw error;
     }
 
     return res.json();
@@ -71,8 +72,7 @@ export async function transcribeAudioWithOpenAI(buffer, {
     });
 
     if (!response.ok) {
-        const errorText = await response.text();
-        const error = new Error(`OpenAI audio transcription error ${response.status} ${response.statusText}: ${errorText}`);
+        const error = new Error(`OpenAI audio transcription request failed (${response.status})`);
         error.status = response.status;
         throw error;
     }

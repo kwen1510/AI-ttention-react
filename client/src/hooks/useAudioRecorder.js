@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { selectRecordingMimeType, uploadAudioChunk } from '../lib/audioUpload.js';
+import { createAudioActivityMonitor, selectRecordingMimeType, uploadAudioChunk } from '../lib/audioUpload.js';
 
 const INITIAL_UPLOAD_STATE = {
     phase: 'idle',
@@ -15,6 +15,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
     const [uploadState, setUploadState] = useState(INITIAL_UPLOAD_STATE);
     const mediaRecorderRef = useRef(null);
     const streamRef = useRef(null);
+    const activityMonitorRef = useRef(null);
     const wakeLockRef = useRef(null);
     const cycleStopTimerRef = useRef(null);
     const cycleRestartTimerRef = useRef(null);
@@ -115,6 +116,10 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
     }, [emitUploadStatus]);
 
     const cleanupStream = useCallback(() => {
+        if (activityMonitorRef.current) {
+            void activityMonitorRef.current.close();
+            activityMonitorRef.current = null;
+        }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach((track) => track.stop());
             streamRef.current = null;
@@ -218,6 +223,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             }
 
             try {
+                activityMonitorRef.current?.reset();
                 const mimeType = selectRecordingMimeType(MediaRecorder);
                 const recorder = mimeType
                     ? new MediaRecorder(streamRef.current, { mimeType })
@@ -240,7 +246,8 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
                 };
 
                 recorder.ondataavailable = (event) => {
-                    if (event.data?.size > 0) {
+                    const hasSpeech = activityMonitorRef.current?.hasSpeech() ?? true;
+                    if (event.data?.size > 0 && hasSpeech) {
                         void uploadChunk(event.data);
                     }
                 };
@@ -334,6 +341,7 @@ export function useAudioRecorder(sessionCode, groupNumber, socket, onUploadError
             clearCycleTimers();
             intervalMsRef.current = Math.max(5_000, Number(intervalMs) || 30_000);
             streamRef.current = stream;
+            activityMonitorRef.current = await createAudioActivityMonitor(stream);
             isRecordingRef.current = true;
             stopRequestedRef.current = false;
             pendingUploadsRef.current = 0;

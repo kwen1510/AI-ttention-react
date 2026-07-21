@@ -8,7 +8,9 @@ function createJsonRateLimitHandler(message = "Too many requests") {
 
 export const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 100,
+    // A whole class commonly shares one school/NAT IP. Keep enough headroom for
+    // joins and teacher releases while auth and AI routes retain tighter limits.
+    limit: 300,
     skip(req) {
         // High-frequency recording endpoints have their own session/group-aware limits.
         return req.path === "/transcribe-chunk" || /\/async\/join\/[^/]+\/upload$/.test(req.path);
@@ -66,15 +68,6 @@ function buildAsyncShareKey(req) {
     const shareId = String(req.params?.shareId || "").trim();
     return shareId ? `async:${shareId}:ip:${ipKeyGenerator(req.ip)}` : ipKeyGenerator(req.ip);
 }
-
-export const aiLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    limit: 20,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    keyGenerator: buildAiRequesterKey,
-    handler: createJsonRateLimitHandler("Too many AI requests")
-});
 
 export const aiUploadLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,

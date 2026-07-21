@@ -38,3 +38,24 @@ test('OpenAI transcription uses native multipart data without setting its bounda
         delete process.env.OPENAI_API_KEY;
     }
 });
+
+test('OpenAI failures do not expose provider response bodies', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'masked-key-fingerprint-should-not-escape'
+    });
+
+    try {
+        const { callOpenAIChat } = await import('../server/services/openai.js');
+        await assert.rejects(
+            () => callOpenAIChat('test-key', { messages: [] }),
+            (error) => error.status === 401
+                && !error.message.includes('masked-key-fingerprint-should-not-escape')
+        );
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});

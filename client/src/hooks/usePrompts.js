@@ -95,37 +95,7 @@ export function usePrompts() {
         }
     };
 
-    const clonePrompt = async (id) => {
-        try {
-            const response = await fetch(`/api/prompts/${id}/clone`, {
-                method: 'POST'
-            });
-            if (!response.ok) throw new Error('Failed to clone prompt');
-            await fetchPrompts();
-            return true;
-        } catch (err) {
-            setError(err.message);
-            return false;
-        }
-    };
-
-    const usePrompt = async (id) => {
-        try {
-            const response = await fetch(`/api/prompts/${id}/use`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionCode: 'web-interface' })
-            });
-            if (!response.ok) throw new Error('Failed to record usage');
-
-            // Return the prompt data so the UI can redirect
-            const prompt = prompts.find(p => p._id === id);
-            return prompt;
-        } catch (err) {
-            console.error('Failed to use prompt:', err);
-            return null;
-        }
-    };
+    const usePrompt = async (id) => prompts.find((prompt) => prompt._id === id) || null;
 
     const handlePageChange = (direction) => {
         if (direction === 'next' && pagination.hasMore) {
@@ -146,7 +116,6 @@ export function usePrompts() {
         createPrompt,
         updatePrompt,
         deletePrompt,
-        clonePrompt,
         usePrompt,
         handlePageChange,
         refresh: fetchPrompts

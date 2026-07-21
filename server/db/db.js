@@ -5,7 +5,7 @@ const COLLECTION_META = {
   sessions: {
     primaryKey: 'id',
     upsertOn: 'id',
-    timestampFields: ['created_at', 'updated_at', 'start_time', 'end_time', 'ended_at', 'expires_at', 'last_updated']
+    timestampFields: ['created_at', 'updated_at', 'start_time', 'end_time', 'ended_at', 'expires_at', 'accept_uploads_until', 'last_updated']
   },
   groups: {
     primaryKey: 'id',
@@ -35,15 +35,6 @@ const COLLECTION_META = {
     upsertOn: 'group_id,segment_cursor',
     timestampFields: ['created_at']
   },
-  mindmap_sessions: {
-    primaryKey: 'id',
-    upsertOn: 'session_id',
-    timestampFields: ['created_at', 'updated_at', 'archived_at']
-  },
-  mindmap_archives: {
-    primaryKey: 'id',
-    timestampFields: ['start_time', 'end_time', 'saved_at', 'created_at']
-  },
   checkbox_sessions: {
     primaryKey: 'session_id',
     upsertOn: 'session_id',
@@ -57,10 +48,6 @@ const COLLECTION_META = {
     primaryKey: 'id',
     upsertOn: 'session_id,group_number',
     timestampFields: ['created_at', 'updated_at']
-  },
-  checkbox_results: {
-    primaryKey: 'id',
-    timestampFields: ['created_at']
   },
   async_sessions: {
     primaryKey: 'id',
@@ -81,34 +68,20 @@ const COLLECTION_META = {
     upsertOn: 'async_group_id',
     timestampFields: ['created_at', 'updated_at']
   },
-  prompt_library: {
-    primaryKey: 'id',
-    timestampFields: ['created_at', 'updated_at']
-  },
   teacher_prompts: {
     primaryKey: 'id',
-    timestampFields: ['created_at', 'updated_at', 'last_viewed', 'last_used'],
+    timestampFields: ['created_at', 'updated_at'],
     fieldMap: {
       authorName: 'author_name',
       isPublic: 'is_public',
       createdByUserId: 'created_by_user_id',
       createdByEmail: 'created_by_email'
     }
-  },
-  mindmap_nodes: {
-    primaryKey: 'id',
-    timestampFields: []
-  },
-  transcriptions: {
-    primaryKey: 'id',
-    timestampFields: ['created_at']
   }
 };
 
 const DEFAULT_TIMESTAMP_FIELDS = [];
 let dbTestOverrides = null;
-
-const noop = async () => ({ acknowledged: true });
 
 function getCollectionMeta(name) {
   const meta = COLLECTION_META[name] || {};
@@ -191,73 +164,17 @@ function convertRow(collectionName, row) {
   return converted;
 }
 
-function clone(data) {
-  return JSON.parse(JSON.stringify(data));
-}
-
-function applyUpdateOperators(collectionName, originalDoc, update) {
-  const doc = clone(originalDoc || {});
-  const { $set, $inc, $push } = update;
-
-  if ($set) {
-    for (const [key, value] of Object.entries($set)) {
+function applyUpdate(originalDoc, update) {
+  const doc = structuredClone(originalDoc || {});
+  if (update.$set) {
+    for (const [key, value] of Object.entries(update.$set)) {
       if (key === '_id' && doc._id) {
         continue;
       }
       doc[key] = value;
     }
   }
-
-  if ($inc) {
-    for (const [key, value] of Object.entries($inc)) {
-      const current = Number(doc[key] ?? 0);
-      doc[key] = current + value;
-    }
-  }
-
-  if ($push) {
-    for (const [key, value] of Object.entries($push)) {
-      const target = Array.isArray(doc[key]) ? [...doc[key]] : [];
-      if (value && typeof value === 'object' && '$each' in value) {
-        target.push(...value.$each);
-      } else {
-        target.push(value);
-      }
-      doc[key] = target;
-    }
-  }
-
   return doc;
-}
-
-function buildOrClause(orFilter) {
-  return Object.entries(orFilter)
-    .map(([field, value]) => {
-      const column = field;
-      if (value && typeof value === 'object') {
-        if ('$ilike' in value) {
-          return `${column}.ilike.${value.$ilike}`;
-        }
-        if ('$eq' in value) {
-          return `${column}.eq.${value.$eq}`;
-        }
-        if ('$in' in value && Array.isArray(value.$in)) {
-          return value.$in
-            .map((item) => `${column}.eq.${item}`)
-            .join(',');
-        }
-        if ('$regex' in value) {
-          const pattern = value.$regex;
-          const cleaned = typeof pattern === 'string' ? pattern : pattern?.source;
-          return `${column}.ilike.*${cleaned?.replace(/^\^/, '').replace(/\$$/, '')}*`;
-        }
-      }
-      if (typeof value === 'string') {
-        return `${column}.eq.${value}`;
-      }
-      return `${column}.is.${value}`;
-    })
-    .join(',');
 }
 
 class SupabaseCursor {
@@ -266,7 +183,6 @@ class SupabaseCursor {
     this.filter = filter;
     this.ordering = [];
     this.range = null;
-    this.selectedColumns = '*';
   }
 
   sort(orderSpec = {}) {
@@ -295,18 +211,10 @@ class SupabaseCursor {
     return this;
   }
 
-  project(columns) {
-    if (Array.isArray(columns)) {
-      this.selectedColumns = columns.map((col) => this.collection.resolveColumn(col)).join(',');
-    }
-    return this;
-  }
-
   async toArray() {
     const { data } = await this.collection._select(this.filter, {
       ordering: this.ordering,
-      range: this.range,
-      columns: this.selectedColumns
+      range: this.range
     });
     return data.map((row) => convertRow(this.collection.name, row));
   }
@@ -339,31 +247,11 @@ class SupabaseCollection {
     }
 
     for (const [field, value] of Object.entries(filter)) {
-      if (field === '$or' && Array.isArray(value)) {
-        const clauses = value.map((orFilter) => {
-          return buildOrClause(
-            Object.fromEntries(
-              Object.entries(orFilter).map(([k, v]) => [this.resolveColumn(k), v])
-            )
-          );
-        }).join(',');
-        query = query.or(clauses);
-        continue;
-      }
-
       const column = this.resolveColumn(field);
 
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         if (value.$in) {
           query = query.in(column, value.$in.map((v) => normalizeValue(column, v)));
-        } else if (value.$eq !== undefined) {
-          query = query.eq(column, normalizeValue(column, value.$eq));
-        } else if (value.$regex) {
-          const pattern = typeof value.$regex === 'string' ? value.$regex : value.$regex.source;
-          const sanitized = pattern.replace(/^\^/, '').replace(/\$$/, '');
-          query = query.ilike(column, `%${sanitized}%`);
-        } else if (value.$ilike) {
-          query = query.ilike(column, value.$ilike);
         } else {
           throw new Error(`Unsupported filter operator for ${column}`);
         }
@@ -420,10 +308,6 @@ class SupabaseCollection {
     return { data: data ?? [], count: totalCount ?? null };
   }
 
-  collection(name) {
-    return new SupabaseCollection(name);
-  }
-
   async findOne(filter = {}) {
     const { data } = await this._select(filter, { range: { from: 0, to: 0 } });
     return convertRow(this.name, data[0]);
@@ -464,7 +348,7 @@ class SupabaseCollection {
     if (!existing) {
       if (options.upsert) {
         const baseDoc = { ...filter };
-        const upsertDoc = applyUpdateOperators(this.name, baseDoc, update);
+        const upsertDoc = applyUpdate(baseDoc, update);
         const row = prepareRow(this.name, upsertDoc);
         const upsertOptions = {};
         if (this.meta.upsertOn) {
@@ -477,7 +361,7 @@ class SupabaseCollection {
       return null;
     }
 
-    const updatedDoc = applyUpdateOperators(this.name, existing, update);
+    const updatedDoc = applyUpdate(existing, update);
     const patch = prepareRow(this.name, updatedDoc);
 
     let query = supabase.from(this.name).update(patch);
@@ -492,7 +376,7 @@ class SupabaseCollection {
     if (!existing) {
       if (options.upsert) {
         const base = { ...filter };
-        const upsertDoc = applyUpdateOperators(this.name, base, update);
+        const upsertDoc = applyUpdate(base, update);
         const row = prepareRow(this.name, upsertDoc);
         const upsertOptions = {};
         if (this.meta.upsertOn) {
@@ -505,7 +389,7 @@ class SupabaseCollection {
       return { matchedCount: 0, modifiedCount: 0 };
     }
 
-    const updatedDoc = applyUpdateOperators(this.name, existing, update);
+    const updatedDoc = applyUpdate(existing, update);
     const patch = prepareRow(this.name, updatedDoc);
 
     let query = supabase.from(this.name).update(patch);
@@ -514,26 +398,6 @@ class SupabaseCollection {
     const { error } = await query;
     if (error) throw error;
     return { matchedCount: 1, modifiedCount: 1 };
-  }
-
-  async updateMany(filter, update) {
-    const rows = await this.find(filter).toArray();
-    if (rows.length === 0) {
-      return { matchedCount: 0, modifiedCount: 0 };
-    }
-
-    let modifiedCount = 0;
-    for (const row of rows) {
-      const updatedDoc = applyUpdateOperators(this.name, row, update);
-      const patch = prepareRow(this.name, updatedDoc);
-      let query = supabase.from(this.name).update(patch);
-      query = this._applyFilter(query, { [this.meta.primaryKey || 'id']: row[this.meta.primaryKey || 'id'] });
-      const { error } = await query;
-      if (error) throw error;
-      modifiedCount += 1;
-    }
-
-    return { matchedCount: rows.length, modifiedCount };
   }
 
   async deleteOne(filter) {
@@ -562,20 +426,6 @@ class SupabaseCollection {
     return cursor.count();
   }
 
-  async distinct(field) {
-    const column = this.resolveColumn(field);
-    const { data, error } = await supabase.from(this.name).select(`${column}`, { distinct: true });
-    if (error) throw error;
-    return data.map((row) => row[column]).filter((value) => value !== null);
-  }
-
-  async aggregate() {
-    throw new Error(`Aggregation pipelines are not supported on collection ${this.name}. Use Supabase SQL or compute in application code.`);
-  }
-
-  async createIndex() {
-    return noop();
-  }
 }
 
 class SupabaseDatabase {
@@ -618,11 +468,7 @@ export async function seedDefaultPrompts() {
         isPublic: true,
         authorName: "Smart Classroom Team",
         created_at: Date.now(),
-        updated_at: Date.now(),
-        views: 0,
-        last_viewed: null,
-        usage_count: 0,
-        last_used: null
+        updated_at: Date.now()
       },
       {
         _id: uuid(),
@@ -635,11 +481,7 @@ export async function seedDefaultPrompts() {
         isPublic: true,
         authorName: "Smart Classroom Team",
         created_at: Date.now(),
-        updated_at: Date.now(),
-        views: 0,
-        last_viewed: null,
-        usage_count: 0,
-        last_used: null
+        updated_at: Date.now()
       },
       {
         _id: uuid(),
@@ -652,11 +494,7 @@ export async function seedDefaultPrompts() {
         isPublic: true,
         authorName: "Smart Classroom Team",
         created_at: Date.now(),
-        updated_at: Date.now(),
-        views: 0,
-        last_viewed: null,
-        usage_count: 0,
-        last_used: null
+        updated_at: Date.now()
       },
       {
         _id: uuid(),
@@ -694,11 +532,7 @@ Transcript: {transcript}`,
         isPublic: true,
         authorName: "Smart Classroom Team",
         created_at: Date.now(),
-        updated_at: Date.now(),
-        views: 0,
-        last_viewed: null,
-        usage_count: 0,
-        last_used: null
+        updated_at: Date.now()
       },
       {
         _id: uuid(),
@@ -729,11 +563,7 @@ Provide specific quotes that demonstrate each completed criterion.`,
         isPublic: true,
         authorName: "Smart Classroom Team",
         created_at: Date.now(),
-        updated_at: Date.now(),
-        views: 0,
-        last_viewed: null,
-        usage_count: 0,
-        last_used: null
+        updated_at: Date.now()
       }
     ];
 

@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button.jsx';
 import { Field, Input } from '../components/ui/field.jsx';
 import { Panel, PanelHeader } from '../components/ui/panel.jsx';
 import {
+  createAudioActivityMonitor,
   selectRecordingMimeType,
   uploadAsyncAudio
 } from '../lib/audioUpload.js';
@@ -45,6 +46,7 @@ function AsyncStudentView() {
   const [joinedGroup, setJoinedGroup] = useState(null);
   const [report, setReport] = useState(null);
   const [latestTranscript, setLatestTranscript] = useState('');
+  const [recordingNotice, setRecordingNotice] = useState('');
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
@@ -52,6 +54,7 @@ function AsyncStudentView() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
+  const activityMonitorRef = useRef(null);
   const chunksRef = useRef([]);
   const startedAtRef = useRef(0);
 
@@ -100,6 +103,10 @@ function AsyncStudentView() {
   }, [isRecording]);
 
   const stopStream = useCallback(() => {
+    if (activityMonitorRef.current) {
+      void activityMonitorRef.current.close();
+      activityMonitorRef.current = null;
+    }
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
   }, []);
@@ -155,6 +162,7 @@ function AsyncStudentView() {
         displayName: joinedGroup.displayName || ''
       });
       if (!data.skipped) {
+        setRecordingNotice('');
         setLatestTranscript(data.transcript || '');
         setReport(data.report || null);
       }
@@ -177,7 +185,9 @@ function AsyncStudentView() {
     }
 
     try {
+      setRecordingNotice('');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      activityMonitorRef.current = await createAudioActivityMonitor(stream);
       const mimeType = selectRecordingMimeType(MediaRecorder);
       const recorder = mimeType
         ? new MediaRecorder(stream, { mimeType })
@@ -191,12 +201,18 @@ function AsyncStudentView() {
       recorder.onstop = () => {
         const recordedType = recorder.mimeType || mimeType || chunksRef.current[0]?.type || 'audio/webm';
         const blob = new Blob(chunksRef.current, { type: recordedType });
+        const hasSpeech = activityMonitorRef.current?.hasSpeech() ?? true;
         chunksRef.current = [];
-        void uploadRecording(blob);
+        if (hasSpeech) {
+          void uploadRecording(blob);
+        } else {
+          setRecordingNotice('No speech detected; nothing was uploaded.');
+        }
         stopStream();
       };
       streamRef.current = stream;
       recorderRef.current = recorder;
+      activityMonitorRef.current?.reset();
       startedAtRef.current = Date.now();
       recorder.start();
       setIsRecording(true);
@@ -281,6 +297,8 @@ function AsyncStudentView() {
                 </Button>
               </div>
             </Panel>
+
+            {recordingNotice ? <Alert tone="primary"><p>{recordingNotice}</p></Alert> : null}
 
             {latestTranscript ? (
               <Panel padding="md">

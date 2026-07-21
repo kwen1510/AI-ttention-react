@@ -3,7 +3,7 @@ import { randomInt } from "crypto";
 import { v4 as uuid } from "uuid";
 import { isLikelySupportedAudioBuffer, upload } from "../middleware/upload.js";
 import { authenticateUserFromToken, authorizeTeacherUser, extractBearerToken, isTeacherEmailAllowedForLogin, normalizeEmail, optionalTeacherContext, requireTeacher } from "../middleware/auth.js";
-import { aiLimiter, aiUploadLimiter, asyncJoinLimiter, asyncUploadLimiter, authLimiter } from "../middleware/rateLimit.js";
+import { aiUploadLimiter, asyncJoinLimiter, asyncUploadLimiter, authLimiter } from "../middleware/rateLimit.js";
 import { createSupabaseAuthClient, supabase } from "../db/supabaseClient.js";
 import { clearTeacherSessionCookie, setTeacherSessionCookie } from "../services/teacherSessionCookie.js";
 import { createSupabaseDb } from "../db/db.js";
@@ -16,7 +16,7 @@ import {
     getJoinTokenTtlSeconds,
     verifyJoinToken
 } from "../services/joinTokens.js";
-import { activeSessions, latestChecklistState, sessionTimers } from "../services/state.js";
+import { activeSessions, sessionTimers } from "../services/state.js";
 import {
     appendTranscriptSegment,
     countTranscriptWords,
@@ -26,15 +26,6 @@ import {
     hasTranscriptSegment,
     persistSummarySnapshot
 } from "../services/transcript.js";
-import {
-    processMindmapTranscript,
-    generateMindmapExamples,
-    updateMindmapManually,
-    generatePlaygroundExamples,
-    generatePlaygroundPoint,
-    generateContextualPoint,
-    askMindmapQuestion
-} from "../services/mindmap.js";
 import {
     processCheckboxTranscript,
     normalizeCriteriaRecords,
@@ -77,18 +68,22 @@ import {
     normalizeSessionCode,
     publishRealtimeEvent
 } from "../services/realtime.js";
-import { assertStudentRealtimeMembership, grantRealtimeTopics, revokeSessionRealtimeMemberships } from "../services/realtimeMemberships.js";
+import {
+    assertStudentRealtimeMembership,
+    deleteSessionRealtimeMemberships,
+    extendSessionRealtimeMemberships,
+    grantRealtimeTopics,
+    revokeSessionRealtimeMemberships
+} from "../services/realtimeMemberships.js";
 
 const router = express.Router();
 const db = createSupabaseDb();
 const SESSION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const FINAL_UPLOAD_GRACE_MS = 15_000;
 const DEFAULT_CLASSROOM_SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_PENDING_SESSION_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_ASYNC_MAX_SEGMENTS_PER_GROUP = 20;
 const DEFAULT_ASYNC_MAX_TRANSCRIPT_CHARS_PER_GROUP = 50_000;
-// ponytail: per-process lock is sufficient for the single App Platform instance;
-// move this invariant into Postgres before horizontally scaling the web service.
-const sessionInitializationPromises = new Map();
 
 router.use(optionalTeacherContext);
 
@@ -137,6 +132,12 @@ function getClassroomSessionTtlMs() {
     return Math.min(Math.floor(configured), 12 * 60) * 60 * 1000;
 }
 
+function getPendingSessionTtlMs() {
+    const configured = Number(process.env.PENDING_SESSION_TTL_MINUTES);
+    if (!Number.isFinite(configured) || configured < 5) return DEFAULT_PENDING_SESSION_TTL_MS;
+    return Math.min(Math.floor(configured), 120) * 60 * 1000;
+}
+
 function isClassroomSessionExpired(session, memory, now = Date.now()) {
     const expiresAt = Number(session?.expires_at || memory?.expiresAt || 0);
     return Boolean(expiresAt && expiresAt <= now);
@@ -144,12 +145,33 @@ function isClassroomSessionExpired(session, memory, now = Date.now()) {
 
 async function expireClassroomSession(code, expiresAt) {
     const now = Date.now();
-    const acceptUploadsUntil = now + FINAL_UPLOAD_GRACE_MS;
     const session = await db.collection("sessions").findOne({ code });
     if (!session || Number(session.expires_at || expiresAt) > now || session.ended_reason) return;
 
+    if (!session.start_time) {
+        await publishRealtimeEvent({
+            sessionCode: code,
+            event: REALTIME_EVENTS.SESSION_ENDED,
+            audience: "all",
+            payload: { reason: "abandoned", endedAt: now }
+        });
+        await deleteSessionRealtimeMemberships(code);
+        await db.collection("sessions").deleteOne({ _id: session._id });
+        activeSessions.delete(code);
+        sessionTimers.delete(code);
+        return;
+    }
+
+    const acceptUploadsUntil = now + FINAL_UPLOAD_GRACE_MS;
+
     await db.collection("sessions").updateOne({ _id: session._id }, {
-        $set: { active: false, end_time: now, ended_reason: "expired" }
+        $set: {
+            active: false,
+            is_current: false,
+            end_time: now,
+            ended_reason: "expired",
+            accept_uploads_until: acceptUploadsUntil
+        }
     });
     const memory = activeSessions.get(code);
     if (memory) {
@@ -232,7 +254,8 @@ async function ensureSessionRecord({
     active = false,
     startTime = null,
     strictness = undefined,
-    expiresAt = undefined
+    expiresAt = undefined,
+    isCurrent = true
 }) {
     try {
         const inserted = await db.collection("sessions").insertOne({
@@ -247,6 +270,8 @@ async function ensureSessionRecord({
             start_time: startTime,
             end_time: null,
             expires_at: expiresAt,
+            is_current: isCurrent,
+            accept_uploads_until: null,
             ended_reason: null,
             total_duration_seconds: null
         });
@@ -284,6 +309,7 @@ function restoreSessionRuntimeState(session) {
         created_at: session.created_at || Date.now(),
         persisted: true,
         expiresAt,
+        acceptUploadsUntil: session.accept_uploads_until || existing?.acceptUploadsUntil || null,
         mode: session.mode || "summary",
         groups: existing?.groups || new Map()
     };
@@ -293,30 +319,38 @@ function restoreSessionRuntimeState(session) {
 }
 
 async function getOrCreateTeacherClassroomSession({ teacherId, mode }) {
-    const lockKey = `${teacherId}:${mode}`;
-    const pending = sessionInitializationPromises.get(lockKey);
-    if (pending) return pending;
+    const now = Date.now();
+    let current = await db.collection("sessions").findOne({
+        owner_id: teacherId,
+        mode,
+        is_current: true
+    });
 
-    const initialization = (async () => {
-        const now = Date.now();
-        const candidates = await db.collection("sessions")
-            .find({ owner_id: teacherId, mode })
-            .sort({ created_at: -1 })
-            .limit(20)
-            .toArray();
-        const reusable = candidates.find((session) => (
-            !session.ended_reason
-            && !session.end_time
-            && Number(session.expires_at || 0) > now
-        ));
-
-        if (reusable) {
-            restoreSessionRuntimeState(reusable);
-            return { session: reusable, reused: true };
+    if (current && Number(current.expires_at || 0) <= now) {
+        if (!current.start_time) {
+            await deleteSessionRealtimeMemberships(current.code);
+            await db.collection("sessions").deleteOne({ _id: current._id });
+        } else {
+            await db.collection("sessions").updateOne({ _id: current._id }, {
+                $set: {
+                    active: false,
+                    is_current: false,
+                    end_time: now,
+                    ended_reason: "expired"
+                }
+            });
         }
+        activeSessions.delete(current.code);
+        current = null;
+    }
 
-        const code = await generateUniqueSessionCode();
-        const expiresAt = now + getClassroomSessionTtlMs();
+    if (current) {
+        restoreSessionRuntimeState(current);
+        return { session: current, reused: true };
+    }
+
+    const code = await generateUniqueSessionCode();
+    try {
         const session = await ensureSessionRecord({
             code,
             teacherId,
@@ -324,19 +358,20 @@ async function getOrCreateTeacherClassroomSession({ teacherId, mode }) {
             intervalMs: 30000,
             createdAt: now,
             active: false,
-            expiresAt
+            expiresAt: now + getPendingSessionTtlMs()
         });
         restoreSessionRuntimeState(session);
         return { session, reused: false };
-    })();
-
-    sessionInitializationPromises.set(lockKey, initialization);
-    try {
-        return await initialization;
-    } finally {
-        if (sessionInitializationPromises.get(lockKey) === initialization) {
-            sessionInitializationPromises.delete(lockKey);
-        }
+    } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        const winner = await db.collection("sessions").findOne({
+            owner_id: teacherId,
+            mode,
+            is_current: true
+        });
+        if (!winner) throw error;
+        restoreSessionRuntimeState(winner);
+        return { session: winner, reused: true };
     }
 }
 
@@ -398,7 +433,9 @@ async function resolveStudentSessionContext({
         throw createHttpError("Session expired", 410);
     }
 
-    const hasFinalizationGrace = Number(sessionState?.acceptUploadsUntil || 0) >= Date.now();
+    const hasFinalizationGrace = Number(
+        session?.accept_uploads_until || sessionState?.acceptUploadsUntil || 0
+    ) >= Date.now();
     if ((session?.ended_reason || session?.end_time) && (!allowUploadGrace || !hasFinalizationGrace)) {
         throw createHttpError("Session ended", 404);
     }
@@ -453,6 +490,32 @@ async function authorizeStudentGroupRequest(req, sessionCode, groupNumber) {
     return identity;
 }
 
+async function loadChecklistState(session, sessionCode, groupNumber) {
+    if (!session?._id) return null;
+
+    const [checkboxSession, criteria, progressDoc] = await Promise.all([
+        db.collection("checkbox_sessions").findOne({ session_id: session._id }),
+        db.collection("checkbox_criteria")
+            .find({ session_id: session._id })
+            .sort({ order_index: 1, created_at: 1 })
+            .toArray(),
+        db.collection("checkbox_progress").findOne({
+            session_id: session._id,
+            group_number: groupNumber
+        })
+    ]);
+
+    if (!checkboxSession && criteria.length === 0) return null;
+    return {
+        sessionCode,
+        groupNumber,
+        criteria: buildChecklistCriteria(criteria, progressDoc?.progress || {}),
+        scenario: checkboxSession?.scenario || "",
+        timestamp: Date.now(),
+        isReleased: Boolean(checkboxSession?.released_groups?.[groupNumber])
+    };
+}
+
 async function buildStudentJoinState(context, realtimeUser) {
     const { code, groupNumber, session, sessionState, mode, interval, active } = context;
     const status = active ? "recording" : "waiting";
@@ -502,10 +565,7 @@ async function buildStudentJoinState(context, realtimeUser) {
             timestamp: Date.now()
         };
     } else if (mode === "checkbox") {
-        const cachedChecklist = latestChecklistState.get(`${code}-${groupNumber}`);
-        if (cachedChecklist) {
-            payload.checklistState = cachedChecklist;
-        }
+        payload.checklistState = await loadChecklistState(session, code, groupNumber);
     }
 
     return payload;
@@ -1004,8 +1064,6 @@ router.post("/checkbox/:sessionCode/release", express.json(), async (req, res) =
             throw createHttpError("Persisted checkbox session required before release", 404);
         }
 
-        const cacheKey = `${sessionCode}-${groupNumber}`;
-        const cached = latestChecklistState.get(cacheKey);
         const existingCheckboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
         const nowTs = Date.now();
         const updatedCheckboxSession = {
@@ -1065,24 +1123,6 @@ router.post("/checkbox/:sessionCode/release", express.json(), async (req, res) =
             }));
         }
 
-        if (cached && Array.isArray(cached.criteria) && cached.criteria.length > 0) {
-            const cachedById = new Map(cached.criteria.map((item) => [Number(item.id), item]));
-            finalCriteria = finalCriteria.map((item) => {
-                const cachedItem = cachedById.get(Number(item.id));
-                if (!cachedItem) return item;
-                const cachedStatus = cachedItem.status || "grey";
-                const preferCached = cachedStatus === "green" || (item.status === "grey" && cachedStatus !== "grey");
-                return preferCached
-                    ? {
-                        ...item,
-                        status: cachedStatus,
-                        completed: cachedStatus === "green" ? true : item.completed,
-                        quote: cachedItem.quote && cachedItem.quote !== "null" ? cachedItem.quote : item.quote
-                    }
-                    : item;
-            });
-        }
-
         finalCriteria = finalCriteria.slice().sort((left, right) => Number(left.id) - Number(right.id));
         const checklistData = {
             sessionCode,
@@ -1100,8 +1140,6 @@ router.post("/checkbox/:sessionCode/release", express.json(), async (req, res) =
             audience: "both",
             payload: checklistData
         });
-        latestChecklistState.set(cacheKey, checklistData);
-
         res.json({ success: true, checklistState: checklistData });
     } catch (err) {
         console.error("❌ Failed to release checklist:", err);
@@ -1148,53 +1186,6 @@ function filterPrompts(prompts, { search = "", category = "", mode = "" } = {}) 
 
         return haystack.includes(normalizedSearch);
     });
-}
-
-function parseCheckboxPromptContentForTest(text = "", fallbackScenario = "") {
-    const lines = String(text || "")
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-    let scenario = String(fallbackScenario || "").trim();
-    const criteria = [];
-
-    for (const line of lines) {
-        const scenarioMatch = line.match(/^scenario\s*[:\-]\s*(.+)$/i);
-        if (!scenario && scenarioMatch) {
-            scenario = scenarioMatch[1].trim();
-            continue;
-        }
-        criteria.push(line);
-    }
-
-    if (!scenario && criteria.length > 0) {
-        scenario = criteria.shift();
-    }
-
-    return {
-        scenario,
-        criteria
-    };
-}
-
-function buildCheckboxCriteriaForTest(lines = []) {
-    return (lines || []).map((line, index) => {
-        const match = String(line || "").trim().match(/^(.+?)\s*\((.+)\)\s*$/);
-        if (match) {
-            return {
-                originalIndex: index,
-                description: match[1].trim(),
-                rubric: match[2].trim()
-            };
-        }
-
-        return {
-            originalIndex: index,
-            description: String(line || "").trim(),
-            rubric: "No specific rubric provided"
-        };
-    }).filter((criterion) => criterion.description);
 }
 
 router.post("/auth/otp/send", authLimiter, express.json(), async (req, res) => {
@@ -1287,145 +1278,6 @@ router.get("/auth/me", async (req, res) => {
             isAdmin: Boolean(teacher.isAdmin || teacher.role === "admin")
         }
     });
-});
-
-/* Test transcription API endpoint */
-router.post("/test-transcription", aiLimiter, upload.single('audio'), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        if (!req.file) {
-            return res.status(400).json({ error: "No audio file provided" });
-        }
-        validateAudioUploadPayload(req.file);
-
-        const audioBuffer = req.file.buffer;
-
-        // Test the transcription function
-        const startTime = Date.now();
-        const transcription = await transcribe(audioBuffer, req.file.mimetype);
-        const endTime = Date.now();
-
-        const debug = {
-            fileSize: audioBuffer.length,
-            mimeType: req.file.mimetype,
-            processingTime: `${endTime - startTime}ms`,
-            timestamp: new Date().toISOString()
-        };
-
-        res.json({
-            success: true,
-            transcription,
-            debug
-        });
-
-    } catch (err) {
-        console.error("❌ Test transcription error:", err);
-        res.status(err.status || 500).json({
-            error: err.status ? err.message : "Transcription failed",
-            details: process.env.NODE_ENV === 'development' ? err.message : undefined,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
-    }
-});
-
-/* Test summary API endpoint */
-router.post("/test-summary", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { text, customPrompt } = req.body;
-        if (!text) {
-            return res.status(400).json({ error: "No text provided for summarization" });
-        }
-
-        // Test the summary function with custom prompt
-        const startTime = Date.now();
-        const summary = await summarise(text, customPrompt);
-        const endTime = Date.now();
-
-        const debug = {
-            textLength: text.length,
-            processingTime: `${endTime - startTime}ms`,
-            timestamp: new Date().toISOString(),
-            promptUsed: customPrompt || "default"
-        };
-
-        res.json({
-            success: true,
-            summary,
-            debug
-        });
-
-    } catch (err) {
-        console.error("❌ Test summary error:", err);
-        res.status(500).json({
-            error: "Summary failed",
-            details: process.env.NODE_ENV === 'development' ? err.message : undefined,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
-    }
-});
-
-router.post("/test-prompt", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-
-        const mode = req.body?.mode === "checkbox" ? "checkbox" : "summary";
-        const promptContent = String(req.body?.promptContent || "").trim();
-        const transcript = String(req.body?.transcript || "").trim();
-        const strictness = Math.max(1, Math.min(Number(req.body?.strictness) || 2, 3));
-
-        if (!promptContent) {
-            return res.status(400).json({ error: "Prompt content is required" });
-        }
-
-        if (!transcript) {
-            return res.status(400).json({ error: "Transcript text is required" });
-        }
-
-        if (mode === "summary") {
-            const summary = await summarise(transcript, promptContent);
-            return res.json({
-                success: true,
-                mode,
-                summary
-            });
-        }
-
-        const parsedPrompt = parseCheckboxPromptContentForTest(promptContent);
-        const criteria = buildCheckboxCriteriaForTest(parsedPrompt.criteria);
-
-        if (!parsedPrompt.scenario || criteria.length === 0) {
-            return res.status(400).json({
-                error: 'Checkbox prompts need a "Scenario:" line and at least one criterion.'
-            });
-        }
-
-        const result = await processCheckboxTranscript(
-            transcript,
-            criteria,
-            parsedPrompt.scenario,
-            strictness,
-            []
-        );
-
-        return res.json({
-            success: true,
-            mode,
-            scenario: parsedPrompt.scenario,
-            criteria,
-            matches: Array.isArray(result?.matches) ? result.matches : []
-        });
-    } catch (err) {
-        console.error("❌ Test prompt error:", err);
-        res.status(500).json({
-            error: "Prompt test failed",
-            details: process.env.NODE_ENV === "development" ? err.message : undefined,
-            stack: process.env.NODE_ENV === "development" ? err.stack : undefined
-        });
-    }
 });
 
 router.get("/async/sessions", async (req, res) => {
@@ -1699,6 +1551,7 @@ router.post("/new-session", async (req, res) => {
             startTime: session.start_time ? new Date(session.start_time).toISOString() : null,
             createdAt: new Date(createdAt).toISOString(),
             expiresAt: new Date(expiresAt).toISOString(),
+            pending: !session.start_time,
             reused,
             realtime: {
                 teacherTopic: buildSessionRealtimeTopic(code),
@@ -1767,9 +1620,14 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                 createdAt,
                 active: true,
                 startTime,
-                expiresAt: createdAt + getClassroomSessionTtlMs()
+                expiresAt: startTime + getClassroomSessionTtlMs()
             });
         }
+
+        const wasStarted = Boolean(persistedSession.start_time);
+        const expiresAt = wasStarted
+            ? Number(persistedSession.expires_at || startTime + getClassroomSessionTtlMs())
+            : startTime + getClassroomSessionTtlMs();
 
         await db.collection("sessions").updateOne(
             { _id: persistedSession._id },
@@ -1778,15 +1636,18 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                     owner_id: teacher.id,
                     mode: requestedMode,
                     active: true,
+                    is_current: true,
                     interval_ms: intervalMs,
                     start_time: persistedSession.start_time || startTime,
+                    expires_at: expiresAt,
                     end_time: null,
-                    ended_reason: null
+                    ended_reason: null,
+                    accept_uploads_until: null
                 }
             }
         );
         persistedSession = await db.collection("sessions").findOne({ _id: persistedSession._id });
-        const expiresAt = Number(persistedSession.expires_at || createdAt + getClassroomSessionTtlMs());
+        await extendSessionRealtimeMemberships(code, expiresAt);
 
         activeSessions.set(code, {
             ...(memory || {}),
@@ -1837,6 +1698,28 @@ router.post("/session/:code/stop", async (req, res) => {
         const { session, memory } = await getOwnedSessionContext(code, teacher.id);
         const endedAt = Date.now();
         const acceptUploadsUntil = endedAt + FINAL_UPLOAD_GRACE_MS;
+        const wasStarted = Boolean(session?.start_time || memory?.startTime);
+
+        if (!wasStarted) {
+            await publishRealtimeEvent({
+                sessionCode: code,
+                event: REALTIME_EVENTS.SESSION_ENDED,
+                audience: "all",
+                payload: { reason: "abandoned", endedAt }
+            });
+            await deleteSessionRealtimeMemberships(code);
+            if (session) await db.collection("sessions").deleteOne({ _id: session._id });
+            activeSessions.delete(code);
+            const pendingTimer = sessionTimers.get(code);
+            if (pendingTimer) clearTimeout(pendingTimer);
+            sessionTimers.delete(code);
+            return res.json({
+                success: true,
+                code,
+                discarded: true,
+                endedAt: new Date(endedAt).toISOString()
+            });
+        }
 
         if (session) {
             const startTime = Number(session.start_time || memory?.startTime || endedAt);
@@ -1849,8 +1732,10 @@ router.post("/session/:code/stop", async (req, res) => {
                 {
                     $set: {
                         active: false,
+                        is_current: false,
                         end_time: endedAt,
                         ended_reason: "teacher",
+                        accept_uploads_until: acceptUploadsUntil,
                         total_duration_seconds: totalDurationSeconds
                     }
                 }
@@ -2069,22 +1954,20 @@ router.post("/prompts", express.json(), async (req, res) => {
         const now = Date.now();
         const payload = {
             _id: uuid(),
-            title: String(req.body?.title || "").trim(),
-            description: String(req.body?.description || "").trim(),
-            content: String(req.body?.content || "").trim(),
-            category: String(req.body?.category || "General").trim() || "General",
+            title: sanitizeShortText(req.body?.title, "", 160),
+            description: sanitizeLongText(req.body?.description, "", 1000),
+            content: sanitizeLongText(req.body?.content, "", 12_000),
+            category: sanitizeShortText(req.body?.category, "General", 80),
             mode: req.body?.mode === "checkbox" ? "checkbox" : "summary",
-            tags: Array.isArray(req.body?.tags) ? req.body.tags.filter(Boolean) : [],
+            tags: Array.isArray(req.body?.tags)
+                ? req.body.tags.slice(0, 20).map((tag) => sanitizeShortText(tag, "", 40)).filter(Boolean)
+                : [],
             isPublic: req.body?.isPublic !== false,
-            authorName: String(req.body?.authorName || teacher.email || "Anonymous Teacher").trim(),
+            authorName: teacher.email,
             createdByUserId: teacher.id,
             createdByEmail: teacher.email,
             created_at: now,
-            updated_at: now,
-            views: 0,
-            last_viewed: null,
-            usage_count: 0,
-            last_used: null
+            updated_at: now
         };
 
         if (!payload.title || !payload.content) {
@@ -2116,13 +1999,19 @@ router.put("/prompts/:id", express.json(), async (req, res) => {
             { _id: req.params.id },
             {
                 $set: {
-                    title: String(req.body?.title || existingPrompt.title || "").trim(),
-                    description: String(req.body?.description || existingPrompt.description || "").trim(),
-                    content: String(req.body?.content || existingPrompt.content || "").trim(),
-                    category: String(req.body?.category || existingPrompt.category || "General").trim() || "General",
-                    mode: req.body?.mode === "checkbox" ? "checkbox" : "summary",
-                    tags: Array.isArray(req.body?.tags) ? req.body.tags.filter(Boolean) : (existingPrompt.tags || []),
-                    isPublic: req.body?.isPublic !== false,
+                    title: sanitizeShortText(req.body?.title, existingPrompt.title || "", 160),
+                    description: sanitizeLongText(req.body?.description, existingPrompt.description || "", 1000),
+                    content: sanitizeLongText(req.body?.content, existingPrompt.content || "", 12_000),
+                    category: sanitizeShortText(req.body?.category, existingPrompt.category || "General", 80),
+                    mode: req.body?.mode === "checkbox" || req.body?.mode === "summary"
+                        ? req.body.mode
+                        : existingPrompt.mode,
+                    tags: Array.isArray(req.body?.tags)
+                        ? req.body.tags.slice(0, 20).map((tag) => sanitizeShortText(tag, "", 40)).filter(Boolean)
+                        : (existingPrompt.tags || []),
+                    isPublic: typeof req.body?.isPublic === "boolean"
+                        ? req.body.isPublic
+                        : existingPrompt.isPublic,
                     authorName: String(existingPrompt.authorName || existingPrompt.createdByEmail || teacher.email || "Anonymous Teacher").trim(),
                     updated_at: Date.now()
                 }
@@ -2159,73 +2048,6 @@ router.delete("/prompts/:id", async (req, res) => {
     } catch (err) {
         console.error("❌ Failed to delete prompt:", err);
         res.status(500).json({ error: "Failed to delete prompt" });
-    }
-});
-
-router.post("/prompts/:id/clone", express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        if (!canTeacherCreatePrompt(teacher)) {
-            return res.status(403).json({ error: "Guests cannot clone prompts" });
-        }
-
-        const sourcePrompt = normalizePromptRecord(await db.collection("teacher_prompts").findOne({ _id: req.params.id }));
-        if (!sourcePrompt || !canTeacherViewPrompt(sourcePrompt, teacher)) {
-            return res.status(404).json({ error: "Prompt not found" });
-        }
-
-        const { creatorEmail: _creatorEmail, ...sourceFields } = sourcePrompt;
-        const now = Date.now();
-        const cloned = {
-            ...sourceFields,
-            _id: uuid(),
-            title: `${sourcePrompt.title} (Copy)`,
-            authorName: String(teacher.email || "Anonymous Teacher").trim(),
-            createdByUserId: teacher.id,
-            createdByEmail: teacher.email,
-            created_at: now,
-            updated_at: now,
-            views: 0,
-            last_viewed: null,
-            usage_count: 0,
-            last_used: null
-        };
-
-        const inserted = await insertTeacherPrompt(cloned);
-        res.status(201).json(decoratePromptForTeacher(inserted.inserted, teacher));
-    } catch (err) {
-        console.error("❌ Failed to clone prompt:", err);
-        res.status(500).json({ error: "Failed to clone prompt" });
-    }
-});
-
-router.post("/prompts/:id/use", express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-
-        const prompt = await db.collection("teacher_prompts").findOne({ _id: req.params.id });
-        if (!prompt || !canTeacherViewPrompt(prompt, teacher)) {
-            return res.status(404).json({ error: "Prompt not found" });
-        }
-
-        const updated = await db.collection("teacher_prompts").findOneAndUpdate(
-            { _id: req.params.id },
-            {
-                $set: {
-                    usage_count: Number(prompt.usage_count || 0) + 1,
-                    last_used: Date.now(),
-                    updated_at: Date.now()
-                }
-            },
-            { upsert: false }
-        );
-
-        res.json({ success: true, prompt: updated });
-    } catch (err) {
-        console.error("❌ Failed to record prompt usage:", err);
-        res.status(500).json({ error: "Failed to record prompt usage" });
     }
 });
 
@@ -2286,6 +2108,7 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
             const canAcceptUpload = Boolean(
                 session?.active ||
                 memory?.active ||
+                (Number.isFinite(Number(session?.accept_uploads_until)) && Number(session.accept_uploads_until) >= Date.now()) ||
                 (Number.isFinite(Number(memory?.acceptUploadsUntil)) && Number(memory.acceptUploadsUntil) >= Date.now())
             );
 
@@ -2487,8 +2310,6 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
                 audience: "both",
                 payload: checklistData
             });
-            latestChecklistState.set(`${resolvedSessionCode}-${groupNumber}`, checklistData);
-
             return res.json({
                 success: true,
                 mode: sessionMode,
@@ -2575,165 +2396,6 @@ router.post("/transcribe-chunk", aiUploadLimiter, upload.single('file'), async (
     } catch (err) {
         console.error("❌ Failed to transcribe uploaded chunk:", err);
         sendRouteError(res, err, "Failed to transcribe chunk");
-    }
-});
-
-/* Mindmap transcription endpoint */
-router.post("/transcribe-mindmap-chunk", aiUploadLimiter, upload.single('file'), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { sessionCode } = req.body;
-        const file = req.file;
-
-        if (!file || !sessionCode) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing file or session code'
-            });
-        }
-        validateAudioUploadPayload(file);
-
-        const session = await db.collection("sessions").findOne({ code: sessionCode });
-        if (!session) {
-            return res.status(404).json({ success: false, error: "Session not found" });
-        }
-        if (session.owner_id !== teacher.id) {
-            return res.status(403).json({ success: false, error: "Forbidden" });
-        }
-
-        const result = await processMindmapTranscript(sessionCode, file.buffer, file.mimetype);
-        res.json(result);
-
-    } catch (err) {
-        console.error("❌ Mindmap chunk transcription error:", err);
-        res.status(err.status || 500).json({
-            error: err.status ? err.message : "Internal server error during transcription",
-            details: process.env.NODE_ENV === "development" ? err.message : undefined,
-            success: false
-        });
-    }
-});
-
-/* Mindmap manual update endpoint */
-router.post("/mindmap/manual-update", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { sessionCode, reason, metadata } = req.body;
-        if (!sessionCode) {
-            return res.status(400).json({ error: "Session code is required" });
-        }
-
-        const session = await db.collection("sessions").findOne({ code: sessionCode });
-        if (!session) {
-            return res.status(404).json({ error: "Session not found" });
-        }
-        if (session.owner_id !== teacher.id) {
-            return res.status(403).json({ error: "Forbidden" });
-        }
-
-        const updatedMindmap = await updateMindmapManually(sessionCode, reason, metadata);
-        res.json({ success: true, data: updatedMindmap });
-
-    } catch (err) {
-        console.error("❌ Failed to sync manual mindmap update:", err);
-        sendRouteError(res, err, "Failed to sync mindmap update");
-    }
-});
-
-/* Mindmap examples endpoint */
-router.post("/mindmap/examples", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { topic, nodeLabel, siblingIdeas, childIdeas } = req.body || {};
-        if (!nodeLabel) {
-            return res.status(400).json({ error: 'nodeLabel is required' });
-        }
-
-        const result = await generateMindmapExamples(topic, nodeLabel, siblingIdeas, childIdeas);
-        res.json(result);
-
-    } catch (error) {
-        console.error('❌ OpenAI mindmap example generation failed:', error);
-        res.status(500).json({ error: 'Failed to generate examples' });
-    }
-});
-
-/* Playground examples endpoint */
-router.post("/generate-examples", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { topic, count, strand } = req.body || {};
-        if (!topic) {
-            return res.status(400).json({ error: 'Topic is required' });
-        }
-
-        const examples = await generatePlaygroundExamples(topic, count, strand);
-        res.json(examples);
-
-    } catch (error) {
-        console.error('❌ OpenAI example generation failed:', error);
-        res.status(500).json({ error: 'Failed to generate examples' });
-    }
-});
-
-/* Playground point endpoint */
-router.post("/generate-point", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { topic } = req.body;
-        if (!topic) {
-            return res.status(400).json({ error: 'Topic is required' });
-        }
-
-        const point = await generatePlaygroundPoint(topic);
-        res.json(point);
-
-    } catch (error) {
-        console.error('❌ OpenAI point generation failed:', error);
-        res.status(500).json({ error: 'Failed to generate point' });
-    }
-});
-
-/* Contextual point endpoint */
-router.post("/generate-contextual-point", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { graphData, selectedNode } = req.body;
-        if (!graphData || !selectedNode) {
-            return res.status(400).json({ error: 'Graph data and selected node are required' });
-        }
-
-        const point = await generateContextualPoint(graphData, selectedNode);
-        res.json(point);
-
-    } catch (error) {
-        console.error('❌ OpenAI contextual point generation failed:', error);
-        res.status(500).json({ error: 'Failed to generate contextual point' });
-    }
-});
-
-/* Ask question endpoint */
-router.post("/ask-question", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { question, graphData, selectedNode, strandPath } = req.body;
-        if (!question || !graphData || !selectedNode) {
-            return res.status(400).json({ error: 'Question, graph data, and selected node are required' });
-        }
-
-        const nodes = await askMindmapQuestion(question, graphData, selectedNode, strandPath);
-        res.json({ nodes });
-
-    } catch (error) {
-        console.error('❌ OpenAI question answering failed:', error);
-        res.status(500).json({ error: 'Failed to answer question' });
     }
 });
 
@@ -2879,169 +2541,6 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
     }
 });
 
-/* Process transcript for checkbox */
-router.post("/checkbox/process", express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { sessionCode, transcript, groupNumber = 1, criteria: clientCriteria, scenario: clientScenario } = req.body;
-
-        if (!sessionCode || !transcript) {
-            return res.status(400).json({ error: "Session code and transcript required" });
-        }
-
-        // Get session info
-        const session = await db.collection("sessions").findOne({ code: sessionCode, mode: "checkbox" });
-        if (!session) {
-            return res.status(404).json({ error: "Checkbox session not found" });
-        }
-        if (session.owner_id !== teacher.id) {
-            return res.status(403).json({ error: "Forbidden" });
-        }
-
-        // Prefer client-provided or in-memory scenario/criteria for speed
-        const mem = activeSessions.get(sessionCode);
-        const strictness = session.strictness || 2;
-        let scenario = clientScenario ?? mem?.checkbox?.scenario ?? "";
-        const candidateCriteria = clientCriteria ?? mem?.checkbox?.criteria ?? [];
-        let criteriaRecords = normalizeCriteriaRecords(candidateCriteria);
-
-        if (criteriaRecords.length === 0) {
-            const dbCriteria = await db.collection("checkbox_criteria")
-                .find({ session_id: session._id })
-                .sort({ order_index: 1, created_at: 1 })
-                .toArray();
-            criteriaRecords = normalizeCriteriaRecords(dbCriteria);
-        }
-
-        if (!scenario) {
-            const checkboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
-            scenario = checkboxSession?.scenario || "";
-        }
-
-        if (criteriaRecords.length === 0) {
-            return res.status(400).json({ error: "No criteria found for session" });
-        }
-
-        const aiCriteria = criteriaRecords.map((criterion, index) => ({
-            originalIndex: typeof criterion.originalIndex === 'number' ? criterion.originalIndex : index,
-            description: criterion.description,
-            rubric: criterion.rubric
-        }));
-
-        const progressDoc = await ensureGroupProgressDoc(session._id, groupNumber, criteriaRecords);
-        const progressMap = progressDoc?.progress || {};
-        if (progressDoc && !progressDoc.progress) {
-            progressDoc.progress = progressMap;
-        }
-        const existingProgress = extractExistingProgress(criteriaRecords, progressMap);
-
-        // Process the transcript
-        const result = await processCheckboxTranscript(transcript, aiCriteria, scenario, strictness, existingProgress);
-
-        // Log the processing result
-        await db.collection("session_logs").insertOne({
-            _id: uuid(),
-            session_id: session._id,
-            type: "checkbox_analysis",
-            content: transcript,
-            ai_response: result,
-            created_at: Date.now()
-        });
-
-        // Update progress for matched criteria
-        const progressUpdates = [];
-        const now = Date.now();
-        let progressChanged = false;
-
-        for (const match of result.matches) {
-            const criterion = criteriaRecords[match.criteria_index];
-            if (!criterion) continue;
-
-            const criterionKey = String(criterion._id);
-            const currentEntry = progressMap[criterionKey];
-            const { updated, entry } = applyMatchToProgressEntry(currentEntry, match.status, match.quote, now);
-
-            if (updated) {
-                progressMap[criterionKey] = entry;
-                progressChanged = true;
-                progressUpdates.push({
-                    criteriaId: match.criteria_index,
-                    criteriaDbId: criterion._id,
-                    description: criterion.description,
-                    completed: entry.completed,
-                    quote: entry.quote,
-                    status: entry.status
-                });
-            }
-        }
-
-        if (progressChanged) {
-            await db.collection("checkbox_progress").findOneAndUpdate(
-                { session_id: session._id, group_number: groupNumber },
-                {
-                    $set: {
-                        session_id: session._id,
-                        group_number: groupNumber,
-                        progress: progressMap,
-                        created_at: progressDoc?.created_at ?? now,
-                        updated_at: now
-                    }
-                },
-                { upsert: true }
-            );
-            if (progressDoc) {
-                progressDoc.progress = progressMap;
-                progressDoc.updated_at = now;
-            }
-        }
-
-        const adminUpdate = {
-            group: groupNumber,
-            latestTranscript: transcript,
-            checkboxUpdates: progressUpdates,
-            isActive: true
-        };
-        const checkboxSessionData = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
-        const isReleased = checkboxSessionData?.released_groups?.[groupNumber] || false;
-        const checklistData = {
-            groupNumber: groupNumber,
-            criteria: buildChecklistCriteria(criteriaRecords, progressMap),
-            scenario: checkboxSessionData?.scenario ?? scenario ?? "",
-            timestamp: Date.now(),
-            isReleased: isReleased,
-            sessionCode: sessionCode
-        };
-
-        await publishRealtimeEvent({
-            sessionCode,
-            groupNumber,
-            event: REALTIME_EVENTS.ADMIN_UPDATE,
-            audience: "session",
-            payload: adminUpdate
-        });
-        await publishRealtimeEvent({
-            sessionCode,
-            groupNumber,
-            event: REALTIME_EVENTS.CHECKLIST_STATE,
-            audience: "both",
-            payload: checklistData
-        });
-        latestChecklistState.set(`${sessionCode}-${groupNumber}`, checklistData);
-
-        res.json({
-            success: true,
-            matches: result.matches.length,
-            reason: result.reason,
-            progressUpdates: progressUpdates
-        });
-
-    } catch (err) {
-        console.error("❌ Failed to process checkbox transcript:", err);
-        res.status(500).json({ error: "Failed to process transcript" });
-    }
-});
-
 /* Get checkbox data */
 router.get("/checkbox/:sessionCode", async (req, res) => {
     try {
@@ -3184,46 +2683,6 @@ router.get("/history/sessions/:code/export/segments", async (req, res) => {
     } catch (err) {
         console.error("❌ Failed to export segment history:", err);
         res.status(err.status || 500).json({ error: err.status === 403 ? "Forbidden" : err.message || "Failed to export segments" });
-    }
-});
-
-/* Test mode detection endpoint */
-router.post("/checkbox/test", aiLimiter, express.json(), async (req, res) => {
-    try {
-        const teacher = await requireTeacher(req, res);
-        if (!teacher) return;
-        const { sessionCode, transcript } = req.body;
-
-        // Get session info
-        const session = await db.collection("sessions").findOne({ code: sessionCode });
-        if (!session) {
-            return res.status(404).json({ error: "Session not found" });
-        }
-        if (session.owner_id !== teacher.id) {
-            return res.status(403).json({ error: "Forbidden" });
-        }
-
-        // Get criteria
-        const criteria = await db.collection("checkbox_criteria")
-            .find({ session_id: session._id })
-            .sort({ order_index: 1, created_at: 1 })
-            .toArray();
-
-        if (criteria.length === 0) {
-            return res.status(400).json({ error: "No criteria found for session" });
-        }
-
-        // Get scenario
-        const checkboxSession = await db.collection("checkbox_sessions").findOne({ session_id: session._id });
-        const scenario = checkboxSession?.scenario || "";
-
-        // Process with AI
-        const result = await processCheckboxTranscript(transcript, criteria, scenario);
-
-        res.json(result);
-    } catch (err) {
-        console.error('🧪 TEST MODE ERROR:', err);
-        res.status(500).json({ error: err.message, matches: [], reason: "Test mode error" });
     }
 });
 

@@ -136,12 +136,30 @@ export function validateDeploymentEnvironment(env = process.env) {
   if (cookieSecret && joinSecret && cookieSecret === joinSecret) errors.push("AUTH_COOKIE_SECRET and SESSION_JOIN_SECRET must be independent");
   if ([cookieSecret, joinSecret].filter(Boolean).includes(secret)) errors.push("Application secrets must not reuse SUPABASE_SECRET_KEY");
 
+  requireValue(env, "OPENAI_API_KEY", errors);
+  requireValue(env, "ELEVENLABS_KEY", errors);
+
+  for (const testOnlyFlag of ["STAGING_AUTH_BYPASS", "ALLOW_DEV_TEST", "MOCK_AI_SERVICES"]) {
+    if (present(env[testOnlyFlag]).toLowerCase() === "true") {
+      errors.push(`${testOnlyFlag} must not be enabled in production`);
+    }
+  }
+  for (const stagingOnlyValue of ["STAGING_BYPASS_TEACHER_ID", "STAGING_BYPASS_TEACHER_EMAIL"]) {
+    if (present(env[stagingOnlyValue])) {
+      errors.push(`${stagingOnlyValue} must not be deployed to production`);
+    }
+  }
+
   if (present(env.ALLOW_LEGACY_TEACHER_ALLOWLIST) !== "false") {
     errors.push("ALLOW_LEGACY_TEACHER_ALLOWLIST must be false");
   }
   const classroomMinutes = Number(env.CLASSROOM_SESSION_TTL_MINUTES);
   if (!Number.isInteger(classroomMinutes) || classroomMinutes < 5 || classroomMinutes > 240) {
     errors.push("CLASSROOM_SESSION_TTL_MINUTES must be an integer from 5 through 240");
+  }
+  const pendingMinutes = Number(env.PENDING_SESSION_TTL_MINUTES);
+  if (!Number.isInteger(pendingMinutes) || pendingMinutes < 5 || pendingMinutes > 120) {
+    errors.push("PENDING_SESSION_TTL_MINUTES must be an integer from 5 through 120");
   }
   const cookieSeconds = Number(env.AUTH_COOKIE_TTL_SECONDS);
   if (!Number.isInteger(cookieSeconds) || cookieSeconds < 3600 || cookieSeconds > 2_592_000) {

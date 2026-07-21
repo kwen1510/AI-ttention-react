@@ -12,7 +12,7 @@ function getActiveMode(pathname) {
   if (normalizedPath.startsWith('/checkbox')) return 'checkbox';
   if (normalizedPath.startsWith('/async')) return 'async';
   if (normalizedPath.startsWith('/prompts')) return 'prompts';
-  if (normalizedPath.startsWith('/history') || normalizedPath.startsWith('/data')) return 'history';
+  if (normalizedPath.startsWith('/history')) return 'history';
   return '';
 }
 
@@ -21,7 +21,9 @@ function AppLayout() {
   const active = getActiveMode(location.pathname);
   const basePath = getStagingBasePath(location.pathname);
   const { user } = useAuth();
-  const isStudentRoute = location.pathname.startsWith('/student') || location.pathname.startsWith('/async/j/');
+  const isStudentRoute = location.pathname === '/s'
+    || location.pathname.startsWith('/student')
+    || location.pathname.startsWith('/async/j/');
   const showModes = !isStudentRoute;
   const showSignOut = Boolean(user) && !isStudentRoute;
 

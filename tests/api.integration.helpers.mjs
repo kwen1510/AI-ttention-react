@@ -88,7 +88,8 @@ class InMemoryCursor {
 }
 
 class InMemoryCollection {
-  constructor(initialRows = []) {
+  constructor(name, initialRows = []) {
+    this.name = name;
     this.rows = clone(initialRows);
   }
 
@@ -107,6 +108,18 @@ class InMemoryCollection {
 
   async insertOne(document) {
     const inserted = clone(document);
+    if (this.name === "sessions" && inserted.is_current) {
+      const conflicts = this.rows.some((row) => (
+        row.is_current
+        && row.owner_id === inserted.owner_id
+        && row.mode === inserted.mode
+      ));
+      if (conflicts) {
+        const error = new Error("duplicate key value violates unique constraint");
+        error.code = "23505";
+        throw error;
+      }
+    }
     this.rows.push(inserted);
     return {
       acknowledged: true,
@@ -181,13 +194,13 @@ class InMemoryCollection {
 
 export function createDbOverrides(seed = {}) {
   const collections = new Map(
-    Object.entries(seed).map(([name, initialRows]) => [name, new InMemoryCollection(initialRows)])
+    Object.entries(seed).map(([name, initialRows]) => [name, new InMemoryCollection(name, initialRows)])
   );
 
   return {
     collection(name) {
       if (!collections.has(name)) {
-        collections.set(name, new InMemoryCollection([]));
+        collections.set(name, new InMemoryCollection(name, []));
       }
 
       return collections.get(name);

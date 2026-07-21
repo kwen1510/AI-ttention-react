@@ -37,6 +37,47 @@ export function audioChunkExtension(mimeType) {
   return 'webm';
 }
 
+export function hasAudibleSignal(samples, threshold = 0.0015) {
+  if (!samples?.length) return false;
+  let energy = 0;
+  for (const sample of samples) energy += sample * sample;
+  return Math.sqrt(energy / samples.length) >= threshold;
+}
+
+export async function createAudioActivityMonitor(stream) {
+  const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (!AudioContextClass || !stream) return null;
+
+  let context;
+  try {
+    context = new AudioContextClass();
+    await context.resume();
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    let audibleSamples = 0;
+    const timer = setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      if (hasAudibleSignal(samples)) audibleSamples += 1;
+    }, 100);
+
+    return {
+      hasSpeech: () => audibleSamples >= 2,
+      reset: () => { audibleSamples = 0; },
+      close: () => {
+        clearInterval(timer);
+        source.disconnect();
+        return context.close().catch(() => {});
+      }
+    };
+  } catch {
+    await context?.close().catch(() => {});
+    return null;
+  }
+}
+
 export async function uploadAudioChunk({
   blob,
   sessionCode,

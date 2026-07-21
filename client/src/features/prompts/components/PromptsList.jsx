@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Lock, FileText, CheckSquare, Eye, Play } from 'lucide-react';
+import { Globe, Lock, FileText, CheckSquare } from 'lucide-react';
 import { Badge } from '../../../components/ui/badge.jsx';
 import { EmptyState } from '../../../components/ui/empty-state.jsx';
 import { Panel } from '../../../components/ui/panel.jsx';
@@ -42,9 +42,6 @@ export function PromptsList({ prompts, onView }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {prompts.map(prompt => {
                 const ModeIcon = modeIcons[prompt.mode] || FileText;
-                const viewCount = Number(prompt.views) || 0;
-                const usageCount = Number(prompt.usage_count) || 0;
-                const hasEngagement = viewCount > 0 || usageCount > 0;
                 const authorLabel = prompt.createdByEmail || prompt.authorName || 'Anonymous Teacher';
 
                 return (
@@ -111,22 +108,6 @@ export function PromptsList({ prompts, onView }) {
                                     {formatDate(prompt.created_at)}
                                 </div>
                             </div>
-                            {hasEngagement ? (
-                                <div className="flex shrink-0 items-center gap-4 text-xs copy-muted">
-                                    {viewCount > 0 ? (
-                                        <span className="flex items-center" title="Views">
-                                            <Eye className="mr-1 h-4 w-4" />
-                                            {viewCount}
-                                        </span>
-                                    ) : null}
-                                    {usageCount > 0 ? (
-                                        <span className="flex items-center" title="Uses">
-                                            <Play className="mr-1 h-4 w-4" />
-                                            {usageCount}
-                                        </span>
-                                    ) : null}
-                                </div>
-                            ) : null}
                         </div>
                     </Panel>
                 );
