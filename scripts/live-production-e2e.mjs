@@ -205,8 +205,13 @@ async function runCheckbox() {
   assert.equal(result.success, true);
   assert.equal(result.mode, 'checkbox');
   assert.ok(result.transcript?.trim());
-  assert.equal(Array.isArray(result.checkboxes), true);
   assert.ok(result.matches >= 1);
+  const state = await teacherJson(`/api/checkbox/${session.code}`);
+  assert.equal(state.criteriaWithProgress.length, 2);
+  assert.equal(
+    state.criteriaWithProgress.some((criterion) => criterion.groupProgress?.['3']?.status === 'green'),
+    true
+  );
   await stopClassroom(session.code);
   const history = await teacherJson(`/api/history/sessions/${session.code}`);
   assert.ok(JSON.stringify(history).includes(result.transcript.slice(0, 20)));
@@ -255,6 +260,7 @@ async function runAbandoned() {
 }
 
 let failure;
+let cleanupFailure;
 try {
   const version = await requestJson('/version.json');
   assert.equal(version.shortCommit, EXPECTED_COMMIT.slice(0, 7));
@@ -279,8 +285,15 @@ try {
   for (const student of students) {
     try { await student.client.removeAllChannels(); } catch {}
     try { await student.client.realtime.disconnect(); } catch {}
-    try { await admin.auth.admin.deleteUser(student.id); } catch {}
+    try {
+      const { error } = await admin.auth.admin.deleteUser(student.id);
+      if (error) throw error;
+    } catch (error) {
+      cleanupFailure ??= error;
+    }
   }
+  try { await teacherJson('/api/auth/logout', { method: 'POST' }); } catch (error) { cleanupFailure ??= error; }
 }
 
 if (failure) throw failure;
+if (cleanupFailure) throw cleanupFailure;
