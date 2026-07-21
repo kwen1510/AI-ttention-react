@@ -11,7 +11,8 @@
 - Production commit `6c015c8` is healthy. Supabase now signs fresh tokens with its managed P-256
   ES256 key; anonymous-token/JWKS verification, fresh teacher OTP/cookie authentication, RLS/private
   Realtime denial, and the complete cleanup-safe live flow all passed after rotation. The previous
-  HS256 key remains verification-only during the required overlap; Turnstile remains a dashboard gate.
+  HS256 key remains verification-only during the required overlap. CAPTCHA is deliberately deferred;
+  the dormant Turnstile client path has no configured production key or enforcement.
 - The final tracked-source Semgrep rerun used OWASP Top Ten, JavaScript, Node, and secrets configs:
   113 rules across 145 files, zero findings.
 - Gitleaks over an archive containing exactly tracked `HEAD` files returned zero findings. A raw
@@ -131,12 +132,10 @@ verification suite. The app now has:
 1. Wait the configured access-token lifetime plus 15 minutes, confirm legacy `anon` and
    `service_role` last-use is quiet, disable those legacy API keys, and only then revoke the legacy
    JWT secret. Keep the rollback sequence available throughout the overlap window.
-2. Create a hostname-restricted Cloudflare Turnstile widget, deploy only its public site key as
-   `VITE_TURNSTILE_SITE_KEY`, then store the private secret directly in Supabase and enable CAPTCHA.
-3. Establish the school's consent, transcript-retention, subject-access, and deletion policy, plus
+2. Establish the school's consent, transcript-retention, subject-access, and deletion policy, plus
    monitoring/alerts for unusual anonymous Auth growth, invalid joins, rate limits, and upload
    rejection volume.
-4. Repeat a short real-phone speech/silence smoke test before each major workshop and consider MFA
+3. Repeat a short real-phone speech/silence smoke test before each major workshop and consider MFA
    for teacher/admin dashboard accounts.
 
 ## Residual Risks

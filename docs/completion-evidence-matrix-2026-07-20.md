@@ -33,7 +33,7 @@ Status terms:
 | One exact setup/deployment/rollback runbook | `production-respin-runbook-2026-07-20.md` | Proven as documentation |
 | Production archive and restore proof | Final batch, counts, checksum, protected denial proof, restore command, and encrypted offline copy | Proven; disposable restore tooling was rehearsed separately |
 | Production schema migration/reset | Archive gate passed, operational reset was explicitly confirmed, exact whitelist and 10 retained prompts verified afterward | Proven |
-| Supabase dashboard Auth/anonymous/CAPTCHA/private Realtime/new keys/ES256 configuration | New keys, OTP, anonymous Auth, private Realtime, and ES256 work in production; the client conditionally passes a Turnstile token directly to `signInAnonymously` | ES256 proven; Turnstile public-site-key deployment and Supabase-held secret/enforcement remain pending |
+| Supabase dashboard Auth/anonymous/private Realtime/new keys/ES256 configuration | New keys, OTP, anonymous Auth, private Realtime, and ES256 work in production; the client has a dormant conditional Turnstile path but no site key or CAPTCHA enforcement is configured | Proven for the selected production scope; CAPTCHA is explicitly deferred and no security claim depends on it |
 | DigitalOcean encrypted variables and deployment of reviewed commit | `/version.json`, HTML marker, headers, health, cookie behavior, secret-free bundle, and live E2E | Proven: production reports healthy `6c015c8b8ca22836f25cd978c435d9f6fbde7e92`; a post-rotation live E2E passed Summary, Checkbox, asynchronous, speech, silence, Realtime, close, and discard behavior on that exact version |
 | Production cross-role/group/expiry/end/restore validation | Live cleanup-safe E2E covered Summary, Checkbox, asynchronous mode, two anonymous groups, private-topic denial, real speech, silence, OpenAI summary, persisted state/history, forced stop/close, post-close denial, and abandoned pending-session deletion | Proven for group/session boundaries; cross-teacher ownership is adversarially proven locally because no second teacher OTP was used; natural expiry was not held open for four hours |
 | Disable legacy keys or revoke old JWT secret | Explicitly forbidden until new deployment is validated, old-key last-used indicators are quiet, token lifetime plus 15 minutes has elapsed, and rollback readiness is confirmed | Pending by design |
@@ -42,7 +42,7 @@ Status terms:
 
 The archive, protected production migration/reset, whitelist, new-key deployment, teacher cookie,
 anonymous boundary, ES256 rotation, and post-rotation production audio/session suites are complete.
-The immediate gates are to configure Turnstile and finish the safe legacy-key retirement: wait the
-configured token lifetime plus 15 minutes, confirm legacy-key last-use is quiet, then disable the
-legacy API keys before revoking the previous HS256 key. The Turnstile client path is implemented,
-but its public site key and Supabase-held secret still require dashboard configuration.
+The remaining operational gate is safe legacy-key retirement: wait the configured token lifetime
+plus 15 minutes, confirm legacy-key last-use is quiet, then disable the legacy API keys before
+revoking the previous HS256 key. CAPTCHA is deliberately not enabled; the dormant conditional
+Turnstile path has no production site key and does not change anonymous sign-in behavior.
