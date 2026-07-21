@@ -173,7 +173,15 @@ The command refuses to run without the exact confirmation and a verified archive
 2. Open **Authentication → JWT Signing Keys** and choose **Migrate JWT secret**. Supabase imports the legacy secret into the signing-key system and creates a standby asymmetric key.
 3. Confirm the standby key is P-256/ES256. Do not export, import, or store a private key for this application.
 4. Choose **Rotate keys**. New access tokens are then ES256; still-valid old tokens remain accepted.
-5. Validate teacher OTP, cookie refresh, anonymous sign-in, private Realtime, and the JWKS endpoint.
+5. Before enabling CAPTCHA, validate a fresh anonymous token against the public P-256/ES256 JWKS
+   without printing the token or synthetic user ID. The verifier deletes its synthetic user:
+
+   ```sh
+   npm run db:verify:es256
+   ```
+
+   Then validate teacher OTP, cookie refresh, and private Realtime. A fresh teacher access token
+   must also report `alg: ES256` and a `kid` present in the same JWKS.
 6. Wait at least the configured access-token lifetime plus 15 minutes.
 7. In **Settings → API Keys**, confirm the legacy `anon` and `service_role` last-used indicators are quiet, then disable those legacy API keys. They can be re-enabled during rollback.
 8. Only after the legacy API keys are disabled, revoke the previously used legacy JWT secret. Supabase documents this ordering as required.
