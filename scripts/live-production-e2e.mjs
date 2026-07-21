@@ -9,9 +9,13 @@ const COOKIE_FILE = process.env.LIVE_TEACHER_COOKIE_FILE || '/tmp/aittention-pro
 const SPEECH_FILE = process.env.LIVE_SPEECH_FILE || '/tmp/aittention-provider-speech.webm';
 const SILENCE_FILE = process.env.LIVE_SILENCE_FILE || '/tmp/aittention-provider-silence.wav';
 const CHECKBOX_FILE = process.env.LIVE_CHECKBOX_FILE || '/tmp/aittention-real-checklist.wav';
+const EXPECTED_COMMIT = process.env.LIVE_EXPECTED_COMMIT;
 
 if (process.env.LIVE_PRODUCTION_E2E !== 'true') {
   throw new Error('Set LIVE_PRODUCTION_E2E=true to run the destructive temporary-session test');
+}
+if (!/^[0-9a-f]{7,40}$/.test(EXPECTED_COMMIT || '')) {
+  throw new Error('LIVE_EXPECTED_COMMIT is required');
 }
 for (const name of ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY']) {
   if (!process.env[name]) throw new Error(`${name} is required`);
@@ -253,7 +257,7 @@ async function runAbandoned() {
 let failure;
 try {
   const version = await requestJson('/version.json');
-  assert.equal(version.shortCommit, '4247cbd');
+  assert.equal(version.shortCommit, EXPECTED_COMMIT.slice(0, 7));
   const identity = await teacherJson('/api/auth/me');
   assert.equal(identity.user?.email, 'ri.kwmachinelearning@gmail.com');
   const summary = await runSummary();
