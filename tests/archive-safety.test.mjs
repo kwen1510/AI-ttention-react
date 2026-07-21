@@ -108,3 +108,14 @@ test("abandoned pending sessions are deleted by the audited service-only retenti
   const migrationRunner = await readFile(new URL("../scripts/migrate-production.mjs", import.meta.url), "utf8");
   assert.match(migrationRunner, /20260726_abandoned_session_cleanup\.sql/);
 });
+
+test("daily retention uses one named database job and hides Cron from browser roles", async () => {
+  const sql = await readFile(new URL("../server/db/migrations/20260727_retention_cron.sql", import.meta.url), "utf8");
+  assert.match(sql, /create extension if not exists pg_cron/i);
+  assert.match(sql, /'aittention-daily-retention'/i);
+  assert.match(sql, /cleanup_aittention_ephemeral_data\(7, 30, 60\)/i);
+  assert.match(sql, /revoke all on schema cron from public, anon, authenticated/i);
+
+  const migrationRunner = await readFile(new URL("../scripts/migrate-production.mjs", import.meta.url), "utf8");
+  assert.match(migrationRunner, /20260727_retention_cron\.sql/);
+});

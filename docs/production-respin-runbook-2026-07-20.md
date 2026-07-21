@@ -106,7 +106,8 @@ The orchestrator re-verifies the archive before applying, in order:
 6. asynchronous audio idempotency boundaries;
 7. database-backed current-session and final-upload-grace state for multi-instance correctness;
 8. audited deletion of abandoned pending sessions and their Realtime memberships;
-9. service-only grants and RLS on all live `public` tables.
+9. one named daily Supabase Cron retention job with browser roles denied from the Cron schema;
+10. service-only grants and RLS on all live `public` tables.
 
 The SQL is idempotent. Inspect `realtime.messages` policies after migration:
 
@@ -232,13 +233,16 @@ Run it twice and use different outputs.
 10. Tamper with the group number on an upload/event request; it must return 403. Tamper with, expire, or forge join/user tokens; requests must fail without internal error details.
 11. End the class. Both student UIs must stop, membership rows must be revoked, later events must fail, and only an already-recorded final chunk may use the 15-second grace path.
 12. Test natural expiry with a short non-production TTL.
-13. Run the retention function on schedule (for example daily with Supabase Cron after enabling `pg_cron`):
+13. Confirm migration `20260727_retention_cron.sql` created exactly one active daily retention job:
 
 ```sql
-select private.cleanup_aittention_ephemeral_data(7, 30, 60);
+select jobname, schedule, command, active
+from cron.job
+where jobname = 'aittention-daily-retention';
 ```
 
-Review `private.aittention_retention_log` after each scheduled run.
+The expected schedule is `17 18 * * *` (02:17 Singapore time). Review
+`private.aittention_retention_log` and the Supabase Cron run history after executions.
 
 ## 9. Local and CI verification commands
 
