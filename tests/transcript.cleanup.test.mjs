@@ -57,3 +57,11 @@ test("transcript segment ids identify retried chunks", async () => {
   assert.equal(hasTranscriptSegment([{ id: "chunk-one" }], "chunk-one"), true);
   assert.equal(hasTranscriptSegment([{ id: "chunk-one" }], "chunk-two"), false);
 });
+
+test("summary snapshots tolerate legacy non-UUID chunk ids", async () => {
+  applyBaseTestEnv(10000);
+  const { snapshotSegmentId } = await import(`../server/services/transcript.js?test=snapshot-id-${Date.now()}`);
+  assert.equal(snapshotSegmentId("12d68f25-0ae5-47a7-8a76-9b642f609c8e"), "12d68f25-0ae5-47a7-8a76-9b642f609c8e");
+  assert.equal(snapshotSegmentId("summaryspeech1784603042001"), null);
+  assert.equal(snapshotSegmentId("abababababababababababababababab"), null);
+});

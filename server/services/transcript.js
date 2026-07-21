@@ -3,6 +3,12 @@ import { createSupabaseDb } from "../db/db.js";
 
 const db = createSupabaseDb();
 let warnedAboutMissingSummarySnapshots = false;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function snapshotSegmentId(value) {
+    const normalized = String(value || '').trim();
+    return UUID_PATTERN.test(normalized) ? normalized : null;
+}
 
 function isMissingRelationError(error) {
     const code = String(error?.code || '');
@@ -395,7 +401,7 @@ export async function persistSummarySnapshot({
             session_id: sessionId,
             group_id: groupId,
             segment_cursor: segmentCursor,
-            latest_segment_id: latestSegment?.id || null,
+            latest_segment_id: snapshotSegmentId(latestSegment?.id),
             summary_text: summaryText,
             created_at: timestamp
         });

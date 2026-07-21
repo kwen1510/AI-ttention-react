@@ -3,11 +3,22 @@ import test from 'node:test';
 
 import {
   audioChunkExtension,
+  createAudioChunkId,
   hasAudibleSignal,
   selectRecordingMimeType,
   uploadAsyncAudio,
   uploadAudioChunk
 } from '../client/src/lib/audioUpload.js';
+
+test('audio chunk fallback remains a database-safe UUID on older phones', () => {
+  const fallbackCrypto = {
+    getRandomValues(bytes) {
+      bytes.fill(0xab);
+      return bytes;
+    }
+  };
+  assert.match(createAudioChunkId(fallbackCrypto), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
 
 test('audio activity detection rejects quiet samples and keeps sustained speech', () => {
   assert.equal(hasAudibleSignal(new Float32Array(512)), false);
