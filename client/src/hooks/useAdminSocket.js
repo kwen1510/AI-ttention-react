@@ -103,7 +103,7 @@ export function useAdminSocket() {
                     }
                     return newGroups;
                 });
-                console.warn(`Upload error in group ${data.group}:`, data.error);
+                console.warn('Upload error in group %s:', data.group, data.error);
                 break;
             case REALTIME_EVENTS.UPLOAD_STATUS:
                 applyUploadStatus(data);

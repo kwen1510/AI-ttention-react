@@ -33,9 +33,10 @@ const frontendCandidates = [
 
 const staticDir = frontendCandidates.find((dir) => {
     try {
-        return fs.existsSync(path.join(dir, "index.html"));
+        // Candidate directories are fixed server constants, never request input.
+        return fs.existsSync(path.join(dir, "index.html")); // nosemgrep
     } catch (error) {
-        console.error(`⚠️ Unable to stat potential frontend directory ${dir}:`, error);
+        console.error('⚠️ Unable to stat potential frontend directory %s:', dir, error);
         return false;
     }
 }) ?? null;

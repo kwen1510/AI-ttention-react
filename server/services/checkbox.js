@@ -478,13 +478,13 @@ Begin evaluation now:`;
             // Validate quote based on status: grey should have null, others should have string
             if (match.status === 'grey') {
                 if (match.quote !== null && match.quote !== undefined) {
-                    console.warn(`⚠️ Grey status should have null quote, got: ${match.quote}`);
+                    console.warn('⚠️ Grey status should have null quote, got: %s', match.quote);
                     match.quote = null; // Fix it rather than reject
                 }
                 if (match.why === undefined) match.why = null;
             } else {
                 if (typeof match.quote !== 'string' || match.quote.trim() === '') {
-                    console.warn(`⚠️ ${match.status} status must have non-empty string quote, got:`, match.quote);
+                    console.warn('⚠️ %s status must have non-empty string quote, got:', match.status, match.quote);
                     return false;
                 }
                 if (typeof match.why !== 'string' || match.why.trim() === '') {
@@ -692,6 +692,6 @@ export async function cleanupOldSessionData(sessionCode) {
 
         // console.log(`✅ Session ${sessionCode} cleaned up successfully`);
     } catch (err) {
-        console.error(`❌ Error cleaning up session ${sessionCode}:`, err);
+        console.error('❌ Error cleaning up session %s:', sessionCode, err);
     }
 }

@@ -215,7 +215,7 @@ function scheduleClassroomExpiry(code, expiresAt) {
     const timer = setTimeout(() => {
         sessionTimers.delete(code);
         void expireClassroomSession(code, expiresAt).catch((error) => {
-            console.error(`❌ Failed to expire classroom session ${code}:`, error);
+            console.error('❌ Failed to expire classroom session %s:', code, error);
         });
     }, Math.min(delay, 2_147_483_647));
     timer.unref?.();

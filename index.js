@@ -60,8 +60,6 @@ function buildSupabaseConnectSources() {
 
       if (url.protocol === "https:") {
         sources.push(`wss://${url.host}`);
-      } else if (url.protocol === "http:") {
-        sources.push(`ws://${url.host}`);
       }
     } catch {
       // Invalid environment values are handled by the Supabase client during startup.
