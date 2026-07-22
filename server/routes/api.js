@@ -2687,7 +2687,6 @@ router.get("/checkbox/:sessionCode", async (req, res) => {
             .toArray();
 
         const normalizedCriteria = normalizeCriteriaRecords(criteria);
-        const originalCriteriaById = new Map(criteria.map((item) => [item._id, item]));
 
         // Get aggregated progress per group
         const progressDocs = await db.collection("checkbox_progress")

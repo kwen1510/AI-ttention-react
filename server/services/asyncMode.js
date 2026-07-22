@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 import { OPENAI_API_KEY } from "../config/env.js";
 import { callOpenAIChat, parseJsonFromText, summarise } from "./openai.js";
 
@@ -20,8 +20,7 @@ export function normalizeAsyncShareId(value) {
 }
 
 export function buildAsyncJoinUrl(origin, shareId) {
-    const normalizedOrigin = String(origin || "").replace(/\/+$/, "");
-    return `${normalizedOrigin}/async/j/${encodeURIComponent(shareId)}`;
+    return new URL(`/async/j/${encodeURIComponent(shareId)}`, origin).toString();
 }
 
 export function normalizeAsyncGroupNumber(value, maxGroupNumber = 99) {
@@ -45,7 +44,13 @@ export function isAsyncSessionOpen(session, now = Date.now()) {
 }
 
 function emptyProcess() {
-    return JSON.parse(JSON.stringify(DEFAULT_PROCESS));
+    return structuredClone(DEFAULT_PROCESS);
+}
+
+function stripSentencePunctuation(value) {
+    let end = value.length;
+    while (end > 0 && ".!?".includes(value[end - 1])) end -= 1;
+    return value.slice(0, end);
 }
 
 function normalizeProcessItem(item, fallback = {}) {
@@ -101,7 +106,7 @@ function buildMockProcess(segments = []) {
         for (const sentence of sentences) {
             const lower = sentence.toLowerCase();
             const item = {
-                text: sentence.replace(/[.!?]+$/, ""),
+                text: stripSentencePunctuation(sentence),
                 timestamp,
                 evidence: sentence,
                 confidence: "medium"

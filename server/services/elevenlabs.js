@@ -47,54 +47,37 @@ export function extractMime(mime) {
 
 function resolveAudioUploadMetadata(format) {
     const baseMime = extractMime(format);
-    let audioMime = baseMime;
-    let filename = 'audio.webm';
 
     switch (baseMime) {
         case 'audio/wav':
         case 'audio/x-wav':
         case 'audio/wave':
         case 'audio/pcm':
-            audioMime = 'audio/wav';
-            filename = 'audio.wav';
-            break;
+            return { audioMime: 'audio/wav', filename: 'audio.wav' };
 
         case 'audio/mp4':
         case 'audio/m4a':
         case 'audio/x-m4a':
-            audioMime = 'audio/mp4';
-            filename = 'audio.mp4';
-            break;
+            return { audioMime: 'audio/mp4', filename: 'audio.mp4' };
 
         case 'audio/ogg':
         case 'audio/opus':
-            audioMime = 'audio/ogg';
-            filename = 'audio.ogg';
-            break;
+            return { audioMime: 'audio/ogg', filename: 'audio.ogg' };
 
         case 'audio/mpeg':
         case 'audio/mp3':
-            audioMime = 'audio/mpeg';
-            filename = 'audio.mp3';
-            break;
+            return { audioMime: 'audio/mpeg', filename: 'audio.mp3' };
 
         case 'audio/aac':
-            audioMime = 'audio/aac';
-            filename = 'audio.aac';
-            break;
+            return { audioMime: 'audio/aac', filename: 'audio.aac' };
 
         case 'audio/flac':
         case 'audio/x-flac':
-            audioMime = 'audio/flac';
-            filename = 'audio.flac';
-            break;
+            return { audioMime: 'audio/flac', filename: 'audio.flac' };
 
         default:
-            audioMime = 'audio/webm';
-            filename = 'audio.webm';
+            return { audioMime: 'audio/webm', filename: 'audio.webm' };
     }
-
-    return { audioMime, filename };
 }
 
 export function isIgnorableTranscriptionText(text) {

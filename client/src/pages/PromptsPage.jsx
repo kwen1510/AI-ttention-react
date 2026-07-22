@@ -11,6 +11,7 @@ import { Button } from '../components/ui/button.jsx';
 import { Field, Input, Select } from '../components/ui/field.jsx';
 import { Panel, SectionHeader } from '../components/ui/panel.jsx';
 import { useAuth } from '../components/AuthContext.jsx';
+import { parseCheckboxPromptContent } from '../lib/prompts.js';
 
 function PromptsPage() {
   const { role } = useAuth();
@@ -74,23 +75,7 @@ function PromptsPage() {
     const prompt = await applyPrompt(id);
     if (prompt) {
       if (prompt.mode === 'checkbox') {
-        // Parse scenario and criteria
-        let scenario = '';
-        const criteria = [];
-        const lines = (prompt.content || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-
-        for (const line of lines) {
-          const scenarioMatch = line.match(/^scenario\s*[:\-]\s*(.+)$/i);
-          if (!scenario && scenarioMatch) {
-            scenario = scenarioMatch[1].trim();
-            continue;
-          }
-          criteria.push(line);
-        }
-
-        if (!scenario && criteria.length > 0) {
-          scenario = criteria.shift();
-        }
+        const { scenario, criteria } = parseCheckboxPromptContent(prompt.content, prompt.scenario || '');
 
         const params = new URLSearchParams();
         if (scenario) params.set('scenario', scenario);

@@ -4,7 +4,14 @@ import { isAdminUser, isGuestUser, normalizeEmail } from "../middleware/auth.js"
 let warnedAboutMissingPromptCreatorColumns = false;
 
 function looksLikeEmail(value) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(String(value || "").trim());
+    const normalized = String(value || "").trim();
+    const atIndex = normalized.indexOf("@");
+    const dotIndex = normalized.lastIndexOf(".");
+    return atIndex > 0
+        && atIndex === normalized.lastIndexOf("@")
+        && dotIndex > atIndex + 1
+        && dotIndex < normalized.length - 1
+        && !normalized.includes(" ");
 }
 
 function isMissingPromptCreatorColumnError(error) {

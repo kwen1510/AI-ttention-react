@@ -90,6 +90,22 @@ The present posture is **appropriate for controlled classroom testing with activ
 | Supply chain | `npm audit --audit-level=moderate` reported zero vulnerabilities at verification time | Good snapshot; must be repeated over time |
 | Logging/privacy | Metrics avoid audio, transcripts, credentials, prompts, tokens, and student identifiers | Strong baseline |
 
+## Why the Supabase `authenticated` role is required
+
+`authenticated` is a built-in Supabase/Postgres gateway role, not the AI-ttention product role named “teacher.” Supabase uses it whenever a request carries a valid user JWT. This includes users created with `signInAnonymously()`: they have a unique `auth.users.id`, a short-lived access token, and an `is_anonymous: true` claim even though they did not supply an email address.
+
+AI-ttention needs these anonymous authenticated identities for private Supabase Realtime authorization. A student browser signs in anonymously, sends its bearer token to the Node server, and the server verifies both `is_anonymous` and the exact classroom/group membership. The server then creates short-lived topic memberships. PostgreSQL permits the `authenticated` role to select only Realtime broadcast messages for which `auth.uid()` has a current membership in the requested topic. There is deliberately no browser `INSERT` policy, so browsers can receive authorized broadcasts but cannot publish them.
+
+This does **not** give every authenticated or anonymous user access to application data:
+
+- all public operational tables have RLS enabled and their `anon`/`authenticated` grants revoked;
+- the membership table itself cannot be read or changed by browsers;
+- the archive, cleanup, summary-job, audio-chunk, transcript, prompt, and session data paths remain server/service-role only;
+- the only direct browser-readable database surface is a narrowly filtered `realtime.messages` `SELECT` policy;
+- possession of the publishable key or an anonymous JWT is insufficient without a matching, unexpired, server-created topic membership.
+
+Removing `authenticated` access entirely would also disable native private Supabase Realtime. The alternative would be to proxy all events through a custom server WebSocket again, which is the architecture this release intentionally replaced.
+
 ## Verification evidence
 
 The following completed successfully before deployment:
@@ -107,7 +123,7 @@ The following completed successfully before deployment:
 - Public revision manifest confirmed `06fa50b`; `/admin` returned HTTPS 200 with CSP, HSTS, no-sniff, frame restrictions, no-referrer, cross-origin isolation headers, and `Cache-Control: no-store`.
 - Semgrep Community 1.170.0 ran 109 OWASP, JavaScript, Node.js, and secrets rules over 128 tracked files: zero findings and zero scan errors.
 - SonarScanner for NPM 5.0.0 analyzed 150 files against a local loopback-only SonarQube Community 26.7 server. The initial scan found one bug and four vulnerability-rule findings in the production E2E harness. The shared temporary paths and cleanup throw were removed; the rescan closed all five findings and reported zero open bugs, zero open vulnerabilities, zero security hotspots, A ratings for reliability/security/maintainability, and a passing quality gate.
-- Sonar reports 163 open code smells, 2.4% duplicated lines, and 0% imported coverage. The coverage figure means no LCOV report was supplied to Sonar; it does not mean the 81 automated tests did not run.
+- A focused follow-up removed duplicated parsers, manual Base64URL rewriting, unused database-result variables, and all remaining super-linear-regex/dead-assignment categories. Sonar then reported 124 open code smells (down from 163), 2.4% duplicated lines, and 0% imported coverage. The coverage figure means no LCOV report was supplied to Sonar; it does not mean the 81 automated tests did not run.
 
 Semgrep and SonarScanner are installed locally, and repeatable `scan:semgrep` and `scan:sonar` package commands are available. A Sonar scan still requires a reachable SonarQube/SonarCloud service and token; the verification above used an ephemeral local Community server and did not upload source to a third party.
 
@@ -117,7 +133,7 @@ Semgrep and SonarScanner are installed locally, and repeatable `scan:semgrep` an
 2. **Real workshop scale has not been proven.** The load test used a simulated provider. ElevenLabs latency and rate/concurrency limits are expected to be the first bottleneck. Keep initial concurrency at 4 and watch queue/latency/error metrics.
 3. **Phone/browser variability remains.** Supported MediaRecorder formats, operating-system background suspension, microphone routing, low-power modes, and unstable networks can still affect individual devices. Retry/idempotency reduces data loss but cannot make a suspended browser record audio.
 4. **No independent penetration test has occurred.** The posture is based on source review and automated adversarial tests, not a third-party assessment.
-5. **Static analysis is not yet continuous.** Semgrep and Sonar now pass their security/reliability gates locally, but they are not yet enforced by GitHub CI and scan results can become stale. Sonar's 163 maintainability smells should be reduced incrementally when the affected code is changed, rather than through a risky bulk rewrite.
+5. **Static analysis is not yet continuous.** Semgrep and Sonar now pass their security/reliability gates locally, but they are not yet enforced by GitHub CI and scan results can become stale. Sonar's 124 remaining maintainability smells should be reduced incrementally when the affected code is changed, rather than through a risky bulk rewrite.
 6. **Operational alerting is still human-driven.** Metrics exist, but provider-error, sustained-queue, and authentication anomaly alerts should be configured before relying on unattended operation.
 7. **Service-role impact remains high by design.** The Node service needs privileged database access. A server compromise could bypass RLS, so secret rotation, least-privilege hosting access, timely patching, and log review remain essential.
 8. **The report is time-bound.** It describes revision `06fa50b` and the configuration/tests observed on 2026-07-21/22. Later code, database, provider, or dashboard changes require reassessment.

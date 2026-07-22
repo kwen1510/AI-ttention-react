@@ -24,12 +24,14 @@ export function useCriteriaManager(sessionCode) {
             .map(line => line.trim())
             .filter(line => line.length > 0)
             .map((line, index) => {
-                const match = line.match(/^(.+?)\s*\((.+)\)\s*$/);
-                if (match) {
+                const openingParenthesis = line.endsWith(')') ? line.lastIndexOf('(') : -1;
+                const description = openingParenthesis > 0 ? line.slice(0, openingParenthesis).trim() : line;
+                const rubric = openingParenthesis > 0 ? line.slice(openingParenthesis + 1, -1).trim() : '';
+                if (description && rubric) {
                     return {
                         id: index,
-                        description: match[1].trim(),
-                        rubric: match[2].trim(),
+                        description,
+                        rubric,
                         completed: false,
                         quote: null,
                         status: 'grey'
@@ -37,7 +39,7 @@ export function useCriteriaManager(sessionCode) {
                 } else {
                     return {
                         id: index,
-                        description: line,
+                        description,
                         rubric: "No specific rubric provided",
                         completed: false,
                         quote: null,

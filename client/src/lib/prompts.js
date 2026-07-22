@@ -28,9 +28,12 @@ export function parseCheckboxPromptContent(text = "", fallbackScenario = "") {
   const criteria = [];
 
   for (const line of lines) {
-    const scenarioMatch = line.match(/^scenario\s*[:\-]\s*(.+)$/i);
-    if (!scenario && scenarioMatch) {
-      scenario = scenarioMatch[1].trim();
+    const separatorIndexes = [line.indexOf(":"), line.indexOf("-")].filter((index) => index > 0);
+    const separatorIndex = separatorIndexes.length > 0 ? Math.min(...separatorIndexes) : -1;
+    const label = separatorIndex > 0 ? line.slice(0, separatorIndex).trim().toLowerCase() : "";
+    const scenarioValue = separatorIndex > 0 ? line.slice(separatorIndex + 1).trim() : "";
+    if (!scenario && label === "scenario" && scenarioValue) {
+      scenario = scenarioValue;
       continue;
     }
     criteria.push(line);

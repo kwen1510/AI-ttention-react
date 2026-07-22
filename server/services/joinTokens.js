@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 const JOIN_TOKEN_VERSION = 1;
 const DEV_JOIN_SECRET = "dev-only-session-join-secret";
@@ -10,19 +10,11 @@ function createJoinTokenError(message, status = 401) {
 }
 
 function toBase64Url(input) {
-    return Buffer.from(input)
-        .toString("base64")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/g, "");
+    return Buffer.from(input).toString("base64url");
 }
 
 function fromBase64Url(input) {
-    const normalized = String(input || "")
-        .replace(/-/g, "+")
-        .replace(/_/g, "/");
-    const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
-    return Buffer.from(`${normalized}${padding}`, "base64");
+    return Buffer.from(String(input || ""), "base64url");
 }
 
 export function getJoinTokenSecret() {
@@ -54,10 +46,7 @@ function signPayload(encodedPayload, secret = getJoinTokenSecret()) {
     return crypto
         .createHmac("sha256", secret)
         .update(encodedPayload)
-        .digest("base64")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/g, "");
+        .digest("base64url");
 }
 
 export function createJoinToken({ sessionCode, expiresInSeconds = getJoinTokenTtlSeconds(), now = Date.now() }) {

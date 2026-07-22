@@ -75,8 +75,22 @@ export function countTranscriptWords(text) {
 function toComparableWords(text) {
     return normalizeTranscriptText(text)
         .split(' ')
-        .map((word) => word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+        .map(normalizeComparableWord)
         .filter(Boolean);
+}
+
+function isAsciiLetterOrDigit(character) {
+    const code = character.charCodeAt(0);
+    return (code >= 48 && code <= 57) || (code >= 97 && code <= 122);
+}
+
+function normalizeComparableWord(word) {
+    const normalized = String(word || '').toLowerCase();
+    let start = 0;
+    let end = normalized.length;
+    while (start < end && !isAsciiLetterOrDigit(normalized[start])) start += 1;
+    while (end > start && !isAsciiLetterOrDigit(normalized[end - 1])) end -= 1;
+    return normalized.slice(start, end);
 }
 
 export function buildTranscriptCleanupContext(segments = [], {
@@ -118,7 +132,7 @@ export function trimTranscriptBoundaryOverlap(previousText, nextText, {
     const previousWords = toComparableWords(previousText);
     const nextOriginalWords = nextNormalized.split(' ').filter(Boolean);
     const nextComparableWords = nextOriginalWords
-        .map((word) => word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+        .map(normalizeComparableWord)
         .filter(Boolean);
 
     const overlapLimit = Math.min(maxWords, previousWords.length, nextComparableWords.length);

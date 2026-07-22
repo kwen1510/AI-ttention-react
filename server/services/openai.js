@@ -120,11 +120,10 @@ export async function transcribeAudioWithOpenAI(buffer, {
 export function parseJsonFromText(text) {
     if (!text || typeof text !== 'string') return null;
     let trimmed = text.trim();
-    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fenced) {
-        trimmed = fenced[1].trim();
-    } else {
-        trimmed = trimmed.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    if (trimmed.startsWith('```')) {
+        const openingLength = trimmed.slice(0, 7).toLowerCase().startsWith('```json') ? 7 : 3;
+        const closingIndex = trimmed.lastIndexOf('```');
+        trimmed = trimmed.slice(openingLength, closingIndex > openingLength ? closingIndex : undefined).trim();
     }
     try {
         return JSON.parse(trimmed);

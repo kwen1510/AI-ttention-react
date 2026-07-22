@@ -158,7 +158,7 @@ export function applyMatchToProgressEntry(existingEntry, status, quote, timestam
     const baseline = existingEntry ? { ...existingEntry } : createEmptyProgressEntry(timestamp);
     const currentStatus = baseline.status ?? 'grey';
 
-    let shouldUpdate = false;
+    let shouldUpdate;
     if (!existingEntry) {
         shouldUpdate = true;
     } else if (currentStatus === 'green') {
@@ -271,11 +271,6 @@ export async function processCheckboxTranscript(text, criteria, scenario = "", s
                 matches: greenCriteria
             };
         }
-
-        // Create detailed criteria text with rubrics for evaluation
-        const criteriaText = criteriaToEvaluate.map((c, i) => {
-            return `${c.originalIndex}. ${c.description}\n   RUBRIC: ${c.rubric}`;
-        }).join('\n\n');
 
         const scenarioContext = scenario ? `\nDiscussion Context/Scenario: ${scenario}\n` : '';
 
@@ -687,16 +682,13 @@ export async function cleanupOldSessionData(sessionCode) {
         }
 
         // Delete old checkbox progress
-        const progressResult = await db.collection("checkbox_progress").deleteMany({ session_id: session._id });
-        // console.log(`🗑️ Deleted ${progressResult.deletedCount} old progress records`);
+        await db.collection("checkbox_progress").deleteMany({ session_id: session._id });
 
         // Delete old checkbox criteria
-        const criteriaResult = await db.collection("checkbox_criteria").deleteMany({ session_id: session._id });
-        // console.log(`🗑️ Deleted ${criteriaResult.deletedCount} old criteria records`);
+        await db.collection("checkbox_criteria").deleteMany({ session_id: session._id });
 
         // Delete old checkbox session
-        const sessionResult = await db.collection("checkbox_sessions").deleteMany({ session_id: session._id });
-        // console.log(`🗑️ Deleted ${sessionResult.deletedCount} old checkbox session records`);
+        await db.collection("checkbox_sessions").deleteMany({ session_id: session._id });
 
         // console.log(`✅ Session ${sessionCode} cleaned up successfully`);
     } catch (err) {

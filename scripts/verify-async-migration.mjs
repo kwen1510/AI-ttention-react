@@ -16,7 +16,7 @@ const tables = [
 ];
 
 async function checkTable(table) {
-  const url = `${process.env.SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/${table}?select=id&limit=1`;
+  const url = new URL(`/rest/v1/${table}?select=id&limit=1`, process.env.SUPABASE_URL).toString();
   const response = await fetch(url, {
     headers: {
       apikey: process.env.SUPABASE_SECRET_KEY
