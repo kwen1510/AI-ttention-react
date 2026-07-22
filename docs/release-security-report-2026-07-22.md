@@ -1,8 +1,10 @@
 # AI-ttention release and cybersecurity report
 
-**Report date:** 2026-07-22  
-**Deployed revision reviewed:** `06fa50bddd72c8373c6218b122afcb4ef0f4c854`  
-**Public application:** <https://ai-ttention.rafflesian.org>  
+**Report date:** 2026-07-22
+
+**Deployed revision reviewed:** `06fa50bddd72c8373c6218b122afcb4ef0f4c854`
+
+**Public application:** <https://ai-ttention.rafflesian.org>
 **Scope:** Changes between the previously deployed revision `7ced64f` and revision `06fa50b`
 
 ## Executive assessment
