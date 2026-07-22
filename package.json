@@ -33,6 +33,8 @@
     "test:audio:provider": "node scripts/verify-audio-provider.mjs",
     "test:load:hybrid": "node scripts/hybrid-load-test.mjs",
     "test:openai:provider": "node scripts/verify-openai-provider.mjs",
+    "scan:semgrep": "semgrep scan --error --config p/owasp-top-ten --config p/javascript --config p/nodejs --config p/secrets client server scripts tests index.js",
+    "scan:sonar": "sonar-scanner-npm",
     "test:local:core": "npm run test:unit && E2E_GROUP_COUNT=25 npm run test:realtime:multi && npm run test:browser && npm run test:browser:security && npm audit --audit-level=moderate && npm test",
     "test:local:providers": "npm run test:audio:provider && npm run test:openai:provider",
     "test:smoke": "NODE_ENV=test node scripts/smoke-test.mjs",

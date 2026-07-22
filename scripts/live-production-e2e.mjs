@@ -1,15 +1,31 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 
 const APP = process.env.LIVE_APP_ORIGIN || 'https://ai-ttention.rafflesian.org';
-const COOKIE_FILE = process.env.LIVE_TEACHER_COOKIE_FILE || '/tmp/aittention-prod-cookie.txt';
-const SPEECH_FILE = process.env.LIVE_SPEECH_FILE || '/tmp/aittention-provider-speech.webm';
-const SILENCE_FILE = process.env.LIVE_SILENCE_FILE || '/tmp/aittention-provider-silence.wav';
-const CHECKBOX_FILE = process.env.LIVE_CHECKBOX_FILE || '/tmp/aittention-real-checklist.wav';
 const EXPECTED_COMMIT = process.env.LIVE_EXPECTED_COMMIT;
+
+async function requirePrivateFixture(name) {
+  const configuredPath = process.env[name];
+  if (!configuredPath || !path.isAbsolute(configuredPath)) {
+    throw new Error(`${name} must be an absolute path to a private test fixture`);
+  }
+
+  const fileInfo = await lstat(configuredPath);
+  if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
+    throw new Error(`${name} must reference a regular file, not a symlink`);
+  }
+  if (typeof process.getuid === 'function' && fileInfo.uid !== process.getuid()) {
+    throw new Error(`${name} must be owned by the current user`);
+  }
+  if ((fileInfo.mode & 0o022) !== 0) {
+    throw new Error(`${name} must not be writable by group or other users`);
+  }
+
+  return realpath(configuredPath);
+}
 
 if (process.env.LIVE_PRODUCTION_E2E !== 'true') {
   throw new Error('Set LIVE_PRODUCTION_E2E=true to run the destructive temporary-session test');
@@ -20,6 +36,11 @@ if (!/^[0-9a-f]{7,40}$/.test(EXPECTED_COMMIT || '')) {
 for (const name of ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY']) {
   if (!process.env[name]) throw new Error(`${name} is required`);
 }
+
+const COOKIE_FILE = await requirePrivateFixture('LIVE_TEACHER_COOKIE_FILE');
+const SPEECH_FILE = await requirePrivateFixture('LIVE_SPEECH_FILE');
+const SILENCE_FILE = await requirePrivateFixture('LIVE_SILENCE_FILE');
+const CHECKBOX_FILE = await requirePrivateFixture('LIVE_CHECKBOX_FILE');
 
 const cookieLines = (await readFile(COOKIE_FILE, 'utf8'))
   .split(/\r?\n/)
@@ -298,7 +319,7 @@ try {
     try { await student.client.realtime.disconnect(); } catch {}
     try {
       const { error } = await admin.auth.admin.deleteUser(student.id);
-      if (error) throw error;
+      cleanupFailure ??= error;
     } catch (error) {
       cleanupFailure ??= error;
     }
