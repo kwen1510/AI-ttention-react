@@ -132,19 +132,28 @@ export async function runRollingSummary({ sessionCode, sessionId, final = false 
                 timestamp: now
             });
             const released = await isSummaryReleased({ sessionCode, sessionId, groupNumber: candidate.groupNumber });
-            await publishRealtimeEvent({
-                sessionCode,
+            const summaryState = {
                 groupNumber: candidate.groupNumber,
-                event: REALTIME_EVENTS.SUMMARY_STATE,
-                audience: "both",
-                payload: {
+                isReleased: released,
+                final,
+                cursor: candidate.targetCursor
+            };
+            await Promise.all([
+                publishRealtimeEvent({
+                    sessionCode,
                     groupNumber: candidate.groupNumber,
-                    summary: released ? summary : null,
-                    isReleased: released,
-                    final,
-                    cursor: candidate.targetCursor
-                }
-            });
+                    event: REALTIME_EVENTS.SUMMARY_STATE,
+                    audience: "session",
+                    payload: { ...summaryState, summary }
+                }),
+                publishRealtimeEvent({
+                    sessionCode,
+                    groupNumber: candidate.groupNumber,
+                    event: REALTIME_EVENTS.SUMMARY_STATE,
+                    audience: "group",
+                    payload: { ...summaryState, summary: released ? summary : null }
+                })
+            ]);
             committed += 1;
         }
         if (committed === candidates.length) {

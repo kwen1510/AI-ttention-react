@@ -229,7 +229,21 @@ async function runSummaryMode() {
   const batch = await rollingSummaryModule.runRollingSummary({ sessionCode, sessionId: session._id });
   assert.equal(batch.committed, GROUPS.length);
   const summaryRows = dbOverrides.dump("summaries");
-  for (const summary of summaryRows) assert.match(summary.text, /renewable energy/i);
+  const expectedSummaryTopic = USE_REAL_AI ? /solar|renewable energy/i : /renewable energy/i;
+  for (const summary of summaryRows) assert.match(summary.text, expectedSummaryTopic);
+
+  const draftEvents = eventsFor(sessionCode, "summary_state");
+  for (const group of GROUPS) {
+    const teacherDraft = draftEvents.find((event) =>
+      event.payload?.groupNumber === group && /:teacher$/.test(event.topic)
+    );
+    const studentDraft = draftEvents.find((event) =>
+      event.payload?.groupNumber === group && /:group:/.test(event.topic)
+    );
+    assert.match(teacherDraft?.payload?.payload?.summary || "", expectedSummaryTopic);
+    assert.equal(studentDraft?.payload?.payload?.summary, null);
+    assert.equal(studentDraft?.payload?.payload?.isReleased, false);
+  }
 
   assert.equal(eventCount(sessionCode, "admin_update"), GROUPS.length);
   assert.equal(eventCount(sessionCode, "transcription_and_summary", /:group:/), GROUPS.length);
