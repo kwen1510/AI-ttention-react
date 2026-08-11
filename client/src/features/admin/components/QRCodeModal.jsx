@@ -86,7 +86,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-3">
+                <div className="min-w-0 space-y-3">
                     <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-center">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
                             Session code
@@ -124,7 +124,7 @@ export function QRCodeModal({ isOpen, onClose, sessionCode }) {
                         </Alert>
                     ) : null}
 
-                    <div className="modal-copy-block student-access-modal__copy-row">
+                    <div className="modal-copy-block student-access-modal__copy-row min-w-0">
                         <span className="student-access-modal__link copy-muted">{joinUrl}</span>
                         <Button onClick={copyLink} variant="secondary" size="sm" className="student-access-modal__copy-button">
                             <Copy className="h-4 w-4" />

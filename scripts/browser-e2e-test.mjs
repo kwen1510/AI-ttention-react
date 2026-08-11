@@ -106,6 +106,29 @@ async function closeQrModal(page) {
   }
 }
 
+async function assertStudentAccessModalFits(page) {
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    const layout = await page.locator('.student-access-modal').evaluate((modal) => ({
+      modalClientWidth: modal.clientWidth,
+      modalScrollWidth: modal.scrollWidth,
+      pageClientWidth: document.documentElement.clientWidth,
+      pageScrollWidth: document.documentElement.scrollWidth,
+    }));
+
+    assert.equal(layout.pageScrollWidth, layout.pageClientWidth, `page overflow at ${viewport.width}px`);
+    assert.equal(layout.modalScrollWidth, layout.modalClientWidth, `student access modal overflow at ${viewport.width}px`);
+  }
+}
+
 async function deletePromptByTitle(page, title) {
   await page.getByPlaceholder("Search prompts...").fill(title);
   await page.getByText(title, { exact: true }).click();
@@ -212,6 +235,8 @@ try {
   await teacherSummaryPage.locator("button:has(.session-code-text)").click();
   await teacherSummaryPage.getByRole("heading", { name: /Student access/i }).waitFor();
   await teacherSummaryPage.getByText(/Scan this QR code or enter the session code/i).waitFor();
+  await teacherSummaryPage.getByRole("img", { name: /Student session QR code/i }).waitFor();
+  await assertStudentAccessModalFits(teacherSummaryPage);
   await closeQrModal(teacherSummaryPage);
 
   const studentSummaryPage = await context.newPage();
