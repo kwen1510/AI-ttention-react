@@ -62,7 +62,6 @@ function CheckboxDashboard() {
   const [showQR, setShowQR] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
   const [applyingPromptId, setApplyingPromptId] = useState(null);
-  const [sessionTiming, setSessionTiming] = useState({ createdAt: null, expiresAt: null });
   const [sessionEnded, setSessionEnded] = useState(false);
 
   useEffect(() => {
@@ -93,7 +92,6 @@ function CheckboxDashboard() {
         }
         const data = await res.json();
         setInterval(Math.min(300, Math.max(15, Math.round(Number(data.interval || 30000) / 1000))));
-        setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
         setSessionEnded(false);
         setIsRecording(Boolean(data.active));
         if (data.active && data.startTime) {
@@ -262,7 +260,6 @@ function CheckboxDashboard() {
       }
 
       const data = await res.json().catch(() => ({}));
-      if (data.expiresAt) setSessionTiming((current) => ({ ...current, expiresAt: data.expiresAt }));
       setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -489,8 +486,6 @@ function CheckboxDashboard() {
     <div className="checkbox-dashboard-wrapper min-h-screen pb-20">
       <SessionHeader
         sessionCode={sessionCode}
-        createdAt={sessionTiming.createdAt}
-        expiresAt={sessionTiming.expiresAt}
         isEnded={sessionEnded}
         isConnected={isConnected}
         isRecording={isRecording}

@@ -7,8 +7,6 @@ import { Toolbar, ToolbarGroup } from '../../../components/ui/toolbar.jsx';
 
 export function SessionHeader({
     sessionCode,
-    createdAt = null,
-    expiresAt = null,
     isEnded = false,
     isConnected,
     isRecording,
@@ -32,10 +30,6 @@ export function SessionHeader({
         const secs = Math.floor(safeSeconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
-
-    const formatDateTime = (value) => value
-        ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
-        : '';
 
     return (
         <div className="page-shell page-shell--fluid pb-0">
@@ -63,12 +57,6 @@ export function SessionHeader({
 
                     {isRecording ? <Badge tone="danger">Recording live</Badge> : null}
                     {isEnded ? <Badge tone="neutral">Session ended</Badge> : null}
-                    {createdAt ? <Badge tone="neutral">Created {formatDateTime(createdAt)}</Badge> : null}
-                    {expiresAt && !isEnded ? (
-                        <Badge tone="warning">
-                            {isRecording ? 'Expires' : 'Start by'} {formatDateTime(expiresAt)}
-                        </Badge>
-                    ) : null}
                     {isRecording ? <Badge tone="primary">Elapsed {formatTime(elapsedTime)}</Badge> : null}
                     {isRecording && Number.isFinite(nextChunkIn) ? (
                         <Badge tone="accent">{nextCycleLabel} {formatTime(nextChunkIn)}</Badge>
