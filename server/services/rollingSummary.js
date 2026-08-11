@@ -20,6 +20,24 @@ function timerKey(sessionId) {
     return String(sessionId || "");
 }
 
+export function summaryBoundaryDelayMs({
+    intervalMs = SUMMARY_INTERVAL_DEFAULT_MS,
+    startTime = null,
+    now = Date.now(),
+    graceMs = SUMMARY_GRACE_MS
+} = {}) {
+    const interval = Math.max(1, Number(intervalMs) || SUMMARY_INTERVAL_DEFAULT_MS);
+    const startedAt = Number(startTime);
+    if (!Number.isFinite(startedAt) || startedAt <= 0 || startedAt > now) {
+        return interval + Math.max(0, Number(graceMs) || 0);
+    }
+
+    const elapsed = Math.max(0, now - startedAt);
+    const completedBoundaries = Math.floor(elapsed / interval);
+    const currentBoundary = startedAt + Math.max(1, completedBoundaries) * interval;
+    return Math.max(0, currentBoundary + Math.max(0, Number(graceMs) || 0) - now);
+}
+
 async function commitState({ sessionId, groupId, targetCursor, summaryText }) {
     if (process.env.NODE_ENV !== "test") {
         const { data, error } = await supabase.rpc("commit_rolling_summary", {
@@ -183,10 +201,15 @@ export async function runRollingSummary({ sessionCode, sessionId, final = false 
     }
 }
 
-export async function scheduleRollingSummary({ sessionCode, sessionId, intervalMs = SUMMARY_INTERVAL_DEFAULT_MS } = {}) {
+export async function scheduleRollingSummary({
+    sessionCode,
+    sessionId,
+    intervalMs = SUMMARY_INTERVAL_DEFAULT_MS,
+    startTime = null
+} = {}) {
     const key = timerKey(sessionId);
     if (!key) return;
-    const delay = Math.max(0, Number(intervalMs) || SUMMARY_INTERVAL_DEFAULT_MS) + SUMMARY_GRACE_MS;
+    const delay = summaryBoundaryDelayMs({ intervalMs, startTime });
     const existing = await summaryJobs().findOne({ session_id: sessionId });
     if (!existing) {
         await summaryJobs().insertOne({

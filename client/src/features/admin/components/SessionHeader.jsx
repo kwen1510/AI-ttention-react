@@ -16,12 +16,13 @@ export function SessionHeader({
     nextChunkIn = null,
     onStartRecording,
     onStopRecording,
+    onEndSession,
     onOpenQR,
     interval,
     onIntervalChange,
     onIntervalCommit,
-    intervalLabel = "Summary every (seconds)",
-    intervalHint = "15–300 seconds; default 30",
+    intervalLabel = "Capture & summarise every (seconds)",
+    intervalHint = "15–300 seconds; audio follows this setting up to the 30-second safety cap",
     intervalDisabled = false,
     nextCycleLabel = "Next summary"
 }) {
@@ -95,22 +96,37 @@ export function SessionHeader({
                 </ToolbarGroup>
 
                 <ToolbarGroup className="flex w-full flex-wrap gap-3 sm:w-auto sm:justify-end">
-                    <Button
-                        type="button"
-                        onClick={onStartRecording}
-                        disabled={isRecording || isEnded}
-                        variant="primary"
-                        size="sm"
-                        className="flex-1 sm:flex-none"
-                    >
-                        <Play className="h-4 w-4" />
-                        <span>Start recording</span>
-                    </Button>
+                    {isRecording ? (
+                        <Button
+                            type="button"
+                            onClick={onStopRecording}
+                            disabled={isEnded}
+                            variant="secondary"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                        >
+                            <Square className="h-4 w-4" />
+                            <span>Stop recording</span>
+                        </Button>
+                    ) : (
+                        <Button
+                            type="button"
+                            onClick={onStartRecording}
+                            disabled={isEnded}
+                            variant="primary"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                        >
+                            <Play className="h-4 w-4" />
+                            <span>Start recording</span>
+                        </Button>
+                    )}
 
                     <Button
                         type="button"
-                        onClick={onStopRecording}
-                        disabled={!sessionCode || isEnded}
+                        onClick={onEndSession}
+                        disabled={!sessionCode || isRecording || isEnded}
+                        title={isRecording ? 'Stop recording before ending the session' : undefined}
                         variant="danger"
                         size="sm"
                         className="flex-1 sm:flex-none"

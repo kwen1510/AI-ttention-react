@@ -116,15 +116,37 @@ test("student APIs reject forged roles, missing identity, and cross-group claims
     });
     assert.equal(uploadResponse.status, 403);
 
-    const stop = await jsonRequest(baseUrl, "/api/session/SECURE/stop", {
+    const endWhileRecording = await jsonRequest(baseUrl, "/api/session/SECURE/stop", {
       method: "POST",
       headers: { Authorization: "Bearer teacher-token" }
     });
-    assert.equal(stop.response.status, 200);
+    assert.equal(endWhileRecording.response.status, 409);
+
+    const stopRecording = await jsonRequest(baseUrl, "/api/session/SECURE/stop-recording", {
+      method: "POST",
+      headers: { Authorization: "Bearer teacher-token" }
+    });
+    assert.equal(stopRecording.response.status, 200);
     assert.equal(revokedSession, null, "membership stays upload-valid only during the final 15-second grace");
     const stoppedSession = dbOverrides.dump("sessions")[0];
-    assert.equal(stoppedSession.is_current, false);
+    assert.equal(stoppedSession.active, false);
+    assert.notEqual(stoppedSession.is_current, false);
+    assert.equal(stoppedSession.end_time, undefined);
     assert.ok(stoppedSession.accept_uploads_until > Date.now());
+
+    const whilePaused = await jsonRequest(baseUrl, "/api/session/SECURE/student-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer student-token" },
+      body: JSON.stringify({ event: "heartbeat", group: 2 })
+    });
+    assert.equal(whilePaused.response.status, 200, "stopping recording must not kick students out");
+
+    const endSession = await jsonRequest(baseUrl, "/api/session/SECURE/stop", {
+      method: "POST",
+      headers: { Authorization: "Bearer teacher-token" }
+    });
+    assert.equal(endSession.response.status, 200);
+    assert.equal(dbOverrides.dump("sessions")[0].is_current, false);
 
     const afterForcedEnd = await jsonRequest(baseUrl, "/api/session/SECURE/student-event", {
       method: "POST",

@@ -188,18 +188,31 @@ function AdminDashboard() {
   const handleStopRecording = async () => {
     if (!sessionCode) return;
     try {
-      const res = await fetch(`/api/session/${sessionCode}/stop`, {
+      const res = await fetch(`/api/session/${sessionCode}/stop-recording`, {
         method: 'POST'
       });
 
       if (!res.ok) {
-        throw new Error(`Failed to stop session (${res.status})`);
+        throw new Error(`Failed to stop recording (${res.status})`);
       }
 
       setIsRecording(false);
-      setSessionEnded(true);
     } catch (err) {
       console.error('Failed to stop recording:', err);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionCode || isRecording || sessionEnded) return;
+    if (!window.confirm('End this session? All students will be disconnected and will not be able to rejoin.')) return;
+
+    try {
+      const res = await fetch(`/api/session/${sessionCode}/stop`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Failed to end session (${res.status})`);
+      setSessionEnded(true);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+      window.alert('The session could not be ended. Please try again.');
     }
   };
 
@@ -333,10 +346,13 @@ function AdminDashboard() {
         nextChunkIn={nextChunkIn}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
+        onEndSession={handleEndSession}
         onOpenQR={() => setShowQR(true)}
         interval={interval}
         onIntervalChange={setInterval}
         onIntervalCommit={handleIntervalCommit}
+        intervalDisabled={isRecording}
+        nextCycleLabel="Next capture"
       />
 
       <main className="page-shell page-shell--fluid stack">

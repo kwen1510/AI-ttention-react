@@ -426,21 +426,37 @@ try {
   ]);
   await expectOkResponse(Promise.resolve(guardStartResponse), "guard session start");
   await guardPage.getByText("Recording live", { exact: true }).waitFor();
+  assert.equal(await guardPage.getByRole("button", { name: "End session" }).isDisabled(), true);
 
   guardPage.once("dialog", async (dialog) => {
-    assert.match(dialog.message(), /disconnect all students/i);
-    await dialog.dismiss();
+    assert.match(dialog.message(), /stop recording before leaving/i);
+    await dialog.accept();
   });
   await guardPage.getByRole("button", { name: "Prompts" }).click();
   assert.match(guardPage.url(), /\/staging\/admin$/);
 
-  const guardStopResponse = guardPage.waitForResponse((response) =>
+  const guardStopRecordingResponse = guardPage.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().endsWith(`/api/session/${guardSessionCode}/stop-recording`)
+  );
+  await guardPage.getByRole("button", { name: "Stop recording" }).click();
+  await expectOkResponse(guardStopRecordingResponse, "guarded recording stop");
+  assert.equal(await guardPage.getByRole("button", { name: "End session" }).isEnabled(), true);
+
+  guardPage.once("dialog", (dialog) => dialog.dismiss());
+  await guardPage.getByRole("button", { name: "End session" }).click();
+  assert.equal(await guardPage.getByRole("button", { name: "End session" }).isEnabled(), true);
+
+  const guardEndResponse = guardPage.waitForResponse((response) =>
     response.request().method() === "POST" &&
     response.url().endsWith(`/api/session/${guardSessionCode}/stop`)
   );
   guardPage.once("dialog", (dialog) => dialog.accept());
+  await guardPage.getByRole("button", { name: "End session" }).click();
+  await expectOkResponse(guardEndResponse, "guarded session end");
+  await guardPage.getByText("Session ended", { exact: true }).waitFor();
+
   await guardPage.getByRole("button", { name: "Prompts" }).click();
-  await expectOkResponse(guardStopResponse, "guarded session stop");
   await guardPage.waitForURL(new RegExp(`${baseUrl}/staging/prompts$`));
 
   if (diagnostics.length > 0) {

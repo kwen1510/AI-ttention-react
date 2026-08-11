@@ -170,6 +170,7 @@ export async function summarise(text, customPrompt) {
         }
 
         const basePrompt = customPrompt || "Summarise the following classroom discussion in ≤6 clear bullet points:";
+        const formatInstruction = "Put every bullet on its own Markdown line beginning with '- '.";
         if (!OPENAI_API_KEY) {
             console.warn('⚠️ OpenAI API key not configured; using extractive summary');
             return buildFallbackSummary(text);
@@ -182,7 +183,7 @@ export async function summarise(text, customPrompt) {
             messages: [
                 {
                     role: "user",
-                    content: `${basePrompt}\n\n${text}`
+                    content: `${basePrompt}\n${formatInstruction}\n\n${text}`
                 }
             ]
         });
@@ -235,6 +236,7 @@ export async function summariseGroups(groups, customPrompt) {
         newSegments: group.newSegments.map((segment) => String(segment.text || "").slice(0, 2_500))
     }));
     const instruction = customPrompt || "Maintain a concise rolling classroom-discussion summary in no more than six bullets.";
+    const formatInstruction = "Format every summary as Markdown bullets, with each bullet on its own line beginning with '- '.";
     const model = process.env.SUMMARY_MODEL || "gpt-5-nano";
     const maxTokens = Math.min(3_200, 128 + allowed.size * 144);
     const schema = {
@@ -256,7 +258,7 @@ export async function summariseGroups(groups, customPrompt) {
             }
         }
     };
-    const userInput = `${instruction}\n\nUpdate each previous summary using only its newSegments.\n\n${JSON.stringify(input)}`;
+    const userInput = `${instruction}\n${formatInstruction}\n\nUpdate each previous summary using only its newSegments.\n\n${JSON.stringify(input)}`;
     const response = model.startsWith("gpt-5")
         ? await callOpenAIResponses(OPENAI_API_KEY, {
             model,

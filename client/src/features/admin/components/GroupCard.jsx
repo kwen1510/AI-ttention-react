@@ -19,6 +19,9 @@ export function GroupCard({ groupNumber, data, onRelease }) {
     };
 
     const uploadStatus = data.uploadStatus || null;
+    const latestTranscript = data.transcripts.at(-1) || null;
+    const latestTranscriptAt = Number(latestTranscript?.timestamp || 0);
+    const hasUnsummarisedSubmission = latestTranscriptAt > Number(data.summary?.timestamp || 0);
     let statusTone = data.isActive ? 'success' : 'neutral';
     let statusLabel = data.isActive ? 'Connected' : 'Waiting';
     let uploadTone = 'neutral';
@@ -51,7 +54,7 @@ export function GroupCard({ groupNumber, data, onRelease }) {
             <PanelHeader
                 icon={MessageSquare}
                 title={`Group ${groupNumber}`}
-                description={`${data.transcripts.length} transcript segments`}
+                description={`${data.transcripts.length} student submission${data.transcripts.length === 1 ? '' : 's'} received`}
                 actions={(
                     <Button
                         type="button"
@@ -73,6 +76,11 @@ export function GroupCard({ groupNumber, data, onRelease }) {
                     <StatusBadge tone={data.isReleased ? 'success' : 'warning'}>
                         {data.isReleased ? 'Visible to students' : 'Not released'}
                     </StatusBadge>
+                    {latestTranscript ? (
+                        <StatusBadge tone={hasUnsummarisedSubmission ? 'accent' : 'primary'} pulse={hasUnsummarisedSubmission}>
+                            {hasUnsummarisedSubmission ? 'New submission' : 'Latest submission'} {formatClockTime(latestTranscriptAt)}
+                        </StatusBadge>
+                    ) : null}
                 </div>
             </PanelHeader>
 
@@ -81,7 +89,7 @@ export function GroupCard({ groupNumber, data, onRelease }) {
                     <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                             <UploadCloud className="h-4 w-4 text-[var(--primary)]" />
-                            <h4 className="text-sm font-semibold text-[var(--text)]">Upload status</h4>
+                            <h4 className="text-sm font-semibold text-[var(--text)]">Student activity</h4>
                         </div>
                         <Badge tone={uploadTone} size="sm">{uploadLabel}</Badge>
                     </div>
@@ -99,7 +107,7 @@ export function GroupCard({ groupNumber, data, onRelease }) {
                     </div>
                     {data.summary ? (
                         <div className="surface-list__item space-y-2 text-sm text-[var(--text)]">
-                            <MarkdownContent content={data.summary.text} />
+                            <MarkdownContent content={data.summary.text} summary />
                         </div>
                     ) : (
                         <div className="surface-list__item text-sm">No summary available yet.</div>

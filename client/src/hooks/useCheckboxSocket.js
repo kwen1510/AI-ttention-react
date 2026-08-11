@@ -28,6 +28,32 @@ export function useCheckboxSocket() {
     const [groups, setGroups] = useState(new Map());
     const [sessionEnded, setSessionEnded] = useState(false);
 
+    const applyUploadStatus = useCallback((data) => {
+        setGroups(prev => {
+            const groupNum = normalizeGroupNumber(data.group ?? data.groupNumber);
+            if (!groupNum) return prev;
+            const next = new Map(prev);
+            const existing = next.get(groupNum) || {
+                transcripts: [],
+                checkboxes: [],
+                stats: {},
+                isReleased: false
+            };
+            next.set(groupNum, {
+                ...existing,
+                uploadStatus: {
+                    phase: data.phase || 'idle',
+                    pendingUploads: Number(data.pendingUploads || 0),
+                    lastUploadedAt: data.lastUploadedAt || existing.uploadStatus?.lastUploadedAt || null,
+                    lastError: data.lastError || null
+                },
+                isActive: true,
+                lastUpdate: Date.now()
+            });
+            return next;
+        });
+    }, []);
+
     const applyCheckboxUpdate = useCallback((data) => {
         setGroups(prev => {
             const newGroups = new Map(prev);
@@ -126,6 +152,9 @@ export function useCheckboxSocket() {
             case REALTIME_EVENTS.ADMIN_UPDATE:
                 applyCheckboxUpdate(data);
                 break;
+            case REALTIME_EVENTS.UPLOAD_STATUS:
+                applyUploadStatus(data);
+                break;
             case REALTIME_EVENTS.CHECKLIST_STATE:
                 applyChecklistState(data);
                 break;
@@ -158,7 +187,7 @@ export function useCheckboxSocket() {
             default:
                 break;
         }
-    }, [applyCheckboxUpdate, applyChecklistState]);
+    }, [applyCheckboxUpdate, applyChecklistState, applyUploadStatus]);
 
     const joinSession = useCallback((code, serverTopic, accessToken) => {
         const normalizedCode = normalizeSessionCode(code);

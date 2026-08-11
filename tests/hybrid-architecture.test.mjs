@@ -16,6 +16,24 @@ test("summary intervals default to 30 seconds and enforce 15–300 second bounda
   assert.equal(normalizeSummaryIntervalMs("not-a-number", null), null);
 });
 
+test("rolling summaries use the active timing boundary instead of waiting a second interval", async () => {
+  const { summaryBoundaryDelayMs } = await import("../server/services/rollingSummary.js");
+  const startedAt = 1_000_000;
+
+  assert.equal(summaryBoundaryDelayMs({
+    intervalMs: 15_000,
+    startTime: startedAt,
+    now: startedAt + 16_000,
+    graceMs: 3_000
+  }), 2_000);
+  assert.equal(summaryBoundaryDelayMs({
+    intervalMs: 15_000,
+    startTime: startedAt,
+    now: startedAt + 19_000,
+    graceMs: 3_000
+  }), 0);
+});
+
 test("live audio capacity rejects before buffering once the configured boundary is full", async () => {
   const capacity = await import("../server/services/liveAudioCapacity.js");
   capacity.__resetLiveAudioCapacityForTests();

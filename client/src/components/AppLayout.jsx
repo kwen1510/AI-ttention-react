@@ -31,17 +31,8 @@ function AppLayout() {
 
   const confirmTeacherLeave = useCallback(async () => {
     if (!liveSessionCode) return true;
-    if (!window.confirm(
-      'A live session is in progress. Leaving will end the session and disconnect all students. Are you sure?'
-    )) return false;
-
-    const response = await fetch(`/api/session/${liveSessionCode}/stop`, { method: 'POST' });
-    if (!response.ok) {
-      window.alert('The session could not be ended. Please try again before leaving.');
-      return false;
-    }
-    setLiveSessionCode(null);
-    return true;
+    window.alert('Recording is live. Stop recording before leaving this page. Students will remain in the session.');
+    return false;
   }, [liveSessionCode]);
 
   useEffect(() => {

@@ -19,13 +19,19 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease, canRelease = t
     const totalCount = data.checkboxes.length;
     const hasCriteria = totalCount > 0;
     const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+    const latestTranscript = data.transcripts.at(-1) || null;
+    const formatClockTime = (timestamp) => timestamp
+        ? new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+        : '';
 
     return (
         <Panel padding="lg" className="h-full">
             <PanelHeader
                 icon={ClipboardList}
                 title={`Group ${groupNumber}`}
-                description={hasCriteria ? `${completedCount}/${totalCount} criteria completed` : 'No criteria saved for this session yet'}
+                description={hasCriteria
+                    ? `${completedCount}/${totalCount} criteria completed · ${data.transcripts.length} submission${data.transcripts.length === 1 ? '' : 's'}`
+                    : 'No criteria saved for this session yet'}
                 actions={(
                     <Button
                         onClick={() => onRelease(groupNumber)}
@@ -43,6 +49,14 @@ export function CheckboxGroupCard({ groupNumber, data, onRelease, canRelease = t
                     <StatusBadge tone={data.isReleased ? 'success' : 'warning'}>
                         {data.isReleased ? 'Visible to students' : 'Not released'}
                     </StatusBadge>
+                    {latestTranscript ? (
+                        <StatusBadge tone="accent" pulse>
+                            New submission {formatClockTime(latestTranscript.timestamp)}
+                        </StatusBadge>
+                    ) : null}
+                    {data.uploadStatus?.phase === 'uploading' ? (
+                        <StatusBadge tone="primary" pulse>Receiving audio</StatusBadge>
+                    ) : null}
                 </div>
             </PanelHeader>
 

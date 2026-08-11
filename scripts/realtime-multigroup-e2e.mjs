@@ -129,10 +129,17 @@ async function startSession(sessionCode, mode) {
   });
   assert.equal(result.success, true);
   assert.equal(result.code, sessionCode);
+  assert.equal(result.audioChunkInterval, 15000);
   assert.equal(new Date(result.expiresAt).getTime() > Date.now() + 3.9 * 60 * 60_000, true);
 }
 
 async function stopSession(sessionCode) {
+  const stoppedRecording = await teacherJson(`/api/session/${sessionCode}/stop-recording`, {
+    method: "POST"
+  });
+  assert.equal(stoppedRecording.success, true);
+  assert.equal(stoppedRecording.recording, false);
+
   const result = await teacherJson(`/api/session/${sessionCode}/stop`, {
     method: "POST"
   });

@@ -76,7 +76,7 @@ try {
   assert.equal(browserState.localKeys.some((key) => /supabase|auth|token/i.test(key)), false);
   assert.equal(browserState.sessionKeys.some((key) => /supabase|auth|token/i.test(key)), false);
 
-  const summaryInterval = page.getByLabel("Summary every (seconds)");
+  const summaryInterval = page.getByLabel("Capture & summarise every (seconds)");
   assert.equal(await summaryInterval.inputValue(), "30");
   assert.equal(await summaryInterval.getAttribute("min"), "15");
   assert.equal(await summaryInterval.getAttribute("max"), "300");
@@ -92,11 +92,12 @@ try {
   await restoredPage.goto(`${baseUrl}/admin`, { waitUntil: "domcontentloaded" });
   await restoredPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
   await restoredPage.waitForFunction(() => /^[A-Z0-9]{6}$/.test(document.querySelector(".session-code-text")?.textContent?.trim() || ""));
-  assert.equal(await restoredPage.getByLabel("Summary every (seconds)").inputValue(), "15");
+  assert.equal(await restoredPage.getByLabel("Capture & summarise every (seconds)").inputValue(), "15");
 
   const endResponse = restoredPage.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/session\/[A-Z0-9]+\/stop$/.test(response.url())
   );
+  restoredPage.once("dialog", (dialog) => dialog.accept());
   await restoredPage.getByRole("button", { name: /End session/i }).click();
   assert.equal((await endResponse).status(), 200);
   await restoredPage.getByText("Session ended", { exact: true }).waitFor({ timeout: 10_000 });

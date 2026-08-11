@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { cn } from "@/lib/utils.js";
+import { normalizeSummaryMarkdown } from "@/lib/summaryFormatting.js";
 
 marked.setOptions({
   gfm: true,
@@ -55,10 +56,11 @@ export function renderMarkdownToHtml(content, { inline = false } = {}) {
   return sanitizeMarkdownHtml(withTaskClasses);
 }
 
-export function MarkdownContent({ content, className, inline = false }) {
+export function MarkdownContent({ content, className, inline = false, summary = false }) {
+  const source = summary ? normalizeSummaryMarkdown(content) : content;
   const html = useMemo(
-    () => renderMarkdownToHtml(content, { inline }),
-    [content, inline]
+    () => renderMarkdownToHtml(source, { inline }),
+    [source, inline]
   );
 
   if (!html) {

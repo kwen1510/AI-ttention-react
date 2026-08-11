@@ -92,7 +92,7 @@ function CheckboxDashboard() {
           throw new Error(`Failed to create session (${res.status})`);
         }
         const data = await res.json();
-        setInterval(Math.round(Number(data.audioChunkInterval || 30000) / 1000));
+        setInterval(Math.min(300, Math.max(15, Math.round(Number(data.interval || 30000) / 1000))));
         setSessionTiming({ createdAt: data.createdAt || null, expiresAt: data.expiresAt || null });
         setSessionEnded(false);
         setIsRecording(Boolean(data.active));
@@ -272,18 +272,47 @@ function CheckboxDashboard() {
   const handleStopRecording = async () => {
     if (!sessionCode) return;
     try {
-      const res = await fetch(`/api/session/${sessionCode}/stop`, {
+      const res = await fetch(`/api/session/${sessionCode}/stop-recording`, {
         method: 'POST'
       });
 
       if (!res.ok) {
-        throw new Error(`Failed to stop session (${res.status})`);
+        throw new Error(`Failed to stop recording (${res.status})`);
       }
 
       setIsRecording(false);
-      setSessionEnded(true);
     } catch (err) {
       console.error('Failed to stop recording:', err);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionCode || isRecording || sessionEnded) return;
+    if (!window.confirm('End this session? All students will be disconnected and will not be able to rejoin.')) return;
+
+    try {
+      const res = await fetch(`/api/session/${sessionCode}/stop`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Failed to end session (${res.status})`);
+      setSessionEnded(true);
+    } catch (err) {
+      console.error('Failed to end session:', err);
+      window.alert('The session could not be ended. Please try again.');
+    }
+  };
+
+  const handleIntervalCommit = async () => {
+    if (!sessionCode) return;
+    const bounded = Math.min(300, Math.max(15, Math.round(Number(interval) || 30)));
+    setInterval(bounded);
+    try {
+      const response = await fetch(`/api/session/${sessionCode}/summary-interval`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval: bounded * 1000 })
+      });
+      if (!response.ok) throw new Error(`Failed to save capture interval (${response.status})`);
+    } catch (error) {
+      console.error('Failed to save capture interval:', error);
     }
   };
 
@@ -469,13 +498,15 @@ function CheckboxDashboard() {
         nextChunkIn={nextChunkIn}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
+        onEndSession={handleEndSession}
         onOpenQR={() => setShowQR(true)}
         interval={interval}
         onIntervalChange={setInterval}
-        intervalLabel="Audio chunk (seconds)"
-        intervalHint="Fixed at 30 seconds for reliable transcription"
-        intervalDisabled
-        nextCycleLabel="Next chunk"
+        onIntervalCommit={handleIntervalCommit}
+        intervalLabel="Capture & evaluate every (seconds)"
+        intervalHint="15–300 seconds; audio follows this setting up to the 30-second safety cap"
+        intervalDisabled={isRecording}
+        nextCycleLabel="Next capture"
       />
 
       <main className="page-shell page-shell--fluid stack">

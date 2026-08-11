@@ -32,7 +32,7 @@ export function SummaryPanel({ summary, isReleased }) {
                     />
                 ) : (
                     <div className="ui-panel ui-panel--subtle ui-panel--pad-lg h-full">
-                        <MarkdownContent content={summary} className="copy-strong text-sm" />
+                        <MarkdownContent content={summary} className="copy-strong text-sm" summary />
                     </div>
                 )}
             </div>

@@ -274,7 +274,7 @@ function GroupHistoryPanel({ sessionMode, group }) {
         >
           {group.latestSummary ? (
             <div className="ui-panel ui-panel--subtle ui-panel--pad-md text-sm leading-6 text-[var(--text)]">
-              <MarkdownContent content={group.latestSummary} />
+              <MarkdownContent content={group.latestSummary} summary />
             </div>
           ) : (
             <p className="text-sm">No summary stored for this group yet.</p>
@@ -291,7 +291,7 @@ function GroupHistoryPanel({ sessionMode, group }) {
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] copy-muted">
                     Up to segment {entry.segment_cursor}
                   </p>
-                  <MarkdownContent content={entry.summary_text} className="mt-2 text-sm text-[var(--text)]" />
+                  <MarkdownContent content={entry.summary_text} className="mt-2 text-sm text-[var(--text)]" summary />
                 </div>
               ))}
             </div>

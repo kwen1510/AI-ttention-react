@@ -126,6 +126,10 @@ export function normalizeSummaryIntervalMs(value, fallback = SUMMARY_INTERVAL_DE
 }
 
 const normalizeIntervalMs = normalizeSummaryIntervalMs;
+const captureIntervalMs = (intervalMs) => Math.min(
+    normalizeSummaryIntervalMs(intervalMs),
+    LIVE_AUDIO_CHUNK_MS
+);
 
 function normalizePositiveInteger(value, fallback) {
     const parsed = Number(value);
@@ -277,7 +281,7 @@ async function ensureSessionRecord({
             code,
             mode,
             active,
-            interval_ms: LIVE_AUDIO_CHUNK_MS,
+            interval_ms: captureIntervalMs(intervalMs),
             summary_interval_ms: normalizeSummaryIntervalMs(intervalMs),
             strictness,
             created_at: createdAt,
@@ -319,6 +323,7 @@ function restoreSessionRuntimeState(session) {
         ownerId: session.owner_id,
         active: Boolean(session.active),
         interval: session.summary_interval_ms || SUMMARY_INTERVAL_DEFAULT_MS,
+        audioChunkInterval: session.interval_ms || LIVE_AUDIO_CHUNK_MS,
         startTime: session.start_time || null,
         created_at: session.created_at || Date.now(),
         persisted: true,
@@ -481,7 +486,7 @@ async function resolveStudentSessionContext({
         group,
         mode: session?.mode || nextState?.mode || "summary",
         interval: session?.summary_interval_ms || nextState?.interval || SUMMARY_INTERVAL_DEFAULT_MS,
-        audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
+        audioChunkInterval: session?.interval_ms || nextState?.audioChunkInterval || LIVE_AUDIO_CHUNK_MS,
         active: Boolean(session?.active || nextState?.active)
     };
 }
@@ -1616,7 +1621,7 @@ router.post("/new-session", async (req, res) => {
             code,
             mode,
             interval: session.summary_interval_ms || SUMMARY_INTERVAL_DEFAULT_MS,
-            audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
+            audioChunkInterval: session.interval_ms || LIVE_AUDIO_CHUNK_MS,
             active: Boolean(session.active),
             startTime: session.start_time ? new Date(session.start_time).toISOString() : null,
             createdAt: new Date(createdAt).toISOString(),
@@ -1684,6 +1689,7 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             throw createHttpError("Summary interval must be between 15 and 300 seconds", 400);
         }
         const { session, memory } = await getOwnedSessionContext(code, teacher.id);
+        const audioChunkInterval = captureIntervalMs(intervalMs);
         const createdAt = session?.created_at || memory?.created_at || Date.now();
         const startTime = Date.now();
 
@@ -1721,7 +1727,7 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
                     mode: requestedMode,
                     active: true,
                     is_current: true,
-                    interval_ms: LIVE_AUDIO_CHUNK_MS,
+                    interval_ms: audioChunkInterval,
                     summary_interval_ms: intervalMs,
                     start_time: persistedSession.start_time || startTime,
                     expires_at: expiresAt,
@@ -1741,6 +1747,7 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             ownerId: teacher.id,
             active: true,
             interval: intervalMs,
+            audioChunkInterval,
             startTime: persistedSession.start_time || startTime,
             created_at: createdAt,
             persisted: true,
@@ -1749,7 +1756,8 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             checkbox: memory?.checkbox,
             expiresAt,
             acceptUploadsUntil: null,
-            stopRequestedAt: null
+            stopRequestedAt: null,
+            recordingStoppedAt: null
         });
 
         scheduleClassroomExpiry(code, expiresAt);
@@ -1759,8 +1767,8 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             event: REALTIME_EVENTS.RECORD_NOW,
             audience: "all",
             payload: {
-                interval: LIVE_AUDIO_CHUNK_MS,
-                audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
+                interval: audioChunkInterval,
+                audioChunkInterval,
                 summaryInterval: intervalMs
             }
         });
@@ -1770,7 +1778,7 @@ router.post("/session/:code/start", express.json(), async (req, res) => {
             code,
             mode: requestedMode,
             interval: intervalMs,
-            audioChunkInterval: LIVE_AUDIO_CHUNK_MS,
+            audioChunkInterval,
             expiresAt: new Date(expiresAt).toISOString()
         });
     } catch (err) {
@@ -1792,15 +1800,105 @@ router.patch("/session/:code/summary-interval", express.json(), async (req, res)
         }
         await db.collection("sessions").updateOne(
             { _id: session._id },
-            { $set: { summary_interval_ms: intervalMs, updated_at: Date.now() } }
+            {
+                $set: {
+                    summary_interval_ms: intervalMs,
+                    interval_ms: captureIntervalMs(intervalMs),
+                    updated_at: Date.now()
+                }
+            }
         );
         if (memory) {
             memory.interval = intervalMs;
+            memory.audioChunkInterval = captureIntervalMs(intervalMs);
             activeSessions.set(code, memory);
         }
-        res.json({ success: true, interval: intervalMs });
+        res.json({
+            success: true,
+            interval: intervalMs,
+            audioChunkInterval: captureIntervalMs(intervalMs)
+        });
     } catch (error) {
         sendRouteError(res, error, "Failed to save summary interval");
+    }
+});
+
+router.post("/session/:code/stop-recording", async (req, res) => {
+    try {
+        const teacher = await requireTeacher(req, res);
+        if (!teacher) return;
+
+        const code = normalizeSessionCode(req.params.code);
+        const { session, memory } = await getOwnedSessionContext(code, teacher.id);
+        if (session?.ended_reason || session?.end_time || memory?.stopRequestedAt) {
+            throw createHttpError("Session already ended", 409);
+        }
+        if (!session?.start_time && !memory?.startTime) {
+            throw createHttpError("Recording has not started", 409);
+        }
+
+        const isActive = Boolean(session?.active || memory?.active);
+        if (!isActive) {
+            return res.json({ success: true, code, recording: false, alreadyStopped: true });
+        }
+
+        const stoppedAt = Date.now();
+        const acceptUploadsUntil = stoppedAt + FINAL_UPLOAD_GRACE_MS;
+        if (session) {
+            await db.collection("sessions").updateOne(
+                { _id: session._id },
+                {
+                    $set: {
+                        active: false,
+                        accept_uploads_until: acceptUploadsUntil,
+                        updated_at: stoppedAt
+                    }
+                }
+            );
+        }
+
+        activeSessions.set(code, {
+            ...(memory || {}),
+            id: session?._id || memory?.id,
+            code,
+            ownerId: teacher.id,
+            active: false,
+            interval: session?.summary_interval_ms || memory?.interval || SUMMARY_INTERVAL_DEFAULT_MS,
+            audioChunkInterval: session?.interval_ms || memory?.audioChunkInterval || LIVE_AUDIO_CHUNK_MS,
+            startTime: session?.start_time || memory?.startTime,
+            created_at: session?.created_at || memory?.created_at || stoppedAt,
+            persisted: Boolean(session) || memory?.persisted,
+            mode: session?.mode || memory?.mode || "summary",
+            groups: memory?.groups || new Map(),
+            acceptUploadsUntil,
+            recordingStoppedAt: stoppedAt,
+            stopRequestedAt: null
+        });
+
+        await publishRealtimeEvent({
+            sessionCode: code,
+            event: REALTIME_EVENTS.STOP_RECORDING,
+            audience: "all",
+            payload: {}
+        });
+
+        const summaryTimer = setTimeout(() => {
+            void flushRollingSummary({
+                sessionCode: code,
+                sessionId: session?._id || memory?.id
+            }).catch((error) => console.warn("Stopped-recording summary failed:", error.message));
+        }, FINAL_UPLOAD_GRACE_MS);
+        summaryTimer.unref?.();
+
+        res.json({
+            success: true,
+            code,
+            recording: false,
+            stoppedAt: new Date(stoppedAt).toISOString()
+        });
+    } catch (err) {
+        console.error("❌ Failed to stop recording:", err);
+        sendRouteError(res, err, "Failed to stop recording");
     }
 });
 
@@ -1814,6 +1912,13 @@ router.post("/session/:code/stop", async (req, res) => {
         const endedAt = Date.now();
         const acceptUploadsUntil = endedAt + FINAL_UPLOAD_GRACE_MS;
         const wasStarted = Boolean(session?.start_time || memory?.startTime);
+
+        if (session?.ended_reason || session?.end_time || memory?.stopRequestedAt) {
+            throw createHttpError("Session already ended", 409);
+        }
+        if (session?.active || memory?.active) {
+            throw createHttpError("Stop recording before ending the session", 409);
+        }
 
         if (!wasStarted) {
             await publishRealtimeEvent({
@@ -1881,12 +1986,6 @@ router.post("/session/:code/stop", async (req, res) => {
             });
         }
 
-        await publishRealtimeEvent({
-            sessionCode: code,
-            event: REALTIME_EVENTS.STOP_RECORDING,
-            audience: "all",
-            payload: {}
-        });
         const terminalTimer = setTimeout(() => {
             void flushRollingSummary({
                 sessionCode: code,
@@ -2466,7 +2565,8 @@ router.post("/transcribe-chunk", aiUploadLimiter, preflightLiveAudioUpload, pars
         await scheduleRollingSummary({
             sessionCode: resolvedSessionCode,
             sessionId: session._id,
-            intervalMs: session.summary_interval_ms || memory?.interval || SUMMARY_INTERVAL_DEFAULT_MS
+            intervalMs: session.summary_interval_ms || memory?.interval || SUMMARY_INTERVAL_DEFAULT_MS,
+            startTime: session.start_time || memory?.startTime || null
         });
 
         res.json({
@@ -2553,7 +2653,7 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
                 code: sessionCode,
                 mode: "checkbox",
                 active: false,
-                interval_ms: LIVE_AUDIO_CHUNK_MS,
+                interval_ms: captureIntervalMs(interval),
                 summary_interval_ms: interval || SUMMARY_INTERVAL_DEFAULT_MS,
                 strictness: strictness,
                 created_at: Date.now()
@@ -2567,7 +2667,7 @@ router.post("/checkbox/session", express.json(), async (req, res) => {
                         owner_id: teacher.id,
                         mode: "checkbox",
                         active: false,
-                        interval_ms: LIVE_AUDIO_CHUNK_MS,
+                        interval_ms: captureIntervalMs(interval),
                         summary_interval_ms: interval || SUMMARY_INTERVAL_DEFAULT_MS,
                         strictness: strictness,
                         updated_at: Date.now()
