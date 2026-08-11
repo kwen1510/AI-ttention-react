@@ -472,7 +472,6 @@ export async function seedDefaultPrompts() {
     // Check if we already have prompts
     const count = await db.collection("teacher_prompts").countDocuments({});
     if (count > 0) {
-      // console.log('✅ Default prompts already seeded');
       return;
     }
 
@@ -588,8 +587,6 @@ Provide specific quotes that demonstrate each completed criterion.`,
     ];
 
     await db.collection("teacher_prompts").insertMany(defaultPrompts);
-    // console.log(`🌱 Successfully seeded ${defaultPrompts.length} default prompts`);
-
   } catch (err) {
     console.error('❌ Failed to seed default prompts:', err);
   }

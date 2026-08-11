@@ -334,6 +334,37 @@ try {
   await historyModal.locator("button").last().click();
   await historyPage.waitForTimeout(200);
 
+  const guardPage = await context.newPage();
+  attachDiagnostics(guardPage, "session-exit-guard", diagnostics, baseUrl);
+  await guardPage.goto(`${baseUrl}/staging/admin`, { waitUntil: "domcontentloaded" });
+  await guardPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
+  const guardSessionCode = await waitForSessionCode(guardPage);
+  const [guardStartResponse] = await Promise.all([
+    guardPage.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith(`/api/session/${guardSessionCode}/start`)
+    ),
+    guardPage.getByRole("button", { name: /Start recording/i }).click()
+  ]);
+  await expectOkResponse(Promise.resolve(guardStartResponse), "guard session start");
+  await guardPage.getByText("Recording live", { exact: true }).waitFor();
+
+  guardPage.once("dialog", async (dialog) => {
+    assert.match(dialog.message(), /disconnect all students/i);
+    await dialog.dismiss();
+  });
+  await guardPage.getByRole("button", { name: "Prompts" }).click();
+  assert.match(guardPage.url(), /\/staging\/admin$/);
+
+  const guardStopResponse = guardPage.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().endsWith(`/api/session/${guardSessionCode}/stop`)
+  );
+  guardPage.once("dialog", (dialog) => dialog.accept());
+  await guardPage.getByRole("button", { name: "Prompts" }).click();
+  await expectOkResponse(guardStopResponse, "guarded session stop");
+  await guardPage.waitForURL(new RegExp(`${baseUrl}/staging/prompts$`));
+
   if (diagnostics.length > 0) {
     throw new Error(`Browser diagnostics detected issues:\n${diagnostics.join("\n")}`);
   }

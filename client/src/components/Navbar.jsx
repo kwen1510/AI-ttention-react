@@ -26,6 +26,7 @@ function ModeButton({ item, isActive, onNavigate }) {
 
   const handleClick = (e) => {
     e.preventDefault();
+    if (isActive) return;
     onNavigate(item.path);
   };
 
@@ -44,11 +45,20 @@ function ModeButton({ item, isActive, onNavigate }) {
   );
 }
 
-function Navbar({ active = "", basePath = "", showModes = true, showSignOut = true }) {
+function Navbar({
+  active = "",
+  basePath = "",
+  showModes = true,
+  showSignOut = true,
+  confirmTeacherLeave = async () => true,
+}) {
   const { signOut } = useAuth();
   const navigate = useNavigate();
-  const handleModeNavigate = (path) => {
-    navigate(path);
+  const handleModeNavigate = async (path) => {
+    if (await confirmTeacherLeave()) navigate(path);
+  };
+  const handleSignOut = async () => {
+    if (await confirmTeacherLeave()) await signOut();
   };
 
   const modes = useMemo(
@@ -81,7 +91,7 @@ function Navbar({ active = "", basePath = "", showModes = true, showSignOut = tr
               variant="ghost"
               size="sm"
               className="app-navbar__signout shrink-0"
-              onClick={() => signOut()}
+              onClick={handleSignOut}
             >
               <LogOut className="h-3.5 w-3.5" />
               <span>Sign out</span>

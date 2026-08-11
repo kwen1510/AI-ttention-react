@@ -601,7 +601,6 @@ Begin evaluation now:`;
             }
             // Reroute only when there is a clear improvement and current match is weak
             if (bestIdx !== current && bestScore >= Math.max(2, bestScore - 0) && bestScore >= (scoreOverlap(m.quote, current) + 2)) {
-                // console.log(`🔀 Re-routing match from idx=${current} to idx=${bestIdx} based on token overlap (old=${scoreOverlap(m.quote, current)}, new=${bestScore})`);
                 return { ...m, criteria_index: bestIdx };
             }
             return m;
@@ -672,25 +671,14 @@ Begin evaluation now:`;
 
 export async function cleanupOldSessionData(sessionCode) {
     try {
-        // console.log(`🧹 Cleaning up old data for session: ${sessionCode}`);
-
-        // Get the session document
         const session = await db.collection("sessions").findOne({ code: sessionCode });
         if (!session) {
-            // console.log(`📋 No session found with code: ${sessionCode}`);
             return;
         }
 
-        // Delete old checkbox progress
         await db.collection("checkbox_progress").deleteMany({ session_id: session._id });
-
-        // Delete old checkbox criteria
         await db.collection("checkbox_criteria").deleteMany({ session_id: session._id });
-
-        // Delete old checkbox session
         await db.collection("checkbox_sessions").deleteMany({ session_id: session._id });
-
-        // console.log(`✅ Session ${sessionCode} cleaned up successfully`);
     } catch (err) {
         console.error('❌ Error cleaning up session %s:', sessionCode, err);
     }

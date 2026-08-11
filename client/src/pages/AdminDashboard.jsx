@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useAdminSocket } from '../hooks/useAdminSocket';
 import { usePromptManager } from '../hooks/usePromptManager';
 import { SessionHeader } from '../features/admin/components/SessionHeader';
@@ -14,6 +14,7 @@ import { DEFAULT_SUMMARY_PROMPT } from '../lib/prompts.js';
 import { Send } from 'lucide-react';
 
 function AdminDashboard() {
+  const { setLiveSessionCode } = useOutletContext();
   const [searchParams] = useSearchParams();
   const selectedPrompt = String(searchParams.get('prompt') || '').trim();
   const {
@@ -54,6 +55,11 @@ function AdminDashboard() {
       setSessionEnded(true);
     }
   }, [realtimeSessionEnded]);
+
+  useEffect(() => {
+    setLiveSessionCode(isRecording && !sessionEnded ? sessionCode : null);
+    return () => setLiveSessionCode(null);
+  }, [isRecording, sessionCode, sessionEnded, setLiveSessionCode]);
 
   // Initialize session
   useEffect(() => {

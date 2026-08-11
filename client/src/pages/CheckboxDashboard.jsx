@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { useCheckboxSocket } from '../hooks/useCheckboxSocket';
 import { useCriteriaManager } from '../hooks/useCriteriaManager';
 import { SessionHeader } from '../features/admin/components/SessionHeader';
@@ -25,6 +25,7 @@ function resolveReleaseCriteria(groupData, currentCriteria) {
 }
 
 function CheckboxDashboard() {
+  const { setLiveSessionCode } = useOutletContext();
   const [searchParams] = useSearchParams();
   const {
     isConnected,
@@ -70,6 +71,11 @@ function CheckboxDashboard() {
       setSessionEnded(true);
     }
   }, [realtimeSessionEnded]);
+
+  useEffect(() => {
+    setLiveSessionCode(isRecording && !sessionEnded ? sessionCode : null);
+    return () => setLiveSessionCode(null);
+  }, [isRecording, sessionCode, sessionEnded, setLiveSessionCode]);
 
   // Initialize session
   useEffect(() => {
