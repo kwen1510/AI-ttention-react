@@ -83,42 +83,73 @@ export async function getRealtimeIdentitySession(captchaToken = null) {
   return realtimeIdentityPromise;
 }
 
-export function subscribeToRealtimeTopics({ topics, accessToken, onEvent, onStatus }) {
-  const supabase = getSupabaseClient();
+export function subscribeToRealtimeTopics({
+  topics,
+  accessToken,
+  onEvent,
+  onStatus,
+  supabaseClient = null,
+  retryBaseMs = 1_000
+}) {
+  const supabase = supabaseClient || getSupabaseClient();
   const uniqueTopics = [...new Set((topics || []).filter(Boolean))];
-  const channels = [];
+  const topicStates = new Map();
   let disposed = false;
+
+  const connectTopic = (topic) => {
+    if (disposed) return;
+
+    const state = topicStates.get(topic) || { attempt: 0, channel: null, timer: null };
+    const channel = supabase
+      .channel(topic, {
+        config: {
+          broadcast: { self: false },
+          private: true
+        }
+      })
+      .on('broadcast', { event: '*' }, (message) => {
+        onEvent?.(unwrapRealtimePayload(message), topic);
+      });
+
+    state.channel = channel;
+    topicStates.set(topic, state);
+
+    channel.subscribe((status, error) => {
+      if (disposed || topicStates.get(topic)?.channel !== channel) return;
+      onStatus?.({ topic, status, error });
+
+      if (status === 'SUBSCRIBED') {
+        state.attempt = 0;
+        return;
+      }
+
+      if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) || state.timer) return;
+      const delay = Math.min(Math.max(100, retryBaseMs) * (2 ** Math.min(state.attempt, 4)), 15_000);
+      state.attempt += 1;
+      state.timer = globalThis.setTimeout(() => {
+        state.timer = null;
+        if (disposed || state.channel !== channel) return;
+        state.channel = null;
+        void Promise.resolve(supabase.removeChannel(channel)).finally(() => connectTopic(topic));
+      }, delay);
+    });
+  };
 
   void (async () => {
     if (!accessToken) throw new Error('A server-issued Realtime access token is required');
     await supabase.realtime.setAuth(accessToken);
     if (disposed) return;
-
-    uniqueTopics.forEach((topic) => {
-      const channel = supabase
-        .channel(topic, {
-          config: {
-            broadcast: { self: false },
-            private: true
-          }
-        })
-        .on('broadcast', { event: '*' }, (message) => {
-          onEvent?.(unwrapRealtimePayload(message), topic);
-        });
-
-      channel.subscribe((status, error) => {
-        onStatus?.({ topic, status, error });
-      });
-      channels.push(channel);
-    });
+    uniqueTopics.forEach(connectTopic);
   })().catch((error) => {
     onStatus?.({ topic: null, status: 'CHANNEL_ERROR', error });
   });
 
   return () => {
     disposed = true;
-    channels.forEach((channel) => {
-      supabase.removeChannel(channel);
+    topicStates.forEach(({ channel, timer }) => {
+      if (timer) globalThis.clearTimeout(timer);
+      if (channel) supabase.removeChannel(channel);
     });
+    topicStates.clear();
   };
 }
