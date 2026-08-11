@@ -129,6 +129,32 @@ async function assertStudentAccessModalFits(page) {
   }
 }
 
+async function assertPageFits(page, label) {
+  const viewports = [
+    { width: 320, height: 568 },
+    { width: 375, height: 812 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    const layout = await page.evaluate(() => {
+      const main = document.querySelector('.app-main');
+      return {
+        pageClientWidth: document.documentElement.clientWidth,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        mainClientWidth: main?.clientWidth ?? 0,
+        mainScrollWidth: main?.scrollWidth ?? 0,
+      };
+    });
+
+    assert.equal(layout.pageScrollWidth, layout.pageClientWidth, `${label} page overflow at ${viewport.width}px`);
+    assert.ok(layout.mainScrollWidth <= layout.mainClientWidth, `${label} main content overflow at ${viewport.width}px`);
+  }
+}
+
 async function deletePromptByTitle(page, title) {
   await page.getByPlaceholder("Search prompts...").fill(title);
   await page.getByText(title, { exact: true }).click();
@@ -216,6 +242,13 @@ try {
   attachDiagnostics(teacherSummaryPage, "teacher-summary", diagnostics, baseUrl);
   await teacherSummaryPage.goto(`${baseUrl}/staging/admin`, { waitUntil: "domcontentloaded" });
   await teacherSummaryPage.getByRole("heading", { name: /Live summary session/i }).waitFor({ timeout: 20_000 });
+  await assertPageFits(teacherSummaryPage, 'summary teacher');
+  await teacherSummaryPage.emulateMedia({ reducedMotion: 'reduce' });
+  const reducedMotionDuration = await teacherSummaryPage.locator('.ui-button').first().evaluate((button) => (
+    Number.parseFloat(getComputedStyle(button).transitionDuration)
+  ));
+  assert.ok(reducedMotionDuration <= 0.001, 'reduced-motion transition must be effectively disabled');
+  await teacherSummaryPage.emulateMedia({ reducedMotion: 'no-preference' });
 
   const summarySessionCode = await waitForSessionCode(teacherSummaryPage);
   assert.match(summarySessionCode, /^[A-Z0-9]{6}$/);
@@ -237,6 +270,14 @@ try {
   await teacherSummaryPage.getByText(/Scan this QR code or enter the session code/i).waitFor();
   await teacherSummaryPage.getByRole("img", { name: /Student session QR code/i }).waitFor();
   await assertStudentAccessModalFits(teacherSummaryPage);
+  const modalClose = teacherSummaryPage.getByRole('button', { name: 'Close' });
+  await teacherSummaryPage.evaluate(() => document.activeElement?.blur());
+  for (let index = 0; index < 4; index += 1) {
+    await teacherSummaryPage.keyboard.press('Tab');
+    if (await modalClose.evaluate((button) => document.activeElement === button)) break;
+  }
+  assert.equal(await modalClose.evaluate((button) => document.activeElement === button), true);
+  assert.notEqual(await modalClose.evaluate((button) => getComputedStyle(button).outlineStyle), 'none');
   await closeQrModal(teacherSummaryPage);
 
   const studentSummaryPage = await context.newPage();
@@ -252,13 +293,15 @@ try {
   await expectOkResponse(summaryJoinResponse, "summary student join");
   await studentSummaryPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentSummaryPage.getByText("Group 1", { exact: false }).waitFor();
+  await assertPageFits(studentSummaryPage, 'summary student');
 
   const promptsPage = teacherSummaryPage;
   await promptsPage.goto(`${baseUrl}/staging/prompts`, { waitUntil: "domcontentloaded" });
   await promptsPage.getByRole("heading", { name: /Prompt library/i }).waitFor({ timeout: 20_000 });
+  await assertPageFits(promptsPage, 'prompts');
 
   const promptId = Date.now();
-  const promptTitle = `E2E Prompt ${promptId}`;
+  const promptTitle = `E2E prompt with a deliberately long classroom title that must remain contained ${promptId}`;
   const promptDescription = `Created by browser e2e ${promptId}`;
   const promptDescriptionUpdated = `Updated by browser e2e ${promptId}`;
   const promptContent = `Summarise the discussion clearly in three bullet points.\nMention action items if present.`;
@@ -275,6 +318,7 @@ try {
   await promptsPage.getByRole("button", { name: /Save prompt/i }).click();
   await expectOkResponse(createPromptResponse, "prompt create");
   await promptsPage.getByText(promptTitle, { exact: true }).waitFor({ timeout: 20_000 });
+  await assertPageFits(promptsPage, 'prompts with long title');
 
   await promptsPage.getByText(promptTitle, { exact: true }).click();
   await promptsPage.getByRole("dialog").getByText(promptDescription, { exact: false }).waitFor();
@@ -307,6 +351,7 @@ try {
   attachDiagnostics(teacherCheckboxPage, "teacher-checkbox", diagnostics, baseUrl);
   await teacherCheckboxPage.goto(`${baseUrl}/staging/checkbox`, { waitUntil: "domcontentloaded" });
   await teacherCheckboxPage.getByRole("heading", { name: /Live checklist session/i }).waitFor({ timeout: 20_000 });
+  await assertPageFits(teacherCheckboxPage, 'checklist teacher');
 
   const checkboxSessionCode = await waitForSessionCode(teacherCheckboxPage);
   const checkboxScenario = `Discuss the causes of climate change ${Date.now()}`;
@@ -333,6 +378,13 @@ try {
   await studentCheckboxPage.getByRole("button", { name: /Join with code/i }).click();
   await studentCheckboxPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await studentCheckboxPage.getByText(/Waiting for the checklist/i).waitFor({ timeout: 20_000 });
+  await assertPageFits(studentCheckboxPage, 'checklist student');
+
+  const asyncPage = await context.newPage();
+  attachDiagnostics(asyncPage, "async", diagnostics, baseUrl);
+  await asyncPage.goto(`${baseUrl}/staging/async`, { waitUntil: "domcontentloaded" });
+  await asyncPage.getByRole("heading", { name: /Asynchronous discussion/i }).waitFor({ timeout: 20_000 });
+  await assertPageFits(asyncPage, 'async teacher');
 
   const historyPage = await context.newPage();
   attachDiagnostics(historyPage, "history", diagnostics, baseUrl);
@@ -340,6 +392,7 @@ try {
   await historyPage.getByRole("heading", { name: /Session history/i }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${summarySessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
   await historyPage.getByText(`Session ${checkboxSessionCode}`, { exact: false }).waitFor({ timeout: 20_000 });
+  await assertPageFits(historyPage, 'history');
 
   const summaryCard = historyPage
     .getByRole("heading", { name: `Session ${summarySessionCode}` })

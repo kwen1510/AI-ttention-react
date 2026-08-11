@@ -57,7 +57,7 @@ export function PromptsList({ prompts, onView }) {
                         }}
                         role="button"
                         tabIndex={0}
-                        className="flex h-full cursor-pointer flex-col transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--focus-ring)]"
+                        className="flex h-full cursor-pointer flex-col transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
                     >
                         <div className="flex-1">
                             <div className="mb-4">
